@@ -35,7 +35,7 @@ func main() {
 	log.Println("Logged in")
 
 	// List mailboxes
-	verifiedMailboxObjs := utils.ExportMailboxes(c)
+	verifiedMailboxObjs := utils.GetMailboxes(c)
 	encodedMailboxes, err := json.MarshalIndent(verifiedMailboxObjs, "", "  ")
 	if err != nil {
 		log.Fatal(err)
@@ -45,12 +45,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	utils.ExportEmails(c, os.Getenv("IMAP_FOLDER"))
-
-	// // Define search criteria
-	// criteria := imap.NewSearchCriteria()
-	// criteria.Header.Add("From", "example@example.com")
-	// criteria.Since = time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)
+	utils.ExportEmailsFromMailbox(c, os.Getenv("IMAP_FOLDER"))
 
 	log.Println("Done!")
 }

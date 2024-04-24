@@ -2,7 +2,6 @@ package utils
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -17,37 +16,8 @@ import (
 	"github.com/pkg/errors"
 )
 
-func ExportMailboxes(c *client.Client) map[string]Mailbox {
-	mailboxes := make(chan *imap.MailboxInfo, 10)
-	done := make(chan error, 1)
-	go func() {
-		done <- c.List("", "*", mailboxes)
-	}()
-
-	verifiedMailboxObjs := map[string]Mailbox{}
-	serializedMailboxObjs, err := UnserializeMailboxes()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Mailboxes:")
-	for m := range mailboxes {
-		log.Println("* " + m.Name)
-		if _, ok := serializedMailboxObjs[m.Name]; !ok {
-			verifiedMailboxObjs[m.Name] = Mailbox{Name: m.Name, Delete: false, Export: false}
-		} else {
-			verifiedMailboxObjs[m.Name] = serializedMailboxObjs[m.Name]
-		}
-	}
-
-	if err := <-done; err != nil {
-		log.Fatal(err)
-	}
-
-	return verifiedMailboxObjs
-}
-
-func ExportEmails(c *client.Client, mailbox string) {
+// ExportEmailsFromMailbox exports emails from the specified mailbox to the file system
+func ExportEmailsFromMailbox(c *client.Client, mailbox string) {
 	// Select mailbox
 	mbox, err := c.Select(mailbox, false)
 	if err != nil {
@@ -55,31 +25,13 @@ func ExportEmails(c *client.Client, mailbox string) {
 	}
 	log.Printf("Mailbox %s has %d messages", mailbox, mbox.Messages)
 
-	// criteria := imap.NewSearchCriteria()
-	// uids, err := c.Search(criteria)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
 	seqSet := new(imap.SeqSet)
 	seqSet.AddRange(1, mbox.Messages)
 
-	// messages := make(chan *imap.Message, 10)
-	// done := make(chan error, 1)
-	// go func() {
-	// 	done <- c.Fetch(seqSet, []imap.FetchItem{imap.FetchEnvelope}, messages)
-	// }()
-
-	// seqSet := new(imap.SeqSet)
-	// seqSet.AddNum(uids...)
 	section := imap.BodySectionName{}
-	// items := []imap.FetchItem{section.FetchItem(), imap.FetchEnvelope}
 	messages := make(chan *imap.Message, mbox.Messages)
 	done := make(chan error, 1)
 	go func() {
-		// if err := c.Fetch(seqSet, items, messages); err != nil {
-		// 	log.Fatal(err)
-		// }
 		done <- c.Fetch(seqSet, []imap.FetchItem{section.FetchItem(), imap.FetchEnvelope}, messages)
 	}()
 
@@ -91,23 +43,6 @@ func ExportEmails(c *client.Client, mailbox string) {
 			saveEmail(mailbox, msg.Envelope.Date, literal)
 		}
 	}
-}
-
-func UnserializeMailboxes() (map[string]Mailbox, error) {
-	mailboxObjs := map[string]Mailbox{}
-
-	if _, err := os.Stat(MailboxListFile); os.IsNotExist(err) {
-		return mailboxObjs, nil
-	}
-
-	if mailboxFile, err := os.ReadFile(MailboxListFile); err != nil {
-		return nil, err
-	} else {
-		if err := json.Unmarshal(mailboxFile, &mailboxObjs); err != nil {
-			return nil, err
-		}
-	}
-	return mailboxObjs, nil
 }
 
 func convertMessageToString(r io.Reader, filename string) error { //(string, error) {
@@ -136,7 +71,6 @@ func convertMessageToString(r io.Reader, filename string) error { //(string, err
 					return err
 				}
 				log.Println("A part with type ", t, params)
-				// log.Printf("Inline text: %v", string(b))
 				b, _ := io.ReadAll((*p).Body)
 				var outfile *os.File
 				switch t {
@@ -152,12 +86,6 @@ func convertMessageToString(r io.Reader, filename string) error { //(string, err
 						return err
 					}
 				case "application/octet-stream":
-					// This is an attachment
-					// filename, _ := htype.Filename()
-					// log.Printf("Attachment: %v", filename)
-					// b, _ := io.ReadAll((*p).Body)
-					// log.Printf("Inline text: %v", string(b))
-					// log.Printf("Inline text: %v", string(b))
 					outfile, err = os.Create(fmt.Sprintf("%s_%d_%s", filename, partCount, params["name"]))
 					if err != nil {
 						return err
