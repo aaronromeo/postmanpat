@@ -26,7 +26,11 @@ func main() {
 	log.Println("Connected")
 
 	// Don't forget to logout
-	defer c.Logout()
+	defer func() {
+		if err := c.Logout(); err != nil {
+			log.Printf("Failed to logout: %v", err)
+		}
+	}()
 
 	// Login
 	if err := c.Login(os.Getenv("IMAP_USER"), os.Getenv("IMAP_PASS")); err != nil {

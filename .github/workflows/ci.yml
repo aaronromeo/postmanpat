@@ -27,5 +27,5 @@ jobs:
       uses: golangci/golangci-lint-action@v4
       with:
         version: latest
-        args: --issues-exit-code=0 --timeout=5m
+        args: --out-format=github-actions --timeout=5m
 

@@ -40,7 +40,9 @@ func ExportEmailsFromMailbox(c *client.Client, mailbox string) {
 	for msg := range messages {
 		fmt.Println("Subject:", msg.Envelope.Subject)
 		for _, literal := range msg.Body {
-			saveEmail(mailbox, msg.Envelope.Date, literal)
+			if err := saveEmail(mailbox, msg.Envelope.Date, literal); err != nil {
+				log.Fatal(err)
+			}
 		}
 	}
 }
@@ -71,7 +73,11 @@ func convertMessageToString(r io.Reader, filename string) error { //(string, err
 					return err
 				}
 				log.Println("A part with type ", t, params)
-				b, _ := io.ReadAll((*p).Body)
+				b, err := io.ReadAll((*p).Body)
+				if err != nil {
+					return err
+				}
+
 				var outfile *os.File
 				switch t {
 				case "text/html":
@@ -93,7 +99,11 @@ func convertMessageToString(r io.Reader, filename string) error { //(string, err
 				}
 				log.Println("Before writing to file")
 				writer := bufio.NewWriter(outfile)
-				writer.WriteString(string(b))
+				_, err = writer.WriteString(string(b))
+				if err != nil {
+					return err
+				}
+
 				log.Println("After writing to file")
 			default:
 				return err
@@ -102,7 +112,10 @@ func convertMessageToString(r io.Reader, filename string) error { //(string, err
 		}
 	} else {
 
-		t, _, _ := m.Header.ContentType()
+		t, _, err := m.Header.ContentType()
+		if err != nil {
+			return err
+		}
 		log.Println("This is a non-multipart message with type", t)
 	}
 
