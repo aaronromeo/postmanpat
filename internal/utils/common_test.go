@@ -21,7 +21,10 @@ func TestGetMailboxes(t *testing.T) {
 	mockClient.EXPECT().
 		List("", "*", gomock.Any()).
 		Do(func(_, _ string, ch interface{}) {
-			mCh := ch.(chan *imap.MailboxInfo)
+			mCh, ok := ch.(chan *imap.MailboxInfo)
+			if !ok {
+				t.Fatalf("Type assertion failed: Expected chan *imap.MailboxInfo, got %T", ch)
+			}
 			go func() {
 				mCh <- &imap.MailboxInfo{Name: "Folder1"}
 				mCh <- &imap.MailboxInfo{Name: "Folder2"}
