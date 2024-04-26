@@ -12,4 +12,8 @@ type Mailbox struct {
 // Client is an interface to abstract the client.Client methods used
 type Client interface {
 	List(ref, name string, ch chan *imap.MailboxInfo) error
+	Select(name string, readOnly bool) (*imap.MailboxStatus, error)
+}
+
+type Service interface {
 }

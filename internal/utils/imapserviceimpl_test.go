@@ -1,6 +1,9 @@
 package utils
 
 import (
+	"context"
+	"log/slog"
+	"os"
 	"testing"
 
 	"github.com/emersion/go-imap"
@@ -8,11 +11,23 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func TestGetMailboxes(t *testing.T) {
+func TestGetMailboxesX(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	mockClient := NewMockClient(ctrl)
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	ctx := context.Background()
+
+	service, err := NewImapService(
+		WithClient(mockClient),
+		WithLogger(logger),
+		WithCtx(ctx),
+	)
+
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Setting up the expected calls and returns
 	// mailboxChan := make(chan *imap.MailboxInfo, 10)
@@ -39,7 +54,11 @@ func TestGetMailboxes(t *testing.T) {
 		Return(nil)
 
 	// Call the function to test
-	result := GetMailboxes(mockClient)
+	result, err := service.GetMailboxes()
+
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Define expected results
 	expected := map[string]Mailbox{
