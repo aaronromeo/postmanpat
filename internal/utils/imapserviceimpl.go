@@ -138,14 +138,11 @@ func (srv ImapServiceImpl) Login() error {
 }
 
 // Logout
-func (srv ImapServiceImpl) LogoutFn() func() error {
-	return func() error {
+func (srv ImapServiceImpl) LogoutFn() func() {
+	return func() {
 		if err := srv.client.Logout(); err != nil {
 			srv.logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to logout: %v", err), slog.Any("error", wrapError(err)))
-			return err
 		}
-
-		return nil
 	}
 }
 
