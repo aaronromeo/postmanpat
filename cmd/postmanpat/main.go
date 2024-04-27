@@ -8,7 +8,6 @@ import (
 	"os"
 
 	"aaronromeo.com/postmanpat/internal/utils"
-	"github.com/emersion/go-imap/client"
 	"github.com/joho/godotenv"
 )
 
@@ -19,17 +18,19 @@ func main() {
 	}
 
 	// Connect to server
-	c, err := client.DialTLS(os.Getenv("IMAP_URL"), nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Println("Connected")
+	// c, err := client.DialTLS(os.Getenv("IMAP_URL"), nil)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// log.Println("Connected")
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	ctx := context.Background()
 
 	isi, err := utils.NewImapService(
-		utils.WithClient(c),
+		// Connect to server
+		utils.WithTLSConfig(os.Getenv("IMAP_URL"), nil),
+		utils.WithAuth(os.Getenv("IMAP_USER"), os.Getenv("IMAP_PASS")),
 		utils.WithCtx(ctx),
 		utils.WithLogger(logger),
 	)
@@ -39,24 +40,13 @@ func main() {
 
 	log.Println("Connecting to server...")
 
-	// Don't forget to logout
-	defer func() {
-		if err := c.Logout(); err != nil {
-			log.Printf("Failed to logout: %v", err)
-		}
-	}()
-
-	// Login
-	if err := c.Login(os.Getenv("IMAP_USER"), os.Getenv("IMAP_PASS")); err != nil {
-		log.Fatal(err)
-	}
-	log.Println("Logged in")
-
 	// List mailboxes
 	verifiedMailboxObjs, err := isi.GetMailboxes()
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	log.Println("After List mailboxes")
 
 	encodedMailboxes, err := json.MarshalIndent(verifiedMailboxObjs, "", "  ")
 	if err != nil {
@@ -67,7 +57,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	utils.ExportEmailsFromMailbox(c, os.Getenv("IMAP_FOLDER"))
+	// utils.ExportEmailsFromMailbox(c, os.Getenv("IMAP_FOLDER"))
 
 	log.Println("Done!")
 }

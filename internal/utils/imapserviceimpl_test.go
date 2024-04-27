@@ -20,6 +20,7 @@ func TestGetMailboxesX(t *testing.T) {
 	ctx := context.Background()
 
 	service, err := NewImapService(
+		WithAuth("foo", "bar"),
 		WithClient(mockClient),
 		WithLogger(logger),
 		WithCtx(ctx),
@@ -32,6 +33,12 @@ func TestGetMailboxesX(t *testing.T) {
 	// Setting up the expected calls and returns
 	// mailboxChan := make(chan *imap.MailboxInfo, 10)
 	doneChan := make(chan error, 1)
+
+	mockClient.EXPECT().
+		Login("foo", "bar")
+
+	mockClient.EXPECT().
+		Logout()
 
 	mockClient.EXPECT().
 		List("", "*", gomock.Any()).

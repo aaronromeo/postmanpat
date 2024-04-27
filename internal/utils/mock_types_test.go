@@ -53,6 +53,34 @@ func (mr *MockClientMockRecorder) List(ref, name, ch any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockClient)(nil).List), ref, name, ch)
 }
 
+// Login mocks base method.
+func (m *MockClient) Login(username, password string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Login", username, password)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Login indicates an expected call of Login.
+func (mr *MockClientMockRecorder) Login(username, password any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Login", reflect.TypeOf((*MockClient)(nil).Login), username, password)
+}
+
+// Logout mocks base method.
+func (m *MockClient) Logout() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Logout")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Logout indicates an expected call of Logout.
+func (mr *MockClientMockRecorder) Logout() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Logout", reflect.TypeOf((*MockClient)(nil).Logout))
+}
+
 // Select mocks base method.
 func (m *MockClient) Select(name string, readOnly bool) (*imap.MailboxStatus, error) {
 	m.ctrl.T.Helper()
@@ -66,4 +94,27 @@ func (m *MockClient) Select(name string, readOnly bool) (*imap.MailboxStatus, er
 func (mr *MockClientMockRecorder) Select(name, readOnly any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Select", reflect.TypeOf((*MockClient)(nil).Select), name, readOnly)
+}
+
+// MockService is a mock of Service interface.
+type MockService struct {
+	ctrl     *gomock.Controller
+	recorder *MockServiceMockRecorder
+}
+
+// MockServiceMockRecorder is the mock recorder for MockService.
+type MockServiceMockRecorder struct {
+	mock *MockService
+}
+
+// NewMockService creates a new mock instance.
+func NewMockService(ctrl *gomock.Controller) *MockService {
+	mock := &MockService{ctrl: ctrl}
+	mock.recorder = &MockServiceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockService) EXPECT() *MockServiceMockRecorder {
+	return m.recorder
 }
