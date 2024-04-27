@@ -138,7 +138,7 @@ func (srv ImapServiceImpl) Login() error {
 }
 
 // Logout
-func (srv ImapServiceImpl) LogoutPromise() func() error {
+func (srv ImapServiceImpl) LogoutFn() func() error {
 	return func() error {
 		if err := srv.client.Logout(); err != nil {
 			srv.logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to logout: %v", err), slog.Any("error", wrapError(err)))
@@ -151,7 +151,7 @@ func (srv ImapServiceImpl) LogoutPromise() func() error {
 
 // GetMailboxes exports mailboxes from the server to the file system
 func (srv ImapServiceImpl) GetMailboxes() (map[string]Mailbox, error) {
-	defer srv.LogoutPromise()()
+	defer srv.LogoutFn()()
 
 	if err := srv.Login(); err != nil {
 		return nil, err
