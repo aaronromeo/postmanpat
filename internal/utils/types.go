@@ -1,6 +1,8 @@
 package utils
 
-import "github.com/emersion/go-imap"
+import (
+	"github.com/emersion/go-imap"
+)
 
 type Mailbox struct {
 	Name     string `json:"name"`
@@ -12,4 +14,10 @@ type Mailbox struct {
 // Client is an interface to abstract the client.Client methods used
 type Client interface {
 	List(ref, name string, ch chan *imap.MailboxInfo) error
+	Select(name string, readOnly bool) (*imap.MailboxStatus, error)
+	Logout() error
+	Login(username string, password string) error
+}
+
+type Service interface {
 }
