@@ -1,4 +1,4 @@
-package utils
+package models
 
 import (
 	"context"
@@ -6,23 +6,25 @@ import (
 	"os"
 	"testing"
 
+	"aaronromeo.com/postmanpat/pkg/base"
+	"aaronromeo.com/postmanpat/pkg/mock"
 	"github.com/emersion/go-imap"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 )
 
-func TestNewImapService(t *testing.T) {
+func TestNewImapManager(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)) // Assuming this sets up the logger
 	ctx := context.Background()
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockClient := NewMockClient(ctrl)
+	mockClient := mock.NewMockClient(ctrl)
 
 	// Test successful creation
 	t.Run("Successful Creation", func(t *testing.T) {
-		service, err := NewImapService(
+		service, err := NewImapManager(
 			WithAuth("username", "password"),
 			WithClient(mockClient),
 			WithLogger(logger),
@@ -39,7 +41,7 @@ func TestNewImapService(t *testing.T) {
 
 	// Test missing username
 	t.Run("Missing Username", func(t *testing.T) {
-		_, err := NewImapService(
+		_, err := NewImapManager(
 			WithAuth("", "password"),
 			WithClient(mockClient),
 			WithLogger(logger),
@@ -50,7 +52,7 @@ func TestNewImapService(t *testing.T) {
 
 	// Test missing client
 	t.Run("Missing Client", func(t *testing.T) {
-		_, err := NewImapService(
+		_, err := NewImapManager(
 			WithAuth("username", "password"),
 			WithLogger(logger),
 			WithCtx(ctx),
@@ -63,11 +65,11 @@ func TestGetMailboxesX(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockClient := NewMockClient(ctrl)
+	mockClient := mock.NewMockClient(ctrl)
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	ctx := context.Background()
 
-	service, err := NewImapService(
+	service, err := NewImapManager(
 		WithAuth("foo", "bar"),
 		WithClient(mockClient),
 		WithLogger(logger),
@@ -116,7 +118,7 @@ func TestGetMailboxesX(t *testing.T) {
 	}
 
 	// Define expected results
-	expected := map[string]Mailbox{
+	expected := map[string]base.SerializedMailbox{
 		"Folder1": {Name: "Folder1", Delete: false, Export: false},
 		"Folder2": {Name: "Folder2", Delete: false, Export: false},
 		"Folder3": {Name: "Folder3", Delete: false, Export: false},
@@ -132,11 +134,11 @@ func TestGetMailboxesErrorHandling(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockClient := NewMockClient(ctrl)
+	mockClient := mock.NewMockClient(ctrl)
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	ctx := context.Background()
 
-	service, err := NewImapService(
+	service, err := NewImapManager(
 		WithClient(mockClient),
 		WithAuth("testuser", "testpass"),
 		WithLogger(logger),
@@ -158,12 +160,12 @@ func TestLogin(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockClient := NewMockClient(ctrl)
+	mockClient := mock.NewMockClient(ctrl)
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	ctx := context.Background()
 
 	// Setup service
-	service, err := NewImapService(
+	service, err := NewImapManager(
 		WithClient(mockClient),
 		WithAuth("testuser", "testpass"),
 		WithLogger(logger),
@@ -186,11 +188,11 @@ func TestLogoutFn(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockClient := NewMockClient(ctrl)
+	mockClient := mock.NewMockClient(ctrl)
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	ctx := context.Background()
 
-	service, err := NewImapService(
+	service, err := NewImapManager(
 		WithClient(mockClient),
 		WithAuth("testuser", "testpass"),
 		WithLogger(logger),

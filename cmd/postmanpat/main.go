@@ -7,7 +7,8 @@ import (
 	"log/slog"
 	"os"
 
-	"aaronromeo.com/postmanpat/internal/utils"
+	"aaronromeo.com/postmanpat/pkg/base"
+	"aaronromeo.com/postmanpat/pkg/models"
 	"github.com/joho/godotenv"
 )
 
@@ -17,22 +18,15 @@ func main() {
 		log.Fatalf("Error loading .env file: %s", err)
 	}
 
-	// Connect to server
-	// c, err := client.DialTLS(os.Getenv("IMAP_URL"), nil)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// log.Println("Connected")
-
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	ctx := context.Background()
 
-	isi, err := utils.NewImapService(
+	isi, err := models.NewImapManager(
 		// Connect to server
-		utils.WithTLSConfig(os.Getenv("IMAP_URL"), nil),
-		utils.WithAuth(os.Getenv("IMAP_USER"), os.Getenv("IMAP_PASS")),
-		utils.WithCtx(ctx),
-		utils.WithLogger(logger),
+		models.WithTLSConfig(os.Getenv("IMAP_URL"), nil),
+		models.WithAuth(os.Getenv("IMAP_USER"), os.Getenv("IMAP_PASS")),
+		models.WithCtx(ctx),
+		models.WithLogger(logger),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -53,7 +47,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := os.WriteFile(utils.MailboxListFile, encodedMailboxes, 0644); err != nil {
+	if err := os.WriteFile(base.MailboxListFile, encodedMailboxes, 0644); err != nil {
 		log.Fatal(err)
 	}
 

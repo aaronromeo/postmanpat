@@ -1,10 +1,10 @@
-package utils
+package base
 
 import (
 	"github.com/emersion/go-imap"
 )
 
-type Mailbox struct {
+type SerializedMailbox struct {
 	Name     string `json:"name"`
 	Delete   bool   `json:"delete"`
 	Export   bool   `json:"export"`
