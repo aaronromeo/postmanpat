@@ -7,9 +7,57 @@ import (
 	"testing"
 
 	"github.com/emersion/go-imap"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 )
+
+func TestNewImapService(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)) // Assuming this sets up the logger
+	ctx := context.Background()
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockClient := NewMockClient(ctrl)
+
+	// Test successful creation
+	t.Run("Successful Creation", func(t *testing.T) {
+		service, err := NewImapService(
+			WithAuth("username", "password"),
+			WithClient(mockClient),
+			WithLogger(logger),
+			WithCtx(ctx),
+		)
+		assert.NoError(t, err)
+		assert.NotNil(t, service)
+		assert.Equal(t, "username", service.username)
+		assert.Equal(t, "password", service.password)
+		assert.Equal(t, mockClient, service.client)
+		assert.Equal(t, logger, service.logger)
+		assert.Equal(t, ctx, service.ctx)
+	})
+
+	// Test missing username
+	t.Run("Missing Username", func(t *testing.T) {
+		_, err := NewImapService(
+			WithAuth("", "password"),
+			WithClient(mockClient),
+			WithLogger(logger),
+			WithCtx(ctx),
+		)
+		assert.Error(t, err)
+	})
+
+	// Test missing client
+	t.Run("Missing Client", func(t *testing.T) {
+		_, err := NewImapService(
+			WithAuth("username", "password"),
+			WithLogger(logger),
+			WithCtx(ctx),
+		)
+		assert.Error(t, err)
+	})
+}
 
 func TestGetMailboxesX(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -78,4 +126,82 @@ func TestGetMailboxesX(t *testing.T) {
 
 	// Check if the results meet the expectations
 	assert.Equal(t, expected, result, "The returned map of mailboxes should match the expected values.")
+}
+
+func TestGetMailboxesErrorHandling(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockClient := NewMockClient(ctrl)
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	ctx := context.Background()
+
+	service, err := NewImapService(
+		WithClient(mockClient),
+		WithAuth("testuser", "testpass"),
+		WithLogger(logger),
+		WithCtx(ctx),
+	)
+	assert.Nil(t, err, "Setup failed")
+
+	// Setup failing conditions
+	mockClient.EXPECT().Login(gomock.Any(), gomock.Any()).Return(nil)
+	mockClient.EXPECT().List("", "*", gomock.Any()).Return(errors.New("failed to list mailboxes"))
+	mockClient.EXPECT().Logout().Return(nil)
+
+	// Execute the function
+	_, err = service.GetMailboxes()
+	assert.NotNil(t, err, "Should return an error when listing mailboxes fails")
+}
+
+func TestLogin(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockClient := NewMockClient(ctrl)
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	ctx := context.Background()
+
+	// Setup service
+	service, err := NewImapService(
+		WithClient(mockClient),
+		WithAuth("testuser", "testpass"),
+		WithLogger(logger),
+		WithCtx(ctx),
+	)
+	assert.Nil(t, err, "Setup failed")
+
+	// Test successful login
+	mockClient.EXPECT().Login("testuser", "testpass").Return(nil)
+	err = service.Login()
+	assert.Nil(t, err, "Login should succeed without error")
+
+	// Test failed login
+	mockClient.EXPECT().Login("testuser", "testpass").Return(errors.New("login failed"))
+	err = service.Login()
+	assert.NotNil(t, err, "Login should fail with an error")
+}
+
+func TestLogoutFn(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockClient := NewMockClient(ctrl)
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	ctx := context.Background()
+
+	service, err := NewImapService(
+		WithClient(mockClient),
+		WithAuth("testuser", "testpass"),
+		WithLogger(logger),
+		WithCtx(ctx),
+	)
+	assert.Nil(t, err, "Setup failed")
+
+	// Expectations
+	mockClient.EXPECT().Logout().Return(nil)
+
+	// Execute the logout function returned by LogoutFn
+	logoutFunc := service.LogoutFn()
+	logoutFunc() // this should call Logout on the client
 }

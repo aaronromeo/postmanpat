@@ -38,28 +38,6 @@ func NewImapService(opts ...ImapServiceOption) (*ImapServiceImpl, error) {
 		}
 	}
 
-	// requiredFields := []interface{}{
-	// 	imapService.username,
-	// 	imapService.password,
-	// 	imapService.client,
-	// 	imapService.logger,
-	// 	imapService.ctx,
-	// }
-
-	// for _, field := range requiredFields {
-	// 	fieldName := reflect.TypeOf(field).Name() // TODO: This is wrong
-	// 	switch reflect.TypeOf(field).Kind() {
-	// 	case reflect.String:
-	// 		if field == "" {
-	// 			return nil, fmt.Errorf("requires %s", fieldName)
-	// 		}
-	// 	case reflect.Ptr:
-	// 		if field == nil {
-	// 			return nil, fmt.Errorf("requires %s", fieldName)
-	// 		}
-	// 	}
-	// }
-
 	if imapService.username == "" {
 		return nil, errors.New("requires username")
 	}
@@ -74,10 +52,6 @@ func NewImapService(opts ...ImapServiceOption) (*ImapServiceImpl, error) {
 
 	if imapService.logger == nil {
 		return nil, errors.New("requires slogger")
-	}
-
-	if imapService.ctx == nil {
-		return nil, errors.New("requires ctx")
 	}
 
 	return &imapService, nil
@@ -167,6 +141,11 @@ func (srv ImapServiceImpl) GetMailboxes() (map[string]Mailbox, error) {
 		return nil, err
 	}
 
+	if err := <-done; err != nil {
+		srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", wrapError(err)))
+		return nil, err
+	}
+
 	for m := range mailboxes {
 		srv.logger.Info(fmt.Sprintf("Mailbox: %s", m.Name))
 		if _, ok := serializedMailboxObjs[m.Name]; !ok {
@@ -174,11 +153,6 @@ func (srv ImapServiceImpl) GetMailboxes() (map[string]Mailbox, error) {
 		} else {
 			verifiedMailboxObjs[m.Name] = serializedMailboxObjs[m.Name]
 		}
-	}
-
-	if err := <-done; err != nil {
-		srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", wrapError(err)))
-		return nil, err
 	}
 
 	return verifiedMailboxObjs, err
