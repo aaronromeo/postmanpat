@@ -15,7 +15,7 @@ build:
 	$(GOBUILD) -o $(BUILT_BINARY) -v ./cmd/postmanpat
 
 test:
-	$(GOTEST) -v ./...
+	$(GOTEST) -v ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
 
 clean:
 	$(GOCLEAN)
