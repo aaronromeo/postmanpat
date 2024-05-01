@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"aaronromeo.com/postmanpat/pkg/base"
-	"aaronromeo.com/postmanpat/pkg/models"
+	imap "aaronromeo.com/postmanpat/pkg/models/imapmanager"
 	"github.com/joho/godotenv"
 )
 
@@ -21,12 +21,12 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	ctx := context.Background()
 
-	isi, err := models.NewImapManager(
+	isi, err := imap.NewImapManager(
 		// Connect to server
-		models.WithTLSConfig(os.Getenv("IMAP_URL"), nil),
-		models.WithAuth(os.Getenv("IMAP_USER"), os.Getenv("IMAP_PASS")),
-		models.WithCtx(ctx),
-		models.WithLogger(logger),
+		imap.WithTLSConfig(os.Getenv("IMAP_URL"), nil),
+		imap.WithAuth(os.Getenv("IMAP_USER"), os.Getenv("IMAP_PASS")),
+		imap.WithCtx(ctx),
+		imap.WithLogger(logger),
 	)
 	if err != nil {
 		log.Fatal(err)

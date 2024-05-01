@@ -1,4 +1,4 @@
-package models
+package imapmanager
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"runtime"
 
 	"aaronromeo.com/postmanpat/pkg/base"
+	"aaronromeo.com/postmanpat/pkg/models/mailbox"
 	"github.com/emersion/go-imap"
 	imapclient "github.com/emersion/go-imap/client"
 	"github.com/pkg/errors"
@@ -122,7 +123,7 @@ func (srv ImapManagerImpl) LogoutFn() func() {
 }
 
 // GetMailboxes exports mailboxes from the server to the file system
-func (srv ImapManagerImpl) GetMailboxes() (map[string]base.SerializedMailbox, error) {
+func (srv ImapManagerImpl) GetMailboxes() (map[string]*mailbox.MailboxImpl, error) {
 	defer srv.LogoutFn()()
 
 	if err := srv.Login(); err != nil {
@@ -135,11 +136,36 @@ func (srv ImapManagerImpl) GetMailboxes() (map[string]base.SerializedMailbox, er
 		done <- srv.client.List("", "*", mailboxes)
 	}()
 
-	verifiedMailboxObjs := map[string]base.SerializedMailbox{}
+	verifiedMailboxObjs := map[string]*mailbox.MailboxImpl{}
 	serializedMailboxObjs, err := srv.unserializeMailboxes()
 	if err != nil {
 		srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", wrapError(err)))
 		return nil, err
+	}
+	srv.logger.Info("Retrieved serializedMailboxObjs")
+
+	for m := range mailboxes {
+		srv.logger.Info(fmt.Sprintf("Mailbox: %s", m.Name))
+		if _, ok := serializedMailboxObjs[m.Name]; !ok {
+			verifiedMailboxObjs[m.Name], err = mailbox.NewMailbox(
+				mailbox.WithClient(srv.client),
+				mailbox.WithLogger(srv.logger),
+				mailbox.WithCtx(srv.ctx),
+				mailbox.WithLoginFn(srv.Login),
+				mailbox.WithLogoutFn(srv.client.Logout),
+			)
+
+			if err != nil {
+				srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", wrapError(err)))
+				return nil, err
+			}
+
+			verifiedMailboxObjs[m.Name].Name = m.Name
+			verifiedMailboxObjs[m.Name].Deletable = false
+			verifiedMailboxObjs[m.Name].Exportable = false
+		} else {
+			verifiedMailboxObjs[m.Name] = serializedMailboxObjs[m.Name]
+		}
 	}
 
 	if err := <-done; err != nil {
@@ -147,21 +173,13 @@ func (srv ImapManagerImpl) GetMailboxes() (map[string]base.SerializedMailbox, er
 		return nil, err
 	}
 
-	for m := range mailboxes {
-		srv.logger.Info(fmt.Sprintf("Mailbox: %s", m.Name))
-		if _, ok := serializedMailboxObjs[m.Name]; !ok {
-			verifiedMailboxObjs[m.Name] = base.SerializedMailbox{Name: m.Name, Delete: false, Export: false}
-		} else {
-			verifiedMailboxObjs[m.Name] = serializedMailboxObjs[m.Name]
-		}
-	}
-
 	return verifiedMailboxObjs, err
 }
 
 // unserializeMailboxes reads the mailbox list from the file system and returns a map of mailbox objects
-func (srv ImapManagerImpl) unserializeMailboxes() (map[string]base.SerializedMailbox, error) {
-	mailboxObjs := map[string]base.SerializedMailbox{}
+func (srv ImapManagerImpl) unserializeMailboxes() (map[string]*mailbox.MailboxImpl, error) {
+	serializedMailboxObjs := map[string]base.SerializedMailbox{}
+	mailboxObjs := map[string]*mailbox.MailboxImpl{}
 
 	if _, err := os.Stat(base.MailboxListFile); os.IsNotExist(err) {
 		return mailboxObjs, nil
@@ -171,11 +189,34 @@ func (srv ImapManagerImpl) unserializeMailboxes() (map[string]base.SerializedMai
 		srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", wrapError(err)))
 		return nil, err
 	} else {
-		if err := json.Unmarshal(mailboxFile, &mailboxObjs); err != nil {
+		if err := json.Unmarshal(mailboxFile, &serializedMailboxObjs); err != nil {
 			srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", wrapError(err)))
 			return nil, err
 		}
 	}
+
+	for name, serializedMailbox := range serializedMailboxObjs {
+		mb, err := mailbox.NewMailbox(
+			mailbox.WithClient(srv.client),
+			mailbox.WithLogger(srv.logger),
+			mailbox.WithCtx(srv.ctx),
+			mailbox.WithLoginFn(srv.Login),
+			mailbox.WithLogoutFn(srv.client.Logout),
+		)
+		if err != nil {
+			srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", wrapError(err)))
+			return nil, err
+		}
+
+		mb.Name = name
+		mb.Deletable = serializedMailbox.Delete
+		mb.Exportable = serializedMailbox.Export
+		mb.Lifespan = serializedMailbox.Lifespan
+
+		mailboxObjs[name] = mb
+
+	}
+
 	return mailboxObjs, nil
 }
 

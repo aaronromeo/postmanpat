@@ -1,4 +1,4 @@
-package models
+package imapmanager
 
 import (
 	"context"
@@ -117,6 +117,14 @@ func TestGetMailboxesX(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	actual := map[string]base.SerializedMailbox{}
+	for _, mb := range result {
+		actual[mb.Name], err = mb.Serialize()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	// Define expected results
 	expected := map[string]base.SerializedMailbox{
 		"Folder1": {Name: "Folder1", Delete: false, Export: false},
@@ -127,7 +135,7 @@ func TestGetMailboxesX(t *testing.T) {
 	}
 
 	// Check if the results meet the expectations
-	assert.Equal(t, expected, result, "The returned map of mailboxes should match the expected values.")
+	assert.Equal(t, expected, actual, "The returned map of mailboxes should match the expected values.")
 }
 
 func TestGetMailboxesErrorHandling(t *testing.T) {
@@ -148,7 +156,10 @@ func TestGetMailboxesErrorHandling(t *testing.T) {
 
 	// Setup failing conditions
 	mockClient.EXPECT().Login(gomock.Any(), gomock.Any()).Return(nil)
-	mockClient.EXPECT().List("", "*", gomock.Any()).Return(errors.New("failed to list mailboxes"))
+	mockClient.EXPECT().List("", "*", gomock.Any()).DoAndReturn(func(_, _ string, ch chan *imap.MailboxInfo) error {
+		close(ch) // Ensure the channel is closed even when simulating an error
+		return errors.New("failed to list mailboxes")
+	})
 	mockClient.EXPECT().Logout().Return(nil)
 
 	// Execute the function
