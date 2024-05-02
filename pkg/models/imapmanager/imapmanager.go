@@ -22,11 +22,13 @@ type ImapManager interface {
 }
 
 type ImapManagerImpl struct {
-	client   base.Client
-	logger   *slog.Logger
-	username string
-	password string
-	ctx      context.Context
+	client    base.Client
+	logger    *slog.Logger
+	username  string
+	password  string
+	address   string
+	tlsConfig *tls.Config
+	ctx       context.Context
 }
 
 type ImapManagerOption func(*ImapManagerImpl) error
@@ -61,7 +63,9 @@ func NewImapManager(opts ...ImapManagerOption) (*ImapManagerImpl, error) {
 
 func WithTLSConfig(addr string, tlsConfig *tls.Config) ImapManagerOption {
 	return func(imapMgr *ImapManagerImpl) error {
-		c, err := imapclient.DialTLS(os.Getenv("IMAP_URL"), nil)
+		imapMgr.address = addr
+		imapMgr.tlsConfig = tlsConfig
+		c, err := imapclient.DialTLS(addr, tlsConfig)
 		if err != nil {
 			return err
 		}
@@ -102,15 +106,36 @@ func WithCtx(ctx context.Context) ImapManagerOption {
 }
 
 // Login
-func (srv ImapManagerImpl) Login() error {
-	if err := srv.client.Login(srv.username, srv.password); err != nil {
-		srv.logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to login: %v", err), slog.Any("error", utils.WrapError(err)))
-		return err
+func (srv ImapManagerImpl) Login() (base.Client, error) {
+	state := srv.client.State()
+	switch state {
+	case imap.NotAuthenticatedState:
+		if err := srv.client.Login(srv.username, srv.password); err != nil {
+			srv.logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to login: %v", err), slog.Any("error", utils.WrapError(err)))
+			return srv.client, err
+		}
+		srv.logger.Info("Login success")
+	case imap.AuthenticatedState:
+		srv.logger.Info("Already authenticated")
+	case imap.SelectedState:
+		srv.logger.Info("Already selected mailbox")
+	default: // imap.LogoutState and imap.ConnectedState
+		c, err := imapclient.DialTLS(srv.address, srv.tlsConfig)
+		if err != nil {
+			srv.logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to create a client: %v", err), slog.Any("error", utils.WrapError(err)))
+			return srv.client, err
+		}
+		srv.client = c
+		srv.logger.Info("Login success")
+
+		if err := srv.client.Login(srv.username, srv.password); err != nil {
+			srv.logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to login: %v", err), slog.Any("error", utils.WrapError(err)))
+			return srv.client, err
+		}
+		srv.logger.Info("Login success")
 	}
 
-	srv.logger.Info("Login success")
-
-	return nil
+	return srv.client, nil
 }
 
 // Logout
@@ -126,7 +151,7 @@ func (srv ImapManagerImpl) LogoutFn() func() {
 func (srv ImapManagerImpl) GetMailboxes() (map[string]*mailbox.MailboxImpl, error) {
 	defer srv.LogoutFn()()
 
-	if err := srv.Login(); err != nil {
+	if _, err := srv.Login(); err != nil {
 		srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 		return nil, err
 	}

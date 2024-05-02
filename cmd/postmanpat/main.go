@@ -52,13 +52,13 @@ func main() {
 	}
 
 	// utils.ExportEmailsFromMailbox(c, os.Getenv("IMAP_FOLDER"))
-	for _, mailbox := range verifiedMailboxObjs {
-		// log.Printf("Exporting messages from %s\n", mailbox.Name)
-		err := mailbox.ExportMessages()
-		if err != nil {
-			log.Fatal(err)
-		}
+	// for _, mailbox := range verifiedMailboxObjs {
+	// log.Printf("Exporting messages from %s\n", mailbox.Name)
+	err = verifiedMailboxObjs[os.Getenv("IMAP_FOLDER")].ExportMessages()
+	if err != nil {
+		log.Fatal(err)
 	}
+	// }
 
 	log.Println("Done!")
 }

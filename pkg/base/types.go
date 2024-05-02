@@ -18,6 +18,7 @@ type Client interface {
 	Logout() error
 	Login(username string, password string) error
 	Fetch(seqset *imap.SeqSet, items []imap.FetchItem, ch chan *imap.Message) error
+	State() imap.ConnState
 }
 
 type Service interface {

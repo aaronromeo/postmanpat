@@ -9,12 +9,14 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"aaronromeo.com/postmanpat/pkg/base"
 	"aaronromeo.com/postmanpat/pkg/utils"
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-message"
+	_ "github.com/emersion/go-message/charset"
 	"github.com/pkg/errors"
 )
 
@@ -36,7 +38,7 @@ type MailboxImpl struct {
 	client   base.Client
 	logger   *slog.Logger
 	ctx      context.Context
-	loginFn  func() error
+	loginFn  func() (base.Client, error)
 	logoutFn func() error
 }
 
@@ -93,7 +95,7 @@ func WithCtx(ctx context.Context) MailboxOption {
 	}
 }
 
-func WithLoginFn(loginFn func() error) MailboxOption {
+func WithLoginFn(loginFn func() (base.Client, error)) MailboxOption {
 	return func(mb *MailboxImpl) error {
 		mb.loginFn = loginFn
 		return nil
@@ -116,10 +118,12 @@ func (mb *MailboxImpl) ExportMessages() error {
 	defer mb.logoutFn()
 
 	// Login
-	if err := mb.loginFn(); err != nil {
+	c, err := mb.loginFn()
+	if err != nil {
 		mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 		return err
 	}
+	mb.client = c
 
 	// Select mailbox
 	mbox, err := mb.client.Select(mb.Name, false)
@@ -183,14 +187,17 @@ func (mb *MailboxImpl) convertMessageToString(r io.Reader, filename string) erro
 		partCount := 1
 		for {
 			p, err := mr.NextPart()
-			switch err {
-			case io.EOF:
-				// No more parts
-			case nil:
+			switch {
+			case errors.Is(err, io.EOF):
+				return nil
+			case err != nil && strings.Contains(err.Error(), "multipart: NextPart: EOF"):
+				return nil
+			case err == nil:
 				messageEntity := *p
 				header := messageEntity.Header
 				t, params, err := header.ContentType()
 				if err != nil {
+					mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 					return err
 				}
 				b, err := io.ReadAll((*p).Body)
@@ -200,6 +207,7 @@ func (mb *MailboxImpl) convertMessageToString(r io.Reader, filename string) erro
 				}
 
 				if err != nil {
+					mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 					return err
 				}
 
@@ -207,27 +215,64 @@ func (mb *MailboxImpl) convertMessageToString(r io.Reader, filename string) erro
 				switch t {
 				case "text/html":
 					outfile, err = os.Create(fmt.Sprintf("%s_%d.html", filename, partCount))
-					if err != nil {
-						return err
-					}
+
 				case "text/plain":
-					// This is the message's text (can be plain-text or HTML)
 					outfile, err = os.Create(fmt.Sprintf("%s_%d.txt", filename, partCount))
-					if err != nil {
-						return err
-					}
+
+				case "application/msword":
+					outfile, err = os.Create(fmt.Sprintf("%s_%d.doc", filename, partCount))
+
+				case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+					outfile, err = os.Create(fmt.Sprintf("%s_%d.docx", filename, partCount))
+
+				case "application/zip":
+					outfile, err = os.Create(fmt.Sprintf("%s_%d.zip", filename, partCount))
+
+				case "multipart/alternative":
+					// Typically, you would not save "multipart/alternative" as a file because it's a container, not actual data.
+					// It may be useful to log this case or handle embedded parts separately.
+					mb.logger.InfoContext(mb.ctx, "Multipart/alternative encountered; processing embedded parts.")
+					continue // Skip to the next part
+
 				case "application/octet-stream":
-					outfile, err = os.Create(fmt.Sprintf("%s_%d_%s", filename, partCount, params["name"]))
-					if err != nil {
-						return err
+					// Guessing the filename from parameters or defaulting to a generic bin file
+					filenameParam := params["name"]
+					if filenameParam == "" {
+						filenameParam = fmt.Sprintf("octet-stream_%d.bin", partCount)
 					}
+					outfile, err = os.Create(fmt.Sprintf("%s_%s", filename, filenameParam))
+
+				default:
+					mb.logger.ErrorContext(mb.ctx, errors.New("Unknown header content type").Error(), slog.Any("type", t))
+					outfile, err = os.Create(fmt.Sprintf("%s_%d_unknown", filename, partCount))
 				}
-				writer := bufio.NewWriter(outfile)
-				_, err = writer.WriteString(string(b))
+
 				if err != nil {
+					mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 					return err
 				}
+
+				writer := bufio.NewWriter(outfile)
+				_, err = writer.Write(b)
+				if err != nil {
+					mb.logger.ErrorContext(
+						mb.ctx,
+						err.Error(),
+						slog.Any("error", utils.WrapError(err)),
+						slog.Any("outfile", outfile),
+						slog.Any("buffer", b),
+					)
+					return err
+				}
+
+				if err = writer.Flush(); err != nil {
+					mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
+				}
+				if err = outfile.Close(); err != nil {
+					mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
+				}
 			default:
+				mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 				return err
 			}
 
@@ -236,6 +281,7 @@ func (mb *MailboxImpl) convertMessageToString(r io.Reader, filename string) erro
 
 		t, _, err := m.Header.ContentType()
 		if err != nil {
+			mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 			return err
 		}
 		mb.logger.Info(mb.Name, "non-multipart message", t)
@@ -252,9 +298,10 @@ func (mb *MailboxImpl) saveEmail(timestamp time.Time, literal interface{}) error
 	var re = regexp.MustCompile(`[^a-zA-Z0-9]`)
 	dest := filepath.Join(filepath.Base("."), "exportedemails", re.ReplaceAllString(fileName, "_"))
 	// emailBodyContents,
-	error := mb.convertMessageToString(literal.(io.Reader), dest)
-	if error != nil {
-		return error
+	err := mb.convertMessageToString(literal.(io.Reader), dest)
+	if err != nil {
+		mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
+		return err
 	}
 	// log.Printf("Saving email to %s with %s", dest, emailBodyContents)
 	return nil // os.WriteFile(dest, []byte(emailBodyContents), 0644)
