@@ -39,6 +39,20 @@ func (m *MockClient) EXPECT() *MockClientMockRecorder {
 	return m.recorder
 }
 
+// Fetch mocks base method.
+func (m *MockClient) Fetch(seqset *imap.SeqSet, items []imap.FetchItem, ch chan *imap.Message) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Fetch", seqset, items, ch)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Fetch indicates an expected call of Fetch.
+func (mr *MockClientMockRecorder) Fetch(seqset, items, ch any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Fetch", reflect.TypeOf((*MockClient)(nil).Fetch), seqset, items, ch)
+}
+
 // List mocks base method.
 func (m *MockClient) List(ref, name string, ch chan *imap.MailboxInfo) error {
 	m.ctrl.T.Helper()

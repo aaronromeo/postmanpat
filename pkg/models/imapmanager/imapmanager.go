@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"runtime"
 
 	"aaronromeo.com/postmanpat/pkg/base"
 	"aaronromeo.com/postmanpat/pkg/models/mailbox"
+	"aaronromeo.com/postmanpat/pkg/utils"
 	"github.com/emersion/go-imap"
 	imapclient "github.com/emersion/go-imap/client"
 	"github.com/pkg/errors"
@@ -104,7 +104,7 @@ func WithCtx(ctx context.Context) ImapManagerOption {
 // Login
 func (srv ImapManagerImpl) Login() error {
 	if err := srv.client.Login(srv.username, srv.password); err != nil {
-		srv.logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to login: %v", err), slog.Any("error", wrapError(err)))
+		srv.logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to login: %v", err), slog.Any("error", utils.WrapError(err)))
 		return err
 	}
 
@@ -117,7 +117,7 @@ func (srv ImapManagerImpl) Login() error {
 func (srv ImapManagerImpl) LogoutFn() func() {
 	return func() {
 		if err := srv.client.Logout(); err != nil {
-			srv.logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to logout: %v", err), slog.Any("error", wrapError(err)))
+			srv.logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to logout: %v", err), slog.Any("error", utils.WrapError(err)))
 		}
 	}
 }
@@ -127,6 +127,7 @@ func (srv ImapManagerImpl) GetMailboxes() (map[string]*mailbox.MailboxImpl, erro
 	defer srv.LogoutFn()()
 
 	if err := srv.Login(); err != nil {
+		srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 		return nil, err
 	}
 
@@ -139,7 +140,7 @@ func (srv ImapManagerImpl) GetMailboxes() (map[string]*mailbox.MailboxImpl, erro
 	verifiedMailboxObjs := map[string]*mailbox.MailboxImpl{}
 	serializedMailboxObjs, err := srv.unserializeMailboxes()
 	if err != nil {
-		srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", wrapError(err)))
+		srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 		return nil, err
 	}
 	srv.logger.Info("Retrieved serializedMailboxObjs")
@@ -156,7 +157,7 @@ func (srv ImapManagerImpl) GetMailboxes() (map[string]*mailbox.MailboxImpl, erro
 			)
 
 			if err != nil {
-				srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", wrapError(err)))
+				srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 				return nil, err
 			}
 
@@ -169,7 +170,7 @@ func (srv ImapManagerImpl) GetMailboxes() (map[string]*mailbox.MailboxImpl, erro
 	}
 
 	if err := <-done; err != nil {
-		srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", wrapError(err)))
+		srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 		return nil, err
 	}
 
@@ -186,11 +187,11 @@ func (srv ImapManagerImpl) unserializeMailboxes() (map[string]*mailbox.MailboxIm
 	}
 
 	if mailboxFile, err := os.ReadFile(base.MailboxListFile); err != nil {
-		srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", wrapError(err)))
+		srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 		return nil, err
 	} else {
 		if err := json.Unmarshal(mailboxFile, &serializedMailboxObjs); err != nil {
-			srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", wrapError(err)))
+			srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 			return nil, err
 		}
 	}
@@ -204,7 +205,7 @@ func (srv ImapManagerImpl) unserializeMailboxes() (map[string]*mailbox.MailboxIm
 			mailbox.WithLogoutFn(srv.client.Logout),
 		)
 		if err != nil {
-			srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", wrapError(err)))
+			srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 			return nil, err
 		}
 
@@ -221,8 +222,3 @@ func (srv ImapManagerImpl) unserializeMailboxes() (map[string]*mailbox.MailboxIm
 }
 
 // Internal functions
-
-func wrapError(err error) error {
-	_, file, line, _ := runtime.Caller(1)
-	return errors.New(fmt.Sprintf("error at %s:%d: %v", file, line, err))
-}
