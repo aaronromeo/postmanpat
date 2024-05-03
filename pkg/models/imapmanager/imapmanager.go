@@ -23,10 +23,11 @@ type ImapManager interface {
 
 type ImapManagerImpl struct {
 	client    base.Client
-	logger    *slog.Logger
+	dialTLS   func(address string, tlsConfig *tls.Config) (base.Client, error)
 	username  string
 	password  string
 	address   string
+	logger    *slog.Logger
 	tlsConfig *tls.Config
 	ctx       context.Context
 }
@@ -42,16 +43,34 @@ func NewImapManager(opts ...ImapManagerOption) (*ImapManagerImpl, error) {
 		}
 	}
 
+	if imapMgr.dialTLS == nil {
+		imapMgr.dialTLS = func(address string, tlsConfig *tls.Config) (base.Client, error) {
+			c, err := imapclient.DialTLS(address, tlsConfig)
+			if err != nil {
+				return nil, err
+			}
+			return c, nil
+		}
+	}
+
 	if imapMgr.username == "" {
 		return nil, errors.New("requires username")
 	}
 
-	if imapMgr.username == "" {
+	if imapMgr.password == "" {
 		return nil, errors.New("requires password")
 	}
 
+	if imapMgr.client == nil && imapMgr.address == "" {
+		return nil, errors.New("requires client or address")
+	}
+
 	if imapMgr.client == nil {
-		return nil, errors.New("requires client")
+		c, err := imapMgr.dialTLS(imapMgr.address, imapMgr.tlsConfig)
+		if err != nil {
+			return nil, err
+		}
+		imapMgr.client = c
 	}
 
 	if imapMgr.logger == nil {
@@ -65,11 +84,6 @@ func WithTLSConfig(addr string, tlsConfig *tls.Config) ImapManagerOption {
 	return func(imapMgr *ImapManagerImpl) error {
 		imapMgr.address = addr
 		imapMgr.tlsConfig = tlsConfig
-		c, err := imapclient.DialTLS(addr, tlsConfig)
-		if err != nil {
-			return err
-		}
-		imapMgr.client = c
 		return nil
 	}
 }
@@ -85,6 +99,13 @@ func WithAuth(username string, password string) ImapManagerOption {
 func WithClient(c base.Client) ImapManagerOption {
 	return func(imapMgr *ImapManagerImpl) error {
 		imapMgr.client = c
+		return nil
+	}
+}
+
+func WithDialTLS(d func(address string, tlsConfig *tls.Config) (base.Client, error)) ImapManagerOption {
+	return func(imapMgr *ImapManagerImpl) error {
+		imapMgr.dialTLS = d
 		return nil
 	}
 }
@@ -120,7 +141,7 @@ func (srv ImapManagerImpl) Login() (base.Client, error) {
 	case imap.SelectedState:
 		srv.logger.Info("Already selected mailbox")
 	default: // imap.LogoutState and imap.ConnectedState
-		c, err := imapclient.DialTLS(srv.address, srv.tlsConfig)
+		c, err := srv.dialTLS(srv.address, srv.tlsConfig)
 		if err != nil {
 			srv.logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to create a client: %v", err), slog.Any("error", utils.WrapError(err)))
 			return srv.client, err

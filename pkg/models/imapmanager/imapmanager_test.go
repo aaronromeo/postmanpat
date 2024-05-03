@@ -1,7 +1,9 @@
 package imapmanager
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
 	"log/slog"
 	"os"
 	"testing"
@@ -14,8 +16,22 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+// setupLogger sets up a logger that only outputs if the test fails
+func setupLogger(t *testing.T) *slog.Logger {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	t.Cleanup(func() {
+		if t.Failed() {
+			os.Stdout.Write(buf.Bytes())
+		}
+	})
+
+	return logger
+}
+
 func TestNewImapManager(t *testing.T) {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)) // Assuming this sets up the logger
+	logger := setupLogger(t)
 	ctx := context.Background()
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -66,7 +82,7 @@ func TestGetMailboxesX(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockClient := mock.NewMockClient(ctrl)
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := setupLogger(t)
 	ctx := context.Background()
 
 	service, err := NewImapManager(
@@ -86,6 +102,9 @@ func TestGetMailboxesX(t *testing.T) {
 
 	mockClient.EXPECT().
 		Login("foo", "bar")
+
+	mockClient.EXPECT().
+		State().Return(imap.NotAuthenticatedState)
 
 	mockClient.EXPECT().
 		Logout()
@@ -143,7 +162,7 @@ func TestGetMailboxesErrorHandling(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockClient := mock.NewMockClient(ctrl)
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := setupLogger(t)
 	ctx := context.Background()
 
 	service, err := NewImapManager(
@@ -156,6 +175,7 @@ func TestGetMailboxesErrorHandling(t *testing.T) {
 
 	// Setup failing conditions
 	mockClient.EXPECT().Login(gomock.Any(), gomock.Any()).Return(nil)
+	mockClient.EXPECT().State().Return(imap.NotAuthenticatedState)
 	mockClient.EXPECT().List("", "*", gomock.Any()).DoAndReturn(func(_, _ string, ch chan *imap.MailboxInfo) error {
 		close(ch) // Ensure the channel is closed even when simulating an error
 		return errors.New("failed to list mailboxes")
@@ -171,28 +191,116 @@ func TestLogin(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
+	mockDailerCallCount := 0
 	mockClient := mock.NewMockClient(ctrl)
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	mockDialer := func(address string, tlsConfig *tls.Config) (base.Client, error) {
+		mockDailerCallCount++
+		return mockClient, nil
+	}
+	logger := setupLogger(t)
 	ctx := context.Background()
 
 	// Setup service
 	service, err := NewImapManager(
-		WithClient(mockClient),
 		WithAuth("testuser", "testpass"),
-		WithLogger(logger),
+		WithClient(mockClient),
 		WithCtx(ctx),
+		WithDialTLS(mockDialer),
+		WithLogger(logger),
 	)
 	assert.Nil(t, err, "Setup failed")
 
-	// Test successful login
-	mockClient.EXPECT().Login("testuser", "testpass").Return(nil)
-	_, err = service.Login()
-	assert.Nil(t, err, "Login should succeed without error")
+	// Test cases
+	tests := []struct {
+		name                    string
+		setupMocks              func(*mock.MockClient)
+		wantMockDailerCallCount int
+		wantErr                 bool
+	}{
+		{
+			name: "Successful login from not authenticated state",
+			setupMocks: func(mc *mock.MockClient) {
+				mockDailerCallCount = 0
+				mc.EXPECT().State().DoAndReturn(func() imap.ConnState {
+					return imap.NotAuthenticatedState
+				})
+				mc.EXPECT().Login("testuser", "testpass").Return(nil)
+			},
+			wantMockDailerCallCount: 0,
+			wantErr:                 false,
+		},
+		{
+			name: "Failed login from not authenticated state",
+			setupMocks: func(mc *mock.MockClient) {
+				mockDailerCallCount = 0
+				mc.EXPECT().State().DoAndReturn(func() imap.ConnState {
+					return imap.NotAuthenticatedState
+				})
+				mc.EXPECT().Login("testuser", "testpass").Return(errors.New("login failed"))
+			},
+			wantMockDailerCallCount: 0,
+			wantErr:                 true,
+		},
+		{
+			name: "Already authenticated",
+			setupMocks: func(mc *mock.MockClient) {
+				mockDailerCallCount = 0
+				mc.EXPECT().State().DoAndReturn(func() imap.ConnState {
+					return imap.AuthenticatedState
+				})
+			},
+			wantMockDailerCallCount: 0,
+			wantErr:                 false,
+		},
+		{
+			name: "Already selected mailbox",
+			setupMocks: func(mc *mock.MockClient) {
+				mockDailerCallCount = 0
+				mc.EXPECT().State().DoAndReturn(func() imap.ConnState {
+					return imap.SelectedState
+				})
+			},
+			wantMockDailerCallCount: 0,
+			wantErr:                 false,
+		},
+		{
+			name: "Successful re-login after disconnect",
+			setupMocks: func(mc *mock.MockClient) {
+				mockDailerCallCount = 0
+				mc.EXPECT().State().DoAndReturn(func() imap.ConnState {
+					return imap.LogoutState
+				})
+				mc.EXPECT().Login("testuser", "testpass").Return(nil)
+			},
+			wantMockDailerCallCount: 1,
+			wantErr:                 false,
+		},
+		{
+			name: "Failed re-login after disconnect",
+			setupMocks: func(mc *mock.MockClient) {
+				mockDailerCallCount = 0
+				mc.EXPECT().State().DoAndReturn(func() imap.ConnState {
+					return imap.LogoutState
+				})
+				mc.EXPECT().Login("testuser", "testpass").Return(errors.New("login failed"))
+			},
+			wantMockDailerCallCount: 1,
+			wantErr:                 true,
+		},
+	}
 
-	// Test failed login
-	mockClient.EXPECT().Login("testuser", "testpass").Return(errors.New("login failed"))
-	_, err = service.Login()
-	assert.NotNil(t, err, "Login should fail with an error")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setupMocks(mockClient)
+			_, err := service.Login()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Login() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if mockDailerCallCount != tt.wantMockDailerCallCount {
+				t.Errorf("Login() mockDailerCallCount = %v, want %v", mockDailerCallCount, tt.wantMockDailerCallCount)
+			}
+		})
+	}
 }
 
 func TestLogoutFn(t *testing.T) {
@@ -200,7 +308,7 @@ func TestLogoutFn(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockClient := mock.NewMockClient(ctrl)
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := setupLogger(t)
 	ctx := context.Background()
 
 	service, err := NewImapManager(
