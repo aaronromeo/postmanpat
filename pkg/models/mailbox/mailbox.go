@@ -35,11 +35,11 @@ type MailboxImpl struct {
 	Exportable bool   `json:"export"`
 	Lifespan   int    `json:"lifespan"`
 
-	client   base.Client
-	logger   *slog.Logger
-	ctx      context.Context
-	loginFn  func() (base.Client, error)
-	logoutFn func() error
+	client  base.Client
+	logger  *slog.Logger
+	ctx     context.Context
+	loginFn func() (base.Client, error)
+	logout  func() error
 }
 
 type MailboxOption func(*MailboxImpl) error
@@ -65,7 +65,7 @@ func NewMailbox(opts ...MailboxOption) (*MailboxImpl, error) {
 		return nil, errors.New("requires login function")
 	}
 
-	if mb.logoutFn == nil {
+	if mb.logout == nil {
 		return nil, errors.New("requires logout function")
 	}
 
@@ -104,13 +104,21 @@ func WithLoginFn(loginFn func() (base.Client, error)) MailboxOption {
 
 func WithLogoutFn(logoutFn func() error) MailboxOption {
 	return func(mb *MailboxImpl) error {
-		mb.logoutFn = logoutFn
+		mb.logout = logoutFn
 		return nil
 	}
 }
 
 func (mb *MailboxImpl) Reap() error {
 	return nil
+}
+
+func (mb *MailboxImpl) logoutFn() func() {
+	return func() {
+		if err := mb.logout(); err != nil {
+			mb.logger.ErrorContext(mb.ctx, fmt.Sprintf("Failed to logout: %v", err), slog.Any("error", utils.WrapError(err)))
+		}
+	}
 }
 
 func (mb *MailboxImpl) ExportMessages() error {

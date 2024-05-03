@@ -23,7 +23,7 @@ func setupLogger(t *testing.T) *slog.Logger {
 
 	t.Cleanup(func() {
 		if t.Failed() {
-			os.Stdout.Write(buf.Bytes())
+			os.Stdout.Write(buf.Bytes()) //nolint:errcheck
 		}
 	})
 
