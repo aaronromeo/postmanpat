@@ -186,12 +186,12 @@ func TestLogin(t *testing.T) {
 
 	// Test successful login
 	mockClient.EXPECT().Login("testuser", "testpass").Return(nil)
-	err = service.Login()
+	_, err = service.Login()
 	assert.Nil(t, err, "Login should succeed without error")
 
 	// Test failed login
 	mockClient.EXPECT().Login("testuser", "testpass").Return(errors.New("login failed"))
-	err = service.Login()
+	_, err = service.Login()
 	assert.NotNil(t, err, "Login should fail with an error")
 }
 

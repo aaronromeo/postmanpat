@@ -110,6 +110,20 @@ func (mr *MockClientMockRecorder) Select(name, readOnly any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Select", reflect.TypeOf((*MockClient)(nil).Select), name, readOnly)
 }
 
+// State mocks base method.
+func (m *MockClient) State() imap.ConnState {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "State")
+	ret0, _ := ret[0].(imap.ConnState)
+	return ret0
+}
+
+// State indicates an expected call of State.
+func (mr *MockClientMockRecorder) State() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "State", reflect.TypeOf((*MockClient)(nil).State))
+}
+
 // MockService is a mock of Service interface.
 type MockService struct {
 	ctrl     *gomock.Controller
