@@ -1,11 +1,8 @@
 package imapmanager
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
-	"log/slog"
-	"os"
 	"testing"
 
 	"aaronromeo.com/postmanpat/pkg/base"
@@ -16,22 +13,8 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-// setupLogger sets up a logger that only outputs if the test fails
-func setupLogger(t *testing.T) *slog.Logger {
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewJSONHandler(&buf, nil))
-
-	t.Cleanup(func() {
-		if t.Failed() {
-			os.Stdout.Write(buf.Bytes()) //nolint:errcheck
-		}
-	})
-
-	return logger
-}
-
 func TestNewImapManager(t *testing.T) {
-	logger := setupLogger(t)
+	logger := mock.SetupLogger(t)
 	ctx := context.Background()
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -45,6 +28,7 @@ func TestNewImapManager(t *testing.T) {
 			WithClient(mockClient),
 			WithLogger(logger),
 			WithCtx(ctx),
+			WithFileManager(mock.MockFileCreator{}),
 		)
 		assert.NoError(t, err)
 		assert.NotNil(t, service)
@@ -82,7 +66,7 @@ func TestGetMailboxesX(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockClient := mock.NewMockClient(ctrl)
-	logger := setupLogger(t)
+	logger := mock.SetupLogger(t)
 	ctx := context.Background()
 
 	service, err := NewImapManager(
@@ -90,6 +74,7 @@ func TestGetMailboxesX(t *testing.T) {
 		WithClient(mockClient),
 		WithLogger(logger),
 		WithCtx(ctx),
+		WithFileManager(mock.MockFileCreator{}),
 	)
 
 	if err != nil {
@@ -162,7 +147,7 @@ func TestGetMailboxesErrorHandling(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockClient := mock.NewMockClient(ctrl)
-	logger := setupLogger(t)
+	logger := mock.SetupLogger(t)
 	ctx := context.Background()
 
 	service, err := NewImapManager(
@@ -170,6 +155,7 @@ func TestGetMailboxesErrorHandling(t *testing.T) {
 		WithAuth("testuser", "testpass"),
 		WithLogger(logger),
 		WithCtx(ctx),
+		WithFileManager(mock.MockFileCreator{}),
 	)
 	assert.Nil(t, err, "Setup failed")
 
@@ -197,7 +183,7 @@ func TestLogin(t *testing.T) {
 		mockDailerCallCount++
 		return mockClient, nil
 	}
-	logger := setupLogger(t)
+	logger := mock.SetupLogger(t)
 	ctx := context.Background()
 
 	// Setup service
@@ -207,6 +193,7 @@ func TestLogin(t *testing.T) {
 		WithCtx(ctx),
 		WithDialTLS(mockDialer),
 		WithLogger(logger),
+		WithFileManager(mock.MockFileCreator{}),
 	)
 	assert.Nil(t, err, "Setup failed")
 
@@ -308,7 +295,7 @@ func TestLogoutFn(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockClient := mock.NewMockClient(ctrl)
-	logger := setupLogger(t)
+	logger := mock.SetupLogger(t)
 	ctx := context.Background()
 
 	service, err := NewImapManager(
@@ -316,6 +303,7 @@ func TestLogoutFn(t *testing.T) {
 		WithAuth("testuser", "testpass"),
 		WithLogger(logger),
 		WithCtx(ctx),
+		WithFileManager(mock.MockFileCreator{}),
 	)
 	assert.Nil(t, err, "Setup failed")
 

@@ -22,14 +22,15 @@ type ImapManager interface {
 }
 
 type ImapManagerImpl struct {
-	client    base.Client
-	dialTLS   func(address string, tlsConfig *tls.Config) (base.Client, error)
-	username  string
-	password  string
-	address   string
-	logger    *slog.Logger
-	tlsConfig *tls.Config
-	ctx       context.Context
+	client      base.Client
+	dialTLS     func(address string, tlsConfig *tls.Config) (base.Client, error)
+	username    string
+	password    string
+	address     string
+	logger      *slog.Logger
+	tlsConfig   *tls.Config
+	ctx         context.Context
+	fileCreator utils.FileCreator
 }
 
 type ImapManagerOption func(*ImapManagerImpl) error
@@ -77,6 +78,10 @@ func NewImapManager(opts ...ImapManagerOption) (*ImapManagerImpl, error) {
 		return nil, errors.New("requires slogger")
 	}
 
+	if imapMgr.fileCreator == nil {
+		return nil, errors.New("requires file creator")
+	}
+
 	return &imapMgr, nil
 }
 
@@ -122,6 +127,13 @@ func WithCtx(ctx context.Context) ImapManagerOption {
 	// ctx := context.Background()
 	return func(isi *ImapManagerImpl) error {
 		isi.ctx = ctx
+		return nil
+	}
+}
+
+func WithFileManager(fileCreator utils.FileCreator) ImapManagerOption {
+	return func(isi *ImapManagerImpl) error {
+		isi.fileCreator = fileCreator
 		return nil
 	}
 }
@@ -200,6 +212,7 @@ func (srv ImapManagerImpl) GetMailboxes() (map[string]*mailbox.MailboxImpl, erro
 				mailbox.WithCtx(srv.ctx),
 				mailbox.WithLoginFn(srv.Login),
 				mailbox.WithLogoutFn(srv.client.Logout),
+				mailbox.WithFileManager(utils.OSFileCreator{}),
 			)
 
 			if err != nil {
@@ -249,6 +262,7 @@ func (srv ImapManagerImpl) unserializeMailboxes() (map[string]*mailbox.MailboxIm
 			mailbox.WithCtx(srv.ctx),
 			mailbox.WithLoginFn(srv.Login),
 			mailbox.WithLogoutFn(srv.client.Logout),
+			mailbox.WithFileManager(utils.OSFileCreator{}),
 		)
 		if err != nil {
 			srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))

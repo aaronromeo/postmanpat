@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -35,14 +34,21 @@ type MailboxImpl struct {
 	Exportable bool   `json:"export"`
 	Lifespan   int    `json:"lifespan"`
 
-	client  base.Client
-	logger  *slog.Logger
-	ctx     context.Context
-	loginFn func() (base.Client, error)
-	logout  func() error
+	client      base.Client
+	logger      *slog.Logger
+	ctx         context.Context
+	loginFn     func() (base.Client, error)
+	logoutFn    func() error
+	fileManager utils.FileCreator
 }
 
 type MailboxOption func(*MailboxImpl) error
+
+type OutputFileName struct {
+	Name           string
+	Differentiator string
+	Extension      string
+}
 
 func NewMailbox(opts ...MailboxOption) (*MailboxImpl, error) {
 	var mb MailboxImpl
@@ -65,8 +71,12 @@ func NewMailbox(opts ...MailboxOption) (*MailboxImpl, error) {
 		return nil, errors.New("requires login function")
 	}
 
-	if mb.logout == nil {
+	if mb.logoutFn == nil {
 		return nil, errors.New("requires logout function")
+	}
+
+	if mb.fileManager == nil {
+		return nil, errors.New("requires file manager")
 	}
 
 	return &mb, nil
@@ -104,7 +114,14 @@ func WithLoginFn(loginFn func() (base.Client, error)) MailboxOption {
 
 func WithLogoutFn(logoutFn func() error) MailboxOption {
 	return func(mb *MailboxImpl) error {
-		mb.logout = logoutFn
+		mb.logoutFn = logoutFn
+		return nil
+	}
+}
+
+func WithFileManager(fileManager utils.FileCreator) MailboxOption {
+	return func(mb *MailboxImpl) error {
+		mb.fileManager = fileManager
 		return nil
 	}
 }
@@ -113,9 +130,9 @@ func (mb *MailboxImpl) Reap() error {
 	return nil
 }
 
-func (mb *MailboxImpl) logoutFn() func() {
+func (mb *MailboxImpl) wrappedLogoutFn() func() {
 	return func() {
-		if err := mb.logout(); err != nil {
+		if err := mb.logoutFn(); err != nil {
 			mb.logger.ErrorContext(mb.ctx, fmt.Sprintf("Failed to logout: %v", err), slog.Any("error", utils.WrapError(err)))
 		}
 	}
@@ -123,7 +140,7 @@ func (mb *MailboxImpl) logoutFn() func() {
 
 func (mb *MailboxImpl) ExportMessages() error {
 	// Defer logout
-	defer mb.logoutFn()
+	defer mb.wrappedLogoutFn()
 
 	// Login
 	c, err := mb.loginFn()
@@ -183,8 +200,9 @@ func (mb *MailboxImpl) convertMessageToString(r io.Reader, filename string) erro
 	m, err := message.Read(r)
 	if message.IsUnknownCharset(err) {
 		// This error is not fatal
-		return errors.New(fmt.Sprintf("Unknown encoding: %v", err))
+		return errors.Errorf("Unknown encoding: %v", err)
 	} else if err != nil {
+		mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 		return err
 	}
 
@@ -197,8 +215,10 @@ func (mb *MailboxImpl) convertMessageToString(r io.Reader, filename string) erro
 			p, err := mr.NextPart()
 			switch {
 			case errors.Is(err, io.EOF):
+				mb.logger.Info(mb.Name, "message", "End of message")
 				return nil
 			case err != nil && strings.Contains(err.Error(), "multipart: NextPart: EOF"):
+				mb.logger.Info(mb.Name, "message", "End of message")
 				return nil
 			case err == nil:
 				messageEntity := *p
@@ -219,22 +239,23 @@ func (mb *MailboxImpl) convertMessageToString(r io.Reader, filename string) erro
 					return err
 				}
 
-				var outfile *os.File
+				var fileName string
+				mb.logger.Info(mb.Name, "filetype", t)
 				switch t {
 				case "text/html":
-					outfile, err = os.Create(fmt.Sprintf("%s_%d.html", filename, partCount))
+					fileName = fmt.Sprintf("%s_%d.%s", filename, partCount, "html")
 
 				case "text/plain":
-					outfile, err = os.Create(fmt.Sprintf("%s_%d.txt", filename, partCount))
+					fileName = fmt.Sprintf("%s_%d.%s", filename, partCount, "txt")
 
 				case "application/msword":
-					outfile, err = os.Create(fmt.Sprintf("%s_%d.doc", filename, partCount))
+					fileName = fmt.Sprintf("%s_%d.%s", filename, partCount, "doc")
 
 				case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-					outfile, err = os.Create(fmt.Sprintf("%s_%d.docx", filename, partCount))
+					fileName = fmt.Sprintf("%s_%d.%s", filename, partCount, "docx")
 
 				case "application/zip":
-					outfile, err = os.Create(fmt.Sprintf("%s_%d.zip", filename, partCount))
+					fileName = fmt.Sprintf("%s_%d.%s", filename, partCount, "zip")
 
 				case "multipart/alternative":
 					// Typically, you would not save "multipart/alternative" as a file because it's a container, not actual data.
@@ -248,13 +269,14 @@ func (mb *MailboxImpl) convertMessageToString(r io.Reader, filename string) erro
 					if filenameParam == "" {
 						filenameParam = fmt.Sprintf("octet-stream_%d.bin", partCount)
 					}
-					outfile, err = os.Create(fmt.Sprintf("%s_%s", filename, filenameParam))
+					fileName = fmt.Sprintf("%s_%s", filename, filenameParam)
 
 				default:
 					mb.logger.ErrorContext(mb.ctx, errors.New("Unknown header content type").Error(), slog.Any("type", t))
-					outfile, err = os.Create(fmt.Sprintf("%s_%d_unknown", filename, partCount))
+					fileName = fmt.Sprintf("%s_%d", filename, partCount)
 				}
 
+				outfile, err := mb.fileManager.Create(fileName)
 				if err != nil {
 					mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 					return err
@@ -301,16 +323,16 @@ func (mb *MailboxImpl) convertMessageToString(r io.Reader, filename string) erro
 func (mb *MailboxImpl) saveEmail(timestamp time.Time, literal interface{}) error {
 	// Save email to disk
 	timestampStr := timestamp.Format(EMAIL_EXPORT_TIMESTAMP_FORMAT)
+
+	// TODO: Clean up the file name and destination
+
 	fileName := fmt.Sprintf("%s-%s.eml", mb.Name, timestampStr)
 
 	var re = regexp.MustCompile(`[^a-zA-Z0-9]`)
 	dest := filepath.Join(filepath.Base("."), "exportedemails", re.ReplaceAllString(fileName, "_"))
-	// emailBodyContents,
-	err := mb.convertMessageToString(literal.(io.Reader), dest)
-	if err != nil {
+	if err := mb.convertMessageToString(literal.(io.Reader), dest); err != nil {
 		mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 		return err
 	}
-	// log.Printf("Saving email to %s with %s", dest, emailBodyContents)
-	return nil // os.WriteFile(dest, []byte(emailBodyContents), 0644)
+	return nil
 }
