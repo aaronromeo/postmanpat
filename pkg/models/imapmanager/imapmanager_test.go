@@ -28,7 +28,7 @@ func TestNewImapManager(t *testing.T) {
 			WithClient(mockClient),
 			WithLogger(logger),
 			WithCtx(ctx),
-			WithFileManager(mock.MockFileCreator{}),
+			WithFileManager(mock.MockFileWriter{}),
 		)
 		assert.NoError(t, err)
 		assert.NotNil(t, service)
@@ -74,7 +74,7 @@ func TestGetMailboxesX(t *testing.T) {
 		WithClient(mockClient),
 		WithLogger(logger),
 		WithCtx(ctx),
-		WithFileManager(mock.MockFileCreator{}),
+		WithFileManager(mock.MockFileWriter{}),
 	)
 
 	if err != nil {
@@ -155,7 +155,7 @@ func TestGetMailboxesErrorHandling(t *testing.T) {
 		WithAuth("testuser", "testpass"),
 		WithLogger(logger),
 		WithCtx(ctx),
-		WithFileManager(mock.MockFileCreator{}),
+		WithFileManager(mock.MockFileWriter{}),
 	)
 	assert.Nil(t, err, "Setup failed")
 
@@ -193,7 +193,7 @@ func TestLogin(t *testing.T) {
 		WithCtx(ctx),
 		WithDialTLS(mockDialer),
 		WithLogger(logger),
-		WithFileManager(mock.MockFileCreator{}),
+		WithFileManager(mock.MockFileWriter{}),
 	)
 	assert.Nil(t, err, "Setup failed")
 
@@ -303,7 +303,7 @@ func TestLogoutFn(t *testing.T) {
 		WithAuth("testuser", "testpass"),
 		WithLogger(logger),
 		WithCtx(ctx),
-		WithFileManager(mock.MockFileCreator{}),
+		WithFileManager(mock.MockFileWriter{}),
 	)
 	assert.Nil(t, err, "Setup failed")
 

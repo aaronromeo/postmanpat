@@ -1,7 +1,6 @@
 package mailbox
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -39,7 +38,7 @@ type MailboxImpl struct {
 	ctx         context.Context
 	loginFn     func() (base.Client, error)
 	logoutFn    func() error
-	fileManager utils.FileCreator
+	fileManager utils.FileWriter
 }
 
 type MailboxOption func(*MailboxImpl) error
@@ -119,7 +118,7 @@ func WithLogoutFn(logoutFn func() error) MailboxOption {
 	}
 }
 
-func WithFileManager(fileManager utils.FileCreator) MailboxOption {
+func WithFileManager(fileManager utils.FileWriter) MailboxOption {
 	return func(mb *MailboxImpl) error {
 		mb.fileManager = fileManager
 		return nil
@@ -172,6 +171,7 @@ func (mb *MailboxImpl) ExportMessages() error {
 
 	for msg := range messages {
 		mb.logger.Info(mb.Name, "Subject", msg.Envelope.Subject)
+		mb.logger.Info(mb.Name, "Body", fmt.Sprintf("%+v", msg.Body))
 		for _, literal := range msg.Body {
 			if err := mb.saveEmail(msg.Envelope.Date, literal); err != nil {
 				mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
@@ -228,9 +228,9 @@ func (mb *MailboxImpl) convertMessageToString(r io.Reader, filename string) erro
 					mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 					return err
 				}
-				b, err := io.ReadAll((*p).Body)
+				messageBody, err := io.ReadAll((*p).Body)
 
-				if len(b) == 0 { // Skip empty parts
+				if len(messageBody) == 0 { // Skip empty parts
 					continue
 				}
 
@@ -276,29 +276,26 @@ func (mb *MailboxImpl) convertMessageToString(r io.Reader, filename string) erro
 					fileName = fmt.Sprintf("%s_%d", filename, partCount)
 				}
 
-				outfile, err := mb.fileManager.Create(fileName)
+				writer, err := mb.fileManager.Create(fileName)
 				if err != nil {
 					mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 					return err
 				}
 
-				writer := bufio.NewWriter(outfile)
-				_, err = writer.Write(b)
+				mb.logger.Info(mb.Name, "messageBody", string(messageBody[:]))
+				_, err = writer.Write(messageBody)
 				if err != nil {
 					mb.logger.ErrorContext(
 						mb.ctx,
 						err.Error(),
 						slog.Any("error", utils.WrapError(err)),
-						slog.Any("outfile", outfile),
-						slog.Any("buffer", b),
+						slog.Any("fileName", fileName),
+						slog.Any("buffer", messageBody),
 					)
 					return err
 				}
 
 				if err = writer.Flush(); err != nil {
-					mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
-				}
-				if err = outfile.Close(); err != nil {
 					mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 				}
 			default:

@@ -2,6 +2,7 @@ package mailbox
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -33,7 +34,7 @@ func TestNewMailbox(t *testing.T) {
 				WithCtx(ctx),
 				WithLoginFn(func() (base.Client, error) { return mockClient, nil }),
 				WithLogoutFn(func() error { return nil }),
-				WithFileManager(mock.MockFileCreator{}),
+				WithFileManager(mock.MockFileWriter{}),
 			},
 			wantErr: false,
 		},
@@ -66,7 +67,7 @@ func TestExportMessages(t *testing.T) {
 	mockClient := mock.NewMockClient(ctrl)
 	logger := mock.SetupLogger(t)
 	ctx := context.Background()
-	mockfileManager := mock.MockFileCreator{}
+	mockfileManager := mock.MockFileWriter{Writers: &[]mock.MockWriter{}}
 
 	// Setup the Mailbox with mock dependencies
 	mb := &MailboxImpl{
@@ -82,6 +83,19 @@ func TestExportMessages(t *testing.T) {
 	// Mock mailbox status with 10 messages
 	mboxStatus := &imap.MailboxStatus{Messages: 10}
 	mockClient.EXPECT().Select("INBOX", false).Return(mboxStatus, nil)
+
+	names := [10]string{
+		"Ludwig van Beethoven",
+		"Frédéric Chopin",
+		"Franz Liszt",
+		"Clara Schumann",
+		"Sergei Rachmaninoff",
+		"Arthur Rubinstein",
+		"Vladimir Horowitz",
+		"Glenn Gould",
+		"Martha Argerich",
+		"Lang Lang",
+	}
 
 	// Prepare the mocked message fetching
 	mockClient.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
@@ -107,7 +121,7 @@ func TestExportMessages(t *testing.T) {
 							"Content-Type: text/plain\r\n" +
 							"Content-Disposition: attachment; filename=note.txt\r\n" +
 							"\r\n" +
-							"I'm Mitsuha.\r\n" +
+							fmt.Sprintf("I'm %s.\r\n", names[i]) +
 							"--message-boundary--\r\n"),
 					},
 				}
@@ -123,4 +137,9 @@ func TestExportMessages(t *testing.T) {
 	// Test ExportMessages
 	err := mb.ExportMessages()
 	assert.NoError(t, err)
+
+	assert.Equal(t, 10, len(*mockfileManager.Writers))
+	for i, name := range names {
+		assert.Contains(t, (*mockfileManager.Writers)[i].Buffer.String(), fmt.Sprintf("I'm %s.", name))
+	}
 }

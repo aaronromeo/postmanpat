@@ -30,7 +30,7 @@ type ImapManagerImpl struct {
 	logger      *slog.Logger
 	tlsConfig   *tls.Config
 	ctx         context.Context
-	fileCreator utils.FileCreator
+	fileCreator utils.FileWriter
 }
 
 type ImapManagerOption func(*ImapManagerImpl) error
@@ -131,7 +131,7 @@ func WithCtx(ctx context.Context) ImapManagerOption {
 	}
 }
 
-func WithFileManager(fileCreator utils.FileCreator) ImapManagerOption {
+func WithFileManager(fileCreator utils.FileWriter) ImapManagerOption {
 	return func(isi *ImapManagerImpl) error {
 		isi.fileCreator = fileCreator
 		return nil
@@ -212,7 +212,7 @@ func (srv ImapManagerImpl) GetMailboxes() (map[string]*mailbox.MailboxImpl, erro
 				mailbox.WithCtx(srv.ctx),
 				mailbox.WithLoginFn(srv.Login),
 				mailbox.WithLogoutFn(srv.client.Logout),
-				mailbox.WithFileManager(utils.OSFileCreator{}),
+				mailbox.WithFileManager(utils.OSFileWriter{}),
 			)
 
 			if err != nil {
@@ -262,7 +262,7 @@ func (srv ImapManagerImpl) unserializeMailboxes() (map[string]*mailbox.MailboxIm
 			mailbox.WithCtx(srv.ctx),
 			mailbox.WithLoginFn(srv.Login),
 			mailbox.WithLogoutFn(srv.client.Logout),
-			mailbox.WithFileManager(utils.OSFileCreator{}),
+			mailbox.WithFileManager(utils.OSFileWriter{}),
 		)
 		if err != nil {
 			srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
