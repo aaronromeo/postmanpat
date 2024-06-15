@@ -3,22 +3,15 @@ package mailbox
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"path/filepath"
-	"regexp"
-	"strings"
-	"time"
 
 	"aaronromeo.com/postmanpat/pkg/base"
 	"aaronromeo.com/postmanpat/pkg/utils"
 	"github.com/emersion/go-imap"
-	"github.com/emersion/go-message"
 	_ "github.com/emersion/go-message/charset"
 	"github.com/pkg/errors"
 )
-
-const EMAIL_EXPORT_TIMESTAMP_FORMAT = "20060102150405"
 
 type Mailbox interface {
 	Reap() error
@@ -28,17 +21,16 @@ type Mailbox interface {
 }
 
 type MailboxImpl struct {
-	Name       string `json:"name"`
-	Deletable  bool   `json:"delete"`
-	Exportable bool   `json:"export"`
-	Lifespan   int    `json:"lifespan"`
-
-	client      base.Client
-	logger      *slog.Logger
-	ctx         context.Context
-	loginFn     func() (base.Client, error)
-	logoutFn    func() error
-	fileManager utils.FileWriter
+	Name        string `json:"name"`
+	Deletable   bool   `json:"delete"`
+	Exportable  bool   `json:"export"`
+	Lifespan    int    `json:"lifespan"`
+	Client      base.Client
+	Ctx         context.Context
+	FileManager utils.FileManager
+	Logger      *slog.Logger
+	LoginFn     func() (base.Client, error)
+	LogoutFn    func() error
 }
 
 type MailboxOption func(*MailboxImpl) error
@@ -58,23 +50,23 @@ func NewMailbox(opts ...MailboxOption) (*MailboxImpl, error) {
 		}
 	}
 
-	if mb.client == nil {
+	if mb.Client == nil {
 		return nil, errors.New("requires client")
 	}
 
-	if mb.logger == nil {
+	if mb.Logger == nil {
 		return nil, errors.New("requires slogger")
 	}
 
-	if mb.loginFn == nil {
+	if mb.LoginFn == nil {
 		return nil, errors.New("requires login function")
 	}
 
-	if mb.logoutFn == nil {
+	if mb.LogoutFn == nil {
 		return nil, errors.New("requires logout function")
 	}
 
-	if mb.fileManager == nil {
+	if mb.FileManager == nil {
 		return nil, errors.New("requires file manager")
 	}
 
@@ -83,7 +75,7 @@ func NewMailbox(opts ...MailboxOption) (*MailboxImpl, error) {
 
 func WithClient(c base.Client) MailboxOption {
 	return func(mb *MailboxImpl) error {
-		mb.client = c
+		mb.Client = c
 		return nil
 	}
 }
@@ -91,7 +83,7 @@ func WithClient(c base.Client) MailboxOption {
 func WithLogger(logger *slog.Logger) MailboxOption {
 	// slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	return func(mb *MailboxImpl) error {
-		mb.logger = logger
+		mb.Logger = logger
 		return nil
 	}
 }
@@ -99,28 +91,28 @@ func WithLogger(logger *slog.Logger) MailboxOption {
 func WithCtx(ctx context.Context) MailboxOption {
 	// ctx := context.Background()
 	return func(mb *MailboxImpl) error {
-		mb.ctx = ctx
+		mb.Ctx = ctx
 		return nil
 	}
 }
 
 func WithLoginFn(loginFn func() (base.Client, error)) MailboxOption {
 	return func(mb *MailboxImpl) error {
-		mb.loginFn = loginFn
+		mb.LoginFn = loginFn
 		return nil
 	}
 }
 
 func WithLogoutFn(logoutFn func() error) MailboxOption {
 	return func(mb *MailboxImpl) error {
-		mb.logoutFn = logoutFn
+		mb.LogoutFn = logoutFn
 		return nil
 	}
 }
 
-func WithFileManager(fileManager utils.FileWriter) MailboxOption {
+func WithFileManager(fileManager utils.FileManager) MailboxOption {
 	return func(mb *MailboxImpl) error {
-		mb.fileManager = fileManager
+		mb.FileManager = fileManager
 		return nil
 	}
 }
@@ -131,8 +123,8 @@ func (mb *MailboxImpl) Reap() error {
 
 func (mb *MailboxImpl) wrappedLogoutFn() func() {
 	return func() {
-		if err := mb.logoutFn(); err != nil {
-			mb.logger.ErrorContext(mb.ctx, fmt.Sprintf("Failed to logout: %v", err), slog.Any("error", utils.WrapError(err)))
+		if err := mb.LogoutFn(); err != nil {
+			mb.Logger.ErrorContext(mb.Ctx, fmt.Sprintf("Failed to logout: %v", err), slog.Any("error", utils.WrapError(err)))
 		}
 	}
 }
@@ -142,20 +134,20 @@ func (mb *MailboxImpl) ExportMessages() error {
 	defer mb.wrappedLogoutFn()
 
 	// Login
-	c, err := mb.loginFn()
+	c, err := mb.LoginFn()
 	if err != nil {
-		mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
+		mb.Logger.ErrorContext(mb.Ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 		return err
 	}
-	mb.client = c
+	mb.Client = c
 
 	// Select mailbox
-	mbox, err := mb.client.Select(mb.Name, false)
+	mbox, err := mb.Client.Select(mb.Name, false)
 	if err != nil {
-		mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
+		mb.Logger.ErrorContext(mb.Ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 		return err
 	}
-	mb.logger.Info(mb.Name, "Mailbox messages", mbox.Messages)
+	mb.Logger.Info(mb.Name, "Mailbox messages", mbox.Messages)
 
 	seqSet := new(imap.SeqSet)
 	seqSet.AddRange(1, mbox.Messages)
@@ -164,19 +156,22 @@ func (mb *MailboxImpl) ExportMessages() error {
 	messages := make(chan *imap.Message, mbox.Messages)
 	done := make(chan error, 1)
 	go func() {
-		done <- mb.client.Fetch(seqSet, []imap.FetchItem{section.FetchItem(), imap.FetchEnvelope}, messages)
+		done <- mb.Client.Fetch(seqSet, []imap.FetchItem{section.FetchItem(), imap.FetchEnvelope}, messages)
 	}()
 
-	mb.logger.Info(mb.Name, "Fetched messages count", len(messages))
+	mb.Logger.Info(mb.Name, "Fetched messages count", len(messages))
 
 	for msg := range messages {
-		mb.logger.Info(mb.Name, "Subject", msg.Envelope.Subject)
-		mb.logger.Info(mb.Name, "Body", fmt.Sprintf("%+v", msg.Body))
-		for _, literal := range msg.Body {
-			if err := mb.saveEmail(msg.Envelope.Date, literal); err != nil {
-				mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
-				return err
-			}
+		mb.Logger.Info(mb.Name, "Subject", msg.Envelope.Subject)
+		// mb.Logger.Info(mb.Name, "Body", fmt.Sprintf("%+v", msg.Body))
+		messageContainers, err := ExportedEmailContainerFactory(mb.Name, msg)
+		if err != nil {
+			mb.Logger.ErrorContext(mb.Ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
+			return err
+		}
+
+		for _, emb := range messageContainers {
+			emb.WriteToFile(mb.Logger, mb.FileManager, filepath.Join(".", "exportedemails"))
 		}
 	}
 
@@ -194,142 +189,4 @@ func (mb *MailboxImpl) Serialize() (base.SerializedMailbox, error) {
 		Delete:   mb.Deletable,
 		Lifespan: mb.Lifespan,
 	}, nil
-}
-
-func (mb *MailboxImpl) convertMessageToString(r io.Reader, filename string) error { //(string, error) {
-	m, err := message.Read(r)
-	if message.IsUnknownCharset(err) {
-		// This error is not fatal
-		return errors.Errorf("Unknown encoding: %v", err)
-	} else if err != nil {
-		mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
-		return err
-	}
-
-	if mr := m.MultipartReader(); mr != nil {
-		// This is a multipart message
-		// mb.logger.Info(mb.Name, "multipart message")
-
-		partCount := 1
-		for {
-			p, err := mr.NextPart()
-			switch {
-			case errors.Is(err, io.EOF):
-				mb.logger.Info(mb.Name, "message", "End of message")
-				return nil
-			case err != nil && strings.Contains(err.Error(), "multipart: NextPart: EOF"):
-				mb.logger.Info(mb.Name, "message", "End of message")
-				return nil
-			case err == nil:
-				messageEntity := *p
-				header := messageEntity.Header
-				t, params, err := header.ContentType()
-				if err != nil {
-					mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
-					return err
-				}
-				messageBody, err := io.ReadAll((*p).Body)
-
-				if len(messageBody) == 0 { // Skip empty parts
-					continue
-				}
-
-				if err != nil {
-					mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
-					return err
-				}
-
-				var fileName string
-				mb.logger.Info(mb.Name, "filetype", t)
-				switch t {
-				case "text/html":
-					fileName = fmt.Sprintf("%s_%d.%s", filename, partCount, "html")
-
-				case "text/plain":
-					fileName = fmt.Sprintf("%s_%d.%s", filename, partCount, "txt")
-
-				case "application/msword":
-					fileName = fmt.Sprintf("%s_%d.%s", filename, partCount, "doc")
-
-				case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-					fileName = fmt.Sprintf("%s_%d.%s", filename, partCount, "docx")
-
-				case "application/zip":
-					fileName = fmt.Sprintf("%s_%d.%s", filename, partCount, "zip")
-
-				case "multipart/alternative":
-					// Typically, you would not save "multipart/alternative" as a file because it's a container, not actual data.
-					// It may be useful to log this case or handle embedded parts separately.
-					mb.logger.InfoContext(mb.ctx, "Multipart/alternative encountered; processing embedded parts.")
-					continue // Skip to the next part
-
-				case "application/octet-stream":
-					// Guessing the filename from parameters or defaulting to a generic bin file
-					filenameParam := params["name"]
-					if filenameParam == "" {
-						filenameParam = fmt.Sprintf("octet-stream_%d.bin", partCount)
-					}
-					fileName = fmt.Sprintf("%s_%s", filename, filenameParam)
-
-				default:
-					mb.logger.ErrorContext(mb.ctx, errors.New("Unknown header content type").Error(), slog.Any("type", t))
-					fileName = fmt.Sprintf("%s_%d", filename, partCount)
-				}
-
-				writer, err := mb.fileManager.Create(fileName)
-				if err != nil {
-					mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
-					return err
-				}
-
-				mb.logger.Info(mb.Name, "messageBody", string(messageBody[:]))
-				_, err = writer.Write(messageBody)
-				if err != nil {
-					mb.logger.ErrorContext(
-						mb.ctx,
-						err.Error(),
-						slog.Any("error", utils.WrapError(err)),
-						slog.Any("fileName", fileName),
-						slog.Any("buffer", messageBody),
-					)
-					return err
-				}
-
-				if err = writer.Flush(); err != nil {
-					mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
-				}
-			default:
-				mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
-				return err
-			}
-
-		}
-	} else {
-
-		t, _, err := m.Header.ContentType()
-		if err != nil {
-			mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
-			return err
-		}
-		mb.logger.Info(mb.Name, "non-multipart message", t)
-	}
-
-	return nil
-}
-
-func (mb *MailboxImpl) saveEmail(timestamp time.Time, literal interface{}) error {
-	// Save email to disk
-	timestampStr := timestamp.Format(EMAIL_EXPORT_TIMESTAMP_FORMAT)
-
-	// TODO: Clean up the file name and destination
-
-	fileName := fmt.Sprintf("%s-%s.eml", mb.Name, timestampStr)
-
-	var re = regexp.MustCompile(`[^a-zA-Z0-9]`)
-	dest := filepath.Join(filepath.Base("."), "exportedemails", re.ReplaceAllString(fileName, "_"))
-	if err := mb.convertMessageToString(literal.(io.Reader), dest); err != nil {
-		mb.logger.ErrorContext(mb.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
-		return err
-	}
-	return nil
 }

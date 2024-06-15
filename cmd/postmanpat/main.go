@@ -9,6 +9,7 @@ import (
 
 	"aaronromeo.com/postmanpat/pkg/base"
 	imap "aaronromeo.com/postmanpat/pkg/models/imapmanager"
+	"aaronromeo.com/postmanpat/pkg/utils"
 	"github.com/joho/godotenv"
 )
 
@@ -27,6 +28,7 @@ func main() {
 		imap.WithAuth(os.Getenv("IMAP_USER"), os.Getenv("IMAP_PASS")),
 		imap.WithCtx(ctx),
 		imap.WithLogger(logger),
+		imap.WithFileManager(utils.OSFileManager{}),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -40,15 +42,29 @@ func main() {
 		log.Fatal(err)
 	}
 
-	log.Println("After List mailboxes")
+	type exportedMailbox struct {
+		Name       string `json:"name"`
+		Deletable  bool   `json:"deletable"`
+		Exportable bool   `json:"exportable"`
+		Lifespan   int    `json:"lifespan"`
+	}
+	exportedMailboxes := make(map[string]exportedMailbox, len(verifiedMailboxObjs))
+	for mailboxName, mailbox := range verifiedMailboxObjs {
+		exportedMailboxes[mailboxName] = exportedMailbox{
+			Name:       mailbox.Name,
+			Deletable:  mailbox.Deletable,
+			Exportable: mailbox.Exportable,
+			Lifespan:   mailbox.Lifespan,
+		}
+	}
 
-	encodedMailboxes, err := json.MarshalIndent(verifiedMailboxObjs, "", "  ")
+	encodedMailboxes, err := json.MarshalIndent(exportedMailboxes, "", "  ")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Converting mailbox names to JSON error %+v", err)
 	}
 
 	if err := os.WriteFile(base.MailboxListFile, encodedMailboxes, 0644); err != nil {
-		log.Fatal(err)
+		log.Fatalf("Writing mailbox names file error %+v", err)
 	}
 
 	// utils.ExportEmailsFromMailbox(c, os.Getenv("IMAP_FOLDER"))
@@ -56,7 +72,7 @@ func main() {
 	// log.Printf("Exporting messages from %s\n", mailbox.Name)
 	err = verifiedMailboxObjs[os.Getenv("IMAP_FOLDER")].ExportMessages()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Exporting mailbox `%s` error", os.Getenv("IMAP_FOLDER"))
 	}
 	// }
 
