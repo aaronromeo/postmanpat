@@ -1,8 +1,6 @@
 package mailbox
 
 import (
-	"crypto/md5"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -20,25 +18,6 @@ import (
 
 const EMAIL_EXPORT_TIMESTAMP_FORMAT = "20060102150405"
 
-type ExportedEmailContainer struct {
-	bcc                  []*imap.Address
-	cc                   []*imap.Address
-	extractedFileName    string
-	from                 []*imap.Address
-	inReplyTo            string
-	mailboxName          string
-	messageId            string
-	msgBody              []byte
-	msgBodyContentType   string
-	msgBodyPartPosition  int
-	msgBodyPartSpecifier string
-	replyTo              []*imap.Address
-	sender               []*imap.Address
-	subject              string
-	timestamp            time.Time
-	to                   []*imap.Address
-}
-
 type ExportedEmailMetadata struct {
 	Subject     string    `json:"subject"`
 	From        string    `json:"from"`
@@ -51,72 +30,61 @@ type ExportedEmailMetadata struct {
 	MailboxName string    `json:"mailboxName"`
 }
 
-func (e ExportedEmailContainer) WriteToFile(mlogger *slog.Logger, fileManager utils.FileManager, baseFolder string) error {
-	basePath := filepath.Join(baseFolder, sanitize(e.mailboxName))
-
-	// Unique folder for each email
-	emailFolderName := fmt.Sprintf("%s-%s-%x", e.timestamp.Format("20060102T150405Z"), sanitize(e.subject), md5.Sum([]byte(e.messageId)))
-	emailFolderPath := filepath.Join(basePath, emailFolderName)
-	err := fileManager.MkdirAll(emailFolderPath, os.ModePerm)
-	if err != nil {
-		mlogger.Error("Failed to create email folder", slog.Any("error", err))
-		return err
-	}
-
-	metadataFile := filepath.Join(emailFolderPath, "metadata.json")
+func CreateExportedEmailMetadata(msg *imap.Message, mailboxName string) ExportedEmailMetadata {
 	var from []string
-	for _, f := range e.from {
+	for _, f := range msg.Envelope.From {
 		from = append(from, f.Address())
 	}
 	var to []string
-	for _, f := range e.to {
+	for _, f := range msg.Envelope.To {
 		to = append(to, f.Address())
 	}
 	var cc []string
-	for _, f := range e.cc {
+	for _, f := range msg.Envelope.Cc {
 		cc = append(cc, f.Address())
 	}
 	var bcc []string
-	for _, f := range e.bcc {
+	for _, f := range msg.Envelope.Bcc {
 		bcc = append(bcc, f.Address())
 	}
-	metadata := ExportedEmailMetadata{
-		Subject:     e.subject,
-		From:        strings.Join(from, ", "),
-		To:          strings.Join(to, ", "),
-		CC:          strings.Join(cc, ", "),
-		BCC:         strings.Join(bcc, ", "),
-		Timestamp:   e.timestamp,
-		MessageId:   e.messageId,
-		InReplyTo:   e.inReplyTo,
-		MailboxName: e.mailboxName,
-	}
-	metadataBytes, err := json.MarshalIndent(metadata, "", "  ")
-	if err != nil {
-		mlogger.Error("Failed to serialize metadata", slog.Any("error", err))
-		return err
-	}
-	err = fileManager.WriteFile(metadataFile, metadataBytes, os.ModePerm)
-	if err != nil {
-		mlogger.Error("Failed to write metadata file", slog.Any("error", err))
-		return err
-	}
 
+	return ExportedEmailMetadata{
+		Subject:     msg.Envelope.Subject,
+		From:        strings.Join(removeEmptyStrings(from), ", "),
+		To:          strings.Join(removeEmptyStrings(to), ", "),
+		CC:          strings.Join(removeEmptyStrings(cc), ", "),
+		BCC:         strings.Join(removeEmptyStrings(bcc), ", "),
+		Timestamp:   msg.InternalDate,
+		MessageId:   msg.Envelope.MessageId,
+		InReplyTo:   msg.Envelope.InReplyTo,
+		MailboxName: mailboxName,
+	}
+}
+
+type ExportedEmailContainer struct {
+	extractedFileName    string
+	mailboxName          string
+	msgBody              []byte
+	msgBodyContentType   string
+	msgBodyPartPosition  int
+	msgBodyPartSpecifier string
+}
+
+func (e ExportedEmailContainer) WriteToFile(mlogger *slog.Logger, fileManager utils.FileManager, emailFolderPath string) error {
 	// Save email body
-	bodyFile := filepath.Join(emailFolderPath, fmt.Sprintf("body.%s", getExtension(e.msgBodyContentType)))
-	writer, err := fileManager.Create(bodyFile)
+	bodyFilename := filepath.Join(emailFolderPath, fmt.Sprintf("body_%d.%s", e.msgBodyPartPosition, getExtension(e.msgBodyContentType)))
+	writer, err := fileManager.Create(bodyFilename)
 	if err != nil {
 		mlogger.Error("Failed to create body file", slog.Any("error", err))
 		return err
 	}
 
-	// mlogger.Info(e.mailboxName, "messageBody", string(e.msgBody[:]))
 	_, err = writer.Write(e.msgBody)
 	if err != nil {
 		mlogger.Error(
 			err.Error(),
 			slog.Any("error", utils.WrapError(err)),
-			slog.Any("fileName", bodyFile),
+			slog.Any("fileName", bodyFilename),
 			slog.Any("buffer", e.msgBody),
 		)
 		return err
@@ -180,7 +148,7 @@ func sanitize(input string) string {
 func ExportedEmailContainerFactory(mailboxName string, msg *imap.Message) ([]ExportedEmailContainer, error) {
 	containers := []ExportedEmailContainer{}
 	for bodySectionName, literal := range msg.Body {
-		convertedContainers, err := convertBodySectionToContainers(mailboxName, msg.Envelope.Date, bodySectionName.BodyPartName.Specifier, literal.(io.Reader))
+		convertedContainers, err := convertBodySectionToContainers(mailboxName, bodySectionName.BodyPartName.Specifier, literal.(io.Reader))
 		if err != nil {
 			return nil, err
 		}
@@ -189,23 +157,18 @@ func ExportedEmailContainerFactory(mailboxName string, msg *imap.Message) ([]Exp
 
 	newContainers := make([]ExportedEmailContainer, len(containers))
 	for i, _ := range containers {
-		newContainers[i].bcc = msg.Envelope.Bcc
-		newContainers[i].cc = msg.Envelope.Cc
-		newContainers[i].from = msg.Envelope.From
-		newContainers[i].inReplyTo = msg.Envelope.InReplyTo
-		newContainers[i].messageId = msg.Envelope.MessageId
-		newContainers[i].replyTo = msg.Envelope.ReplyTo
-		newContainers[i].sender = msg.Envelope.Sender
-		newContainers[i].subject = msg.Envelope.Subject
-		newContainers[i].to = msg.Envelope.To
-		newContainers[i].timestamp = msg.Envelope.Date
 		newContainers[i].mailboxName = mailboxName
+		newContainers[i].msgBody = containers[i].msgBody
+		newContainers[i].msgBodyContentType = containers[i].msgBodyContentType
+		newContainers[i].msgBodyPartPosition = containers[i].msgBodyPartPosition
+		newContainers[i].msgBodyPartSpecifier = containers[i].msgBodyPartSpecifier
+		newContainers[i].extractedFileName = containers[i].extractedFileName
 	}
 
 	return newContainers, nil
 }
 
-func convertBodySectionToContainers(mailboxName string, tstamp time.Time, partSpecifier imap.PartSpecifier, messageReader io.Reader) ([]ExportedEmailContainer, error) {
+func convertBodySectionToContainers(mailboxName string, partSpecifier imap.PartSpecifier, messageReader io.Reader) ([]ExportedEmailContainer, error) {
 	messageEntity, err := message.Read(messageReader)
 	if message.IsUnknownCharset(err) {
 		// This error is not fatal
@@ -244,7 +207,6 @@ func convertBodySectionToContainers(mailboxName string, tstamp time.Time, partSp
 				}
 
 				containers = append(containers, ExportedEmailContainer{
-					timestamp:            tstamp,
 					msgBodyPartSpecifier: string(partSpecifier),
 					msgBodyPartPosition:  partCount,
 					msgBodyContentType:   contentType,
@@ -274,7 +236,6 @@ func convertBodySectionToContainers(mailboxName string, tstamp time.Time, partSp
 		}
 
 		containers = append(containers, ExportedEmailContainer{
-			timestamp:            tstamp,
 			msgBodyPartSpecifier: string(partSpecifier),
 			msgBodyPartPosition:  1,
 			msgBodyContentType:   contentType,

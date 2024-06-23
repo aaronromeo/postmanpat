@@ -2,14 +2,12 @@ package mailbox_test
 
 import (
 	"context"
-	"fmt"
-	"math/rand"
+	"strings"
 	"testing"
 	"time"
 
 	// "aaronromeo.com/postmanpat/pkg/mailbox"
 	"github.com/emersion/go-imap"
-	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 
 	"aaronromeo.com/postmanpat/pkg/base"
@@ -71,178 +69,279 @@ func TestExportMessages(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockClient := mock.NewMockClient(ctrl)
-	logger := mock.SetupLogger(t)
-	ctx := context.Background()
-	mockfileManager := mock.MockFileWriter{Writers: map[string]mock.MockWriter{}}
-
-	mb := &mailbox.MailboxImpl{
-		Name:        "INBOX",
-		LoginFn:     func() (base.Client, error) { return mockClient, nil },
-		LogoutFn:    func() error { return nil },
-		Client:      mockClient,
-		Logger:      logger,
-		Ctx:         ctx,
-		FileManager: mockfileManager,
+	type test struct {
+		name             string
+		messages         []*imap.Message
+		wantFileContents map[string]string
 	}
 
-	mboxStatus := &imap.MailboxStatus{Messages: 10}
-	mockClient.EXPECT().Select("INBOX", false).Return(mboxStatus, nil)
-
-	names := [10]string{
-		"Ludwig van Beethoven",
-		"Frédéric Chopin",
-		"Franz Liszt",
-		"Clara Schumann",
-		"Sergei Rachmaninoff",
-		"Arthur Rubinstein",
-		"Vladimir Horowitz",
-		"Glenn Gould",
-		"Martha Argerich",
-		"Lang Lang",
-	}
-
-	mockClient.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
-		func(seqset *imap.SeqSet, items []imap.FetchItem, ch chan<- *imap.Message) error {
-			defer close(ch)
-			start := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-			end := time.Date(2024, 12, 31, 23, 59, 59, 0, time.UTC)
-
-			for i := 0; i < int(mboxStatus.Messages); i++ {
-				msg := &imap.Message{
-					SeqNum:       uint32(i + 1),
-					InternalDate: randomTime(start, end),
+	tests := []test{
+		{
+			name: "Multiple multi-part emails in inbox",
+			messages: []*imap.Message{
+				{
+					SeqNum:       4,
+					InternalDate: time.Date(2021, 3, 15, 12, 34, 56, 0, time.UTC),
 					Envelope: &imap.Envelope{
-						Subject: fmt.Sprintf("Test Subject %d", i),
+						Subject: "Test Subject Beethoven",
 						From: []*imap.Address{
-							{PersonalName: names[i], MailboxName: "example", HostName: "example.com"},
+							{PersonalName: "Ludwig van Beethoven", MailboxName: "beethoven", HostName: "beethoven.com"},
 						},
 						To: []*imap.Address{
 							{PersonalName: "Recipient", MailboxName: "recipient", HostName: "example.com"},
 						},
-						Date: time.Now(),
+						Date:      time.Date(2021, 3, 15, 12, 34, 56, 0, time.UTC),
+						MessageId: "A5166670-8640-4F87-B002-9C2AD331004F",
 					},
 					Body: map[*imap.BodySectionName]imap.Literal{
-						{}: mock.NewStringLiteral(fmt.Sprintf(
-							"Subject: Test Subject %d\r\n"+
-								"Content-Type: multipart/mixed; boundary=message-boundary\r\n"+
-								"\r\n"+
-								"--message-boundary\r\n"+
-								"Content-Type: text/plain\r\n"+
-								"Content-Disposition: inline\r\n"+
-								"\r\n"+
-								"Who are you? I'm %s.\r\n"+
-								"--message-boundary\r\n"+
-								"Content-Type: application/octet-stream\r\n"+
-								"Content-Disposition: attachment; filename=note.txt\r\n"+
-								"\r\n"+
-								"Attachment content %d.\r\n"+
+						{}: mock.NewStringLiteral(
+							"Subject: Test Subject Beethoven\r\n" +
+								"Content-Type: multipart/mixed; boundary=message-boundary\r\n" +
+								"\r\n" +
+								"--message-boundary\r\n" +
+								"Content-Type: text/plain\r\n" +
+								"Content-Disposition: inline\r\n" +
+								"\r\n" +
+								"Who are you? I'm Ludwig van Beethoven.\r\n" +
+								"--message-boundary\r\n" +
+								"Content-Type: application/octet-stream\r\n" +
+								"Content-Disposition: attachment; filename=note.txt\r\n" +
+								"\r\n" +
+								"Attachment content of something Beethoven related.\r\n" +
 								"--message-boundary--\r\n",
-							i, names[i], i)),
+						),
 					},
-				}
-				ch <- msg
-			}
-			return nil
+				},
+				{
+					SeqNum:       5,
+					InternalDate: time.Date(2023, 8, 22, 14, 18, 30, 0, time.UTC),
+					Envelope: &imap.Envelope{
+						Subject: "Test Subject Chopin",
+						From: []*imap.Address{
+							{PersonalName: "Frédéric Chopin", MailboxName: "chopin", HostName: "chopin.com"},
+						},
+						To: []*imap.Address{
+							{PersonalName: "Recipient", MailboxName: "recipient", HostName: "example.com"},
+						},
+						Date:      time.Date(2023, 8, 22, 14, 18, 30, 0, time.UTC),
+						MessageId: "5AA34A5D-7E77-43FF-A95F-3DE3A1CB4AC4",
+					},
+					Body: map[*imap.BodySectionName]imap.Literal{
+						{}: mock.NewStringLiteral(
+							"Subject: Test Subject Chopin\r\n" +
+								"Content-Type: multipart/mixed; boundary=message-boundary\r\n" +
+								"\r\n" +
+								"--message-boundary\r\n" +
+								"Content-Type: text/plain\r\n" +
+								"Content-Disposition: inline\r\n" +
+								"\r\n" +
+								"Who are you? I'm Frédéric Chopin.\r\n" +
+								"--message-boundary\r\n" +
+								"Content-Type: application/octet-stream\r\n" +
+								"Content-Disposition: attachment; filename=note.txt\r\n" +
+								"\r\n" +
+								"Attachment content of something Chopin related.\r\n" +
+								"--message-boundary--\r\n",
+						),
+					},
+				},
+			},
+			wantFileContents: map[string]string{
+				"exportedemails/INBOX/20210315T123456Z-Test_Subject_Beethoven-60e4e2abcbc4c6971acbae5201788dd8/metadata.json": `{
+  "subject": "Test Subject Beethoven",
+  "from": "beethoven@beethoven.com",
+  "to": "recipient@example.com",
+  "cc": "",
+  "bcc": "",
+  "timestamp": "2021-03-15T12:34:56Z",
+  "messageId": "A5166670-8640-4F87-B002-9C2AD331004F",
+  "inReplyTo": "",
+  "mailboxName": "INBOX"
+}`,
+				"exportedemails/INBOX/20210315T123456Z-Test_Subject_Beethoven-60e4e2abcbc4c6971acbae5201788dd8/body_1.txt": `Who are you? I'm Ludwig van Beethoven.`,
+				"exportedemails/INBOX/20210315T123456Z-Test_Subject_Beethoven-60e4e2abcbc4c6971acbae5201788dd8/body_2.eml": `Attachment content of something Beethoven related.`,
+				"exportedemails/INBOX/20230822T141830Z-Test_Subject_Chopin-884614d733b3fda61802860e5b7b25fc/metadata.json": `{
+  "subject": "Test Subject Chopin",
+  "from": "chopin@chopin.com",
+  "to": "recipient@example.com",
+  "cc": "",
+  "bcc": "",
+  "timestamp": "2023-08-22T14:18:30Z",
+  "messageId": "5AA34A5D-7E77-43FF-A95F-3DE3A1CB4AC4",
+  "inReplyTo": "",
+  "mailboxName": "INBOX"
+}`,
+				"exportedemails/INBOX/20230822T141830Z-Test_Subject_Chopin-884614d733b3fda61802860e5b7b25fc/body_1.txt": `Who are you? I'm Frédéric Chopin.`,
+				"exportedemails/INBOX/20230822T141830Z-Test_Subject_Chopin-884614d733b3fda61802860e5b7b25fc/body_2.eml": `Attachment content of something Chopin related.`,
+			},
+		}, {
+			name: "Single email, single plain text part in inbox",
+			messages: []*imap.Message{
+				{
+					SeqNum:       1,
+					InternalDate: time.Date(2022, 5, 10, 6, 12, 45, 0, time.UTC),
+					Envelope: &imap.Envelope{
+						Subject: "Plain Text Email",
+						From: []*imap.Address{
+							{PersonalName: "Ludwig van Beethoven", MailboxName: "beethoven", HostName: "beethoven.com"},
+						},
+						To: []*imap.Address{
+							{PersonalName: "Recipient", MailboxName: "recipient", HostName: "example.com"},
+						},
+						Date:      time.Date(2021, 3, 15, 12, 34, 56, 0, time.UTC),
+						MessageId: "28F7274B-F6B1-45EA-AD31-69EDCB5DE32C",
+					},
+					Body: map[*imap.BodySectionName]imap.Literal{
+						{}: mock.NewStringLiteral("Subject: Plain Text Email\r\n\r\nHello, this is a plain text email.\r\n"),
+					},
+				},
+			},
+			wantFileContents: map[string]string{
+				"exportedemails/INBOX/20220510T061245Z-Plain_Text_Email-4bd44a2a01f19b1e6600c1a4d9e0ab3d/metadata.json": `{
+  "subject": "Plain Text Email",
+  "from": "beethoven@beethoven.com",
+  "to": "recipient@example.com",
+  "cc": "",
+  "bcc": "",
+  "timestamp": "2022-05-10T06:12:45Z",
+  "messageId": "28F7274B-F6B1-45EA-AD31-69EDCB5DE32C",
+  "inReplyTo": "",
+  "mailboxName": "INBOX"
+}`,
+				"exportedemails/INBOX/20220510T061245Z-Plain_Text_Email-4bd44a2a01f19b1e6600c1a4d9e0ab3d/body_1.txt": `Hello, this is a plain text email.
+`,
+			},
+		}, {
+			name: "Single email, single part HTML in inbox",
+			messages: []*imap.Message{
+				{
+					SeqNum:       1,
+					InternalDate: time.Date(2022, 5, 10, 6, 12, 45, 0, time.UTC),
+					Envelope: &imap.Envelope{
+						Subject: "HTML Email",
+						From: []*imap.Address{
+							{PersonalName: "Ludwig van Beethoven", MailboxName: "beethoven", HostName: "beethoven.com"},
+						},
+						To: []*imap.Address{
+							{PersonalName: "Recipient", MailboxName: "recipient", HostName: "example.com"},
+						},
+						Date:      time.Date(2021, 3, 15, 12, 34, 56, 0, time.UTC),
+						MessageId: "28F7274B-F6B1-45EA-AD31-69EDCB5DE32C",
+					},
+					Body: map[*imap.BodySectionName]imap.Literal{
+						{}: mock.NewStringLiteral("Subject: HTML Email\r\nContent-Type: text/html\r\n\r\n<p>Hello, this is an HTML email.</p>\r\n"),
+					},
+				},
+			},
+			wantFileContents: map[string]string{
+				"exportedemails/INBOX/20220510T061245Z-HTML_Email-9eecf1f98b33e0eb9a85a3de45223a8d/metadata.json": `{
+  "subject": "HTML Email",
+  "from": "beethoven@beethoven.com",
+  "to": "recipient@example.com",
+  "cc": "",
+  "bcc": "",
+  "timestamp": "2022-05-10T06:12:45Z",
+  "messageId": "28F7274B-F6B1-45EA-AD31-69EDCB5DE32C",
+  "inReplyTo": "",
+  "mailboxName": "INBOX"
+}`,
+				"exportedemails/INBOX/20220510T061245Z-HTML_Email-9eecf1f98b33e0eb9a85a3de45223a8d/body_1.html": `<p>Hello, this is an HTML email.</p>`,
+			},
+		}, {
+			name: "Single email, single part Mixed Content in inbox",
+			messages: []*imap.Message{
+				{
+					SeqNum:       1,
+					InternalDate: time.Date(2022, 5, 10, 6, 12, 45, 0, time.UTC),
+					Envelope: &imap.Envelope{
+						Subject: "Mixed Content",
+						From: []*imap.Address{
+							{PersonalName: "Ludwig van Beethoven", MailboxName: "beethoven", HostName: "beethoven.com"},
+						},
+						To: []*imap.Address{
+							{PersonalName: "Recipient", MailboxName: "recipient", HostName: "example.com"},
+						},
+						Date:      time.Date(2024, 5, 20, 4, 30, 15, 0, time.UTC),
+						MessageId: "BB5E82CE-DA2C-4CA2-BE24-CA1472428FE0",
+					},
+					Body: map[*imap.BodySectionName]imap.Literal{
+						{}: mock.NewStringLiteral("Subject: Mixed Content\r\nContent-Type: multipart/mixed; boundary=mixed-boundary\r\n\r\n--mixed-boundary\r\nContent-Type: text/plain\r\n\r\nHello, this is text part.\r\n--mixed-boundary\r\nContent-Type: text/html\r\n\r\n<p>Hello, this is HTML part.</p>\r\n--mixed-boundary--\r\n"),
+					},
+				},
+			},
+			wantFileContents: map[string]string{
+				"exportedemails/INBOX/20220510T061245Z-Mixed_Content-a4873d8180ccba2c487f47eb6a0bb8c3/metadata.json": `{
+  "subject": "Mixed Content",
+  "from": "beethoven@beethoven.com",
+  "to": "recipient@example.com",
+  "cc": "",
+  "bcc": "",
+  "timestamp": "2022-05-10T06:12:45Z",
+  "messageId": "BB5E82CE-DA2C-4CA2-BE24-CA1472428FE0",
+  "inReplyTo": "",
+  "mailboxName": "INBOX"
+}`,
+				"exportedemails/INBOX/20220510T061245Z-Mixed_Content-a4873d8180ccba2c487f47eb6a0bb8c3/body_1.txt":  "Hello, this is text part.",
+				"exportedemails/INBOX/20220510T061245Z-Mixed_Content-a4873d8180ccba2c487f47eb6a0bb8c3/body_2.html": "<p>Hello, this is HTML part.</p>",
+			},
 		},
-	)
-
-	// Export messages and check results
-	err := mb.ExportMessages()
-	assert.NoError(t, err)
-
-	assert.Equal(t, 10, len(mockfileManager.Writers))
-
-	// Validate the contents of exported messages
-	for _, writer := range mockfileManager.Writers {
-		content := writer.Buffer.String()
-		assert.Contains(t, content, "Test Subject")
-		assert.Contains(t, content, "Who are you?")
 	}
 
-	// Additional robust tests
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mockClient := mock.NewMockClient(ctrl)
+			logger := mock.SetupLogger(t)
+			ctx := context.Background()
+			mockfileManager := mock.MockFileWriter{Writers: map[string]mock.MockWriter{}}
 
-	// Test different content types
-	mockClient.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
-		func(seqset *imap.SeqSet, items []imap.FetchItem, ch chan<- *imap.Message) error {
-			defer close(ch)
-
-			// Plain text email
-			ch <- &imap.Message{
-				SeqNum:   1,
-				Envelope: &imap.Envelope{Subject: "Plain Text Email"},
-				Body: map[*imap.BodySectionName]imap.Literal{
-					{}: mock.NewStringLiteral("Subject: Plain Text\r\n\r\nHello, this is a plain text email.\r\n"),
-				},
+			mb := &mailbox.MailboxImpl{
+				Name:        "INBOX",
+				LoginFn:     func() (base.Client, error) { return mockClient, nil },
+				LogoutFn:    func() error { return nil },
+				Client:      mockClient,
+				Logger:      logger,
+				Ctx:         ctx,
+				FileManager: mockfileManager,
 			}
 
-			// HTML email
-			ch <- &imap.Message{
-				SeqNum:   2,
-				Envelope: &imap.Envelope{Subject: "HTML Email"},
-				Body: map[*imap.BodySectionName]imap.Literal{
-					{}: mock.NewStringLiteral("Subject: HTML Email\r\nContent-Type: text/html\r\n\r\n<p>Hello, this is an HTML email.</p>\r\n"),
+			mboxStatus := &imap.MailboxStatus{Messages: (uint32)(len(tc.messages))}
+			mockClient.EXPECT().Select("INBOX", false).Return(mboxStatus, nil)
+			mockClient.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+				func(seqset *imap.SeqSet, items []imap.FetchItem, ch chan<- *imap.Message) error {
+					defer close(ch)
+
+					for i := 0; i < int(mboxStatus.Messages); i++ {
+						ch <- tc.messages[i]
+					}
+					return nil
 				},
+			)
+
+			// Export messages and check results
+			err := mb.ExportMessages()
+			if err != nil {
+				t.Fatalf("Unexpected error %+v", err)
 			}
 
-			// Mixed content email
-			ch <- &imap.Message{
-				SeqNum:   3,
-				Envelope: &imap.Envelope{Subject: "Mixed Content Email"},
-				Body: map[*imap.BodySectionName]imap.Literal{
-					{}: mock.NewStringLiteral("Subject: Mixed Content\r\nContent-Type: multipart/mixed; boundary=mixed-boundary\r\n\r\n--mixed-boundary\r\nContent-Type: text/plain\r\n\r\nHello, this is text part.\r\n--mixed-boundary\r\nContent-Type: text/html\r\n\r\n<p>Hello, this is HTML part.</p>\r\n--mixed-boundary--\r\n"),
-				},
+			if len(tc.wantFileContents) != len(mockfileManager.Writers) {
+				fileNames := []string{}
+				for key := range mockfileManager.Writers {
+					fileNames = append(fileNames, key)
+				}
+				t.Fatalf("Incorrect file count. want: %d got: %d\n%+v", len(tc.wantFileContents), len(mockfileManager.Writers), fileNames)
 			}
 
-			return nil
-		},
-	)
+			for key, expectedBody := range tc.wantFileContents {
+				actualMockWriter, ok := mockfileManager.Writers[key]
+				if !ok {
+					t.Fatalf("Missing expected file %s from the exported files", key)
+				}
 
-	err = mb.ExportMessages()
-	assert.NoError(t, err)
-
-	// Verify that different content types were processed correctly
-	assert.Contains(t, mockfileManager.Writers["Plain Text Email"].Buffer.String(), "Hello, this is a plain text email.")
-	assert.Contains(t, mockfileManager.Writers["HTML Email"].Buffer.String(), "<p>Hello, this is an HTML email.</p>")
-	assert.Contains(t, mockfileManager.Writers["Mixed Content Email"].Buffer.String(), "Hello, this is text part.")
-	assert.Contains(t, mockfileManager.Writers["Mixed Content Email"].Buffer.String(), "<p>Hello, this is HTML part.</p>")
-
-	// Test error handling for file creation
-	// mockfileManager = mock.MockFileWriter{
-	// 	Create: func(name string) (utils.FileWriter, error) {
-	// 		if filepath.Base(name) == "body.txt" {
-	// 			return nil, fmt.Errorf("simulated file creation error")
-	// 		}
-	// 		return mock.MockWriter{}, nil
-	// 	},
-	// }
-
-	mb.FileManager = mockfileManager
-
-	mockClient.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
-		func(seqset *imap.SeqSet, items []imap.FetchItem, ch chan<- *imap.Message) error {
-			defer close(ch)
-
-			// Email with text body
-			ch <- &imap.Message{
-				SeqNum:   1,
-				Envelope: &imap.Envelope{Subject: "Error Test Email"},
-				Body: map[*imap.BodySectionName]imap.Literal{
-					{}: mock.NewStringLiteral("Subject: Error Test\r\n\r\nThis will fail.\r\n"),
-				},
+				actualBody := actualMockWriter.Buffer.String()
+				if strings.TrimSpace(actualBody) != strings.TrimSpace(expectedBody) {
+					t.Fatalf("Exported file %s mismatch. got: `%s` want: `%s` ", key, actualBody, expectedBody)
+				}
 			}
-
-			return nil
-		},
-	)
-
-	err = mb.ExportMessages()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "simulated file creation error")
-}
-
-func randomTime(start, end time.Time) time.Time {
-	delta := end.Sub(start)
-	sec := rand.Int63n(int64(delta.Seconds()))
-	return start.Add(time.Duration(sec) * time.Second)
+		})
+	}
 }

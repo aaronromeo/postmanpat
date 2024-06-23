@@ -2,8 +2,11 @@ package mailbox
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 
 	"aaronromeo.com/postmanpat/pkg/base"
@@ -162,8 +165,37 @@ func (mb *MailboxImpl) ExportMessages() error {
 	mb.Logger.Info(mb.Name, "Fetched messages count", len(messages))
 
 	for msg := range messages {
+		metadata := CreateExportedEmailMetadata(msg, mb.Name)
+		metadataBytes, err := json.MarshalIndent(metadata, "", "  ")
+		if err != nil {
+			mb.Logger.Error("Failed to serialize metadata", slog.Any("error", err))
+			return err
+		}
+		baseFolder := filepath.Join(".", "exportedemails")
+		basePath := filepath.Join(baseFolder, sanitize(mb.Name))
+		// Unique folder for each email
+		msgHash, err := json.Marshal(metadata)
+		if err != nil {
+			mb.Logger.Error("Unable to hash message", slog.Any("error", err))
+			return err
+		}
+		emailFolderName := fmt.Sprintf("%s-%s-%x", metadata.Timestamp.Format("20060102T150405Z"), sanitize(metadata.Subject), md5.Sum([]byte(msgHash)))
+		emailFolderPath := filepath.Join(basePath, emailFolderName)
+		err = mb.FileManager.MkdirAll(emailFolderPath, os.ModePerm)
+		if err != nil {
+			mb.Logger.Error("Failed to create email folder", slog.Any("error", err))
+			return err
+		}
+
+		metadataFile := filepath.Join(emailFolderPath, "metadata.json")
+
+		err = mb.FileManager.WriteFile(metadataFile, metadataBytes, os.ModePerm)
+		if err != nil {
+			mb.Logger.Error("Failed to write metadata file", slog.Any("error", err))
+			return err
+		}
+
 		mb.Logger.Info(mb.Name, "Subject", msg.Envelope.Subject)
-		// mb.Logger.Info(mb.Name, "Body", fmt.Sprintf("%+v", msg.Body))
 		messageContainers, err := ExportedEmailContainerFactory(mb.Name, msg)
 		if err != nil {
 			mb.Logger.ErrorContext(mb.Ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
@@ -171,7 +203,7 @@ func (mb *MailboxImpl) ExportMessages() error {
 		}
 
 		for _, emb := range messageContainers {
-			emb.WriteToFile(mb.Logger, mb.FileManager, filepath.Join(".", "exportedemails"))
+			emb.WriteToFile(mb.Logger, mb.FileManager, emailFolderPath)
 		}
 	}
 
