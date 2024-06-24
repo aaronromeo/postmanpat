@@ -203,7 +203,11 @@ func (mb *MailboxImpl) ExportMessages() error {
 		}
 
 		for _, emb := range messageContainers {
-			emb.WriteToFile(mb.Logger, mb.FileManager, emailFolderPath)
+			err := emb.WriteToFile(mb.Logger, mb.FileManager, emailFolderPath)
+			if err != nil {
+				mb.Logger.ErrorContext(mb.Ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
+				return err
+			}
 		}
 	}
 

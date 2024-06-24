@@ -156,7 +156,7 @@ func ExportedEmailContainerFactory(mailboxName string, msg *imap.Message) ([]Exp
 	}
 
 	newContainers := make([]ExportedEmailContainer, len(containers))
-	for i, _ := range containers {
+	for i := range containers {
 		newContainers[i].mailboxName = mailboxName
 		newContainers[i].msgBody = containers[i].msgBody
 		newContainers[i].msgBodyContentType = containers[i].msgBodyContentType
