@@ -24,4 +24,7 @@ clean:
 run: build
 	./$(BUILT_BINARY)
 
+lint:
+	golangci-lint run --config .golangci.yml
+
 .PHONY: all build test clean run
