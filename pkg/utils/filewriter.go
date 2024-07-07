@@ -2,7 +2,13 @@ package utils
 
 import (
 	"bufio"
+	"bytes"
 	"os"
+	"path/filepath"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 )
 
 type Writer interface {
@@ -49,4 +55,65 @@ func (osfc OSFileManager) MkdirAll(path string, perm os.FileMode) error {
 
 func (osfc OSFileManager) WriteFile(filename string, data []byte, perm os.FileMode) error {
 	return os.WriteFile(filename, data, perm)
+}
+
+type S3FileManager struct {
+	svc    *s3.S3
+	bucket string
+	folder string
+	writer *bytes.Buffer
+	objKey string
+}
+
+func NewS3FileManager(sess *session.Session, bucket, folder string) *S3FileManager {
+	return &S3FileManager{
+		svc:    s3.New(sess),
+		bucket: bucket,
+		folder: folder,
+	}
+}
+
+func (s3fm *S3FileManager) Create(name string) (Writer, error) {
+	s3fm.objKey = filepath.Join(s3fm.folder, name)
+	s3fm.writer = new(bytes.Buffer)
+	return s3fm.writer, nil
+}
+
+func (s3fm *S3FileManager) Close() error {
+	_, err := s3fm.svc.PutObject(&s3.PutObjectInput{
+		Bucket: aws.String(s3fm.bucket),
+		Key:    aws.String(s3fm.objKey),
+		Body:   bytes.NewReader(s3fm.writer.Bytes()),
+	})
+	return err
+}
+
+func (s3fm *S3FileManager) MkdirAll(path string, perm os.FileMode) error {
+	_, err := s3fm.svc.PutObject(&s3.PutObjectInput{
+		Bucket: aws.String(s3fm.bucket),
+		Key:    aws.String(filepath.Join(s3fm.folder, path) + "/"),
+	})
+	return err
+}
+
+func (s3fm *S3FileManager) WriteFile(filename string, data []byte, perm os.FileMode) error {
+	_, err := s3fm.svc.PutObject(&s3.PutObjectInput{
+		Bucket: aws.String(s3fm.bucket),
+		Key:    aws.String(filepath.Join(s3fm.folder, filename)),
+		Body:   bytes.NewReader(data),
+	})
+	return err
+}
+
+// S3Writer struct implementing Writer interface for S3
+type S3Writer struct {
+	buffer *bytes.Buffer
+}
+
+func (s3w *S3Writer) Write(p []byte) (n int, err error) {
+	return s3w.buffer.Write(p)
+}
+
+func (s3w *S3Writer) Flush() error {
+	return nil // No action needed for flush in this implementation
 }
