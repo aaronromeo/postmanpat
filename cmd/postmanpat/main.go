@@ -67,14 +67,10 @@ func main() {
 		log.Fatalf("Writing mailbox names file error %+v", err)
 	}
 
-	// utils.ExportEmailsFromMailbox(c, os.Getenv("IMAP_FOLDER"))
-	// for _, mailbox := range verifiedMailboxObjs {
-	// log.Printf("Exporting messages from %s\n", mailbox.Name)
 	err = verifiedMailboxObjs[os.Getenv("IMAP_FOLDER")].ExportMessages()
 	if err != nil {
 		log.Fatalf("Exporting mailbox `%s` error", os.Getenv("IMAP_FOLDER"))
 	}
-	// }
 
 	log.Println("Done!")
 }
