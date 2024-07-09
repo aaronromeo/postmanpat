@@ -61,7 +61,7 @@ type S3FileManager struct {
 	svc    *s3.S3
 	bucket string
 	folder string
-	writer *bytes.Buffer
+	writer *S3Writer
 	objKey string
 }
 
@@ -75,7 +75,7 @@ func NewS3FileManager(sess *session.Session, bucket, folder string) *S3FileManag
 
 func (s3fm *S3FileManager) Create(name string) (Writer, error) {
 	s3fm.objKey = filepath.Join(s3fm.folder, name)
-	s3fm.writer = new(bytes.Buffer)
+	s3fm.writer = new(S3Writer)
 	return s3fm.writer, nil
 }
 
@@ -83,7 +83,7 @@ func (s3fm *S3FileManager) Close() error {
 	_, err := s3fm.svc.PutObject(&s3.PutObjectInput{
 		Bucket: aws.String(s3fm.bucket),
 		Key:    aws.String(s3fm.objKey),
-		Body:   bytes.NewReader(s3fm.writer.Bytes()),
+		Body:   bytes.NewReader((*s3fm.writer).buffer.Bytes()),
 	})
 	return err
 }

@@ -20,4 +20,5 @@ RUN make build
 EXPOSE 8080
 
 # Command to run the executable
-CMD ["/postmanpat"]
+CMD ["/app/build/postmanpat"]
+# CMD [ "/bin/ls -a" ]
