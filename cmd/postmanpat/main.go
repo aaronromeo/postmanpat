@@ -149,7 +149,7 @@ func exportMessages(_ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *
 
 		data, err := fileMgr.ReadFile(base.MailboxListFile)
 		if err != nil {
-			return errors.Errorf("exporting mailbox error", err)
+			return errors.Errorf("exporting mailbox error %+v", err)
 		}
 		log.Println(string(data))
 
