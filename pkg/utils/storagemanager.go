@@ -120,7 +120,7 @@ func (s3fm *S3FileManager) ReadFile(filename string) ([]byte, error) {
 		return nil, err
 	}
 
-	defer obj.Body.Close()
+	defer obj.Body.Close() //nolint:errcheck
 
 	data, err := io.ReadAll(obj.Body)
 	if err != nil {
