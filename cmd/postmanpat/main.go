@@ -81,6 +81,19 @@ func main() {
 				Usage:   "List mailbox names",
 				Action:  listMailboxNames(isi, fileMgr),
 			},
+			{
+				Name:    "exportmessages",
+				Aliases: []string{"em"},
+				Usage:   "Export the messages in a mailbox",
+				Action:  exportMessages(isi, fileMgr),
+				// Flags: []cli.Flag{
+				// 	&cli.StringFlag{
+				// 		Name:     "mailbox",
+				// 		Usage:    "the name of the mailbox to export messages from",
+				// 		Required: true,
+				// 	},
+				// },
+			},
 		},
 	}
 
@@ -121,6 +134,24 @@ func listMailboxNames(isi *imap.ImapManagerImpl, fileMgr utils.FileManager) func
 		if err := fileMgr.WriteFile(base.MailboxListFile, encodedMailboxes, 0644); err != nil {
 			return errors.Errorf("writing mailbox names file error %+v", err)
 		}
+
+		return nil
+	}
+}
+
+func exportMessages(_ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cli.Context) error {
+	return func(c *cli.Context) error {
+		// mailboxName := c.String("mailbox")
+		// err := isi   .ExportMessages()
+		// if err != nil {
+		// 	return errors.Errorf("exporting mailbox `%s` error", mailboxName)
+		// }
+
+		data, err := fileMgr.ReadFile(base.MailboxListFile)
+		if err != nil {
+			return errors.Errorf("exporting mailbox error", err)
+		}
+		log.Println(string(data))
 
 		return nil
 	}

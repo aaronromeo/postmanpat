@@ -3,6 +3,7 @@ package utils
 import (
 	"bufio"
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -21,6 +22,7 @@ type FileManager interface {
 	Create(name string) (Writer, error)
 	MkdirAll(path string, perm os.FileMode) error
 	WriteFile(filename string, data []byte, perm os.FileMode) error
+	ReadFile(filename string) ([]byte, error)
 }
 
 type OSFileManager struct {
@@ -55,6 +57,10 @@ func (osfc OSFileManager) MkdirAll(path string, perm os.FileMode) error {
 
 func (osfc OSFileManager) WriteFile(filename string, data []byte, perm os.FileMode) error {
 	return os.WriteFile(filename, data, perm)
+}
+
+func (osfc OSFileManager) ReadFile(filename string) ([]byte, error) {
+	return os.ReadFile(filename)
 }
 
 type S3FileManager struct {
@@ -103,6 +109,25 @@ func (s3fm *S3FileManager) WriteFile(filename string, data []byte, perm os.FileM
 		Body:   bytes.NewReader(data),
 	})
 	return err
+}
+
+func (s3fm *S3FileManager) ReadFile(filename string) ([]byte, error) {
+	obj, err := s3fm.svc.GetObject(&s3.GetObjectInput{
+		Bucket: aws.String(s3fm.bucket),
+		Key:    aws.String(filepath.Join(s3fm.folder, filename)),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	defer obj.Body.Close()
+
+	data, err := io.ReadAll(obj.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return data, nil
 }
 
 func (s3fm *S3FileManager) BucketExists(bucket string) (bool, error) {

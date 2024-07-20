@@ -22,7 +22,7 @@ clean:
 	rm -f $(BUILT_BINARY)
 
 run: build
-	./$(BUILT_BINARY) mn
+	./$(BUILT_BINARY) $(ARGS)
 
 lint:
 	golangci-lint run --config .golangci.yml

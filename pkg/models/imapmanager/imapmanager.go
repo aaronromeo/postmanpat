@@ -245,7 +245,7 @@ func (srv ImapManagerImpl) unserializeMailboxes() (map[string]*mailbox.MailboxIm
 		return mailboxObjs, nil
 	}
 
-	if mailboxFile, err := os.ReadFile(base.MailboxListFile); err != nil {
+	if mailboxFile, err := srv.fileCreator.ReadFile(base.MailboxListFile); err != nil {
 		srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 		return nil, err
 	} else {
