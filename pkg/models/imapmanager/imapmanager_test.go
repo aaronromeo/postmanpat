@@ -32,7 +32,7 @@ func TestNewImapManager(t *testing.T) {
 		)
 		assert.NoError(t, err)
 		assert.NotNil(t, service)
-		assert.Equal(t, "username", service.username)
+		assert.Equal(t, "username", service.Username)
 		assert.Equal(t, "password", service.password)
 		assert.Equal(t, mockClient, service.client)
 		assert.Equal(t, logger, service.logger)

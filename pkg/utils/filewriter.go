@@ -105,6 +105,40 @@ func (s3fm *S3FileManager) WriteFile(filename string, data []byte, perm os.FileM
 	return err
 }
 
+func (s3fm *S3FileManager) BucketExists(bucket string) (bool, error) {
+	result, err := s3fm.svc.ListBuckets(&s3.ListBucketsInput{})
+	if err != nil {
+		return false, err
+	}
+
+	for _, b := range result.Buckets {
+		if aws.StringValue(b.Name) == bucket {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func (s3fm *S3FileManager) CreateBucket(bucket string) error {
+	_, err := s3fm.svc.CreateBucket(&s3.CreateBucketInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		return err
+	}
+
+	// Wait until the bucket is created before finishing
+	err = s3fm.svc.WaitUntilBucketExists(&s3.HeadBucketInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // S3Writer struct implementing Writer interface for S3
 type S3Writer struct {
 	buffer *bytes.Buffer
