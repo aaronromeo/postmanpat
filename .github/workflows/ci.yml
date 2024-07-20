@@ -63,16 +63,46 @@ jobs:
       with:
         token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
-    - name: Extract branch name
+    - name: Extract image name
+      if: github.ref != 'refs/heads/main'
       shell: bash
-      run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
-      id: extract_branch
-
+      run: |
+        echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
+        if [[ $GITHUB_HEAD_REF == "main" ]]; then
+          echo "branch=main" >> $GITHUB_OUTPUT
+        fi
+      id: extract_image_name
+  
     - name: Build container image
-      run: docker build -t registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_branch.outputs.branch }}-$(echo $GITHUB_SHA | head -c7) .
+      run: docker build -t registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.branch }}-$(echo $GITHUB_SHA | head -c7) .
     
     - name: Log in to DigitalOcean Container Registry with short-lived credentials
       run: doctl registry login --expiry-seconds 1200
     
     - name: Push image to DigitalOcean Container Registry
-      run: docker push registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_branch.outputs.branch }}-$(echo $GITHUB_SHA | head -c7)
+      run: docker push registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.branch }}-$(echo $GITHUB_SHA | head -c7)
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+    - name: Check out the repository
+      uses: actions/checkout@v2
+
+    - name: Set up SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+
+    - name: Deploy to Production
+      if: github.ref_name == 'main'
+      run: |
+        ssh -o StrictHostKeyChecking=no root@${{ secrets.PROD_DROPLET_IP }} << 'EOF'
+          doctl registry login --expiry-seconds 1200
+          docker pull registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.branch }}-$(echo $GITHUB_SHA | head -c7)
+          docker stop postmanpat-prod || true
+          docker rm postmanpat-prod || true
+          docker run -d --env-file /path/to/.env.prod -p 80:8080 --name postmanpat-prod registry.digitalocean.com/your-registry/postmanpat:main
+        EOF
