@@ -79,16 +79,10 @@ jobs:
     - name: Build container image
       run: docker build -t registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.digest }} .
 
-
     - name: Clean up old images
       run: |
         branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
-        manifestshas=($(doctl registry repository list-tags postmanpat --output json | jq -r 'sort_by(.updated_at) | .[] | select(.tag | contains("'${branch}'")) | .manifest_digest'))
-        count=${#manifestshas[@]}
-
-        for (( i=1; i<$count+1; i++ )); do
-            doctl registry repository delete-manifest postmanpat --force ${manifestshas[$i]}
-        done
+        doctl registry repository list-tags postmanpat --output json | jq -r '.[] | select(.tag | contains("'${branch}'")) | .manifest_digest' | xargs -I {} doctl registry repository delete-manifest postmanpat --force {}
 
     - name: Push image to DigitalOcean Container Registry
       run: docker push registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.digest }}
