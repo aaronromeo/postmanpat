@@ -68,3 +68,15 @@ func (m MockFileWriter) WriteFile(name string, data []byte, perm os.FileMode) er
 	m.Writers[name] = MockWriter{Buffer: bytes.NewBuffer(data)}
 	return m.Err
 }
+
+func (m MockFileWriter) ReadFile(filename string) ([]byte, error) {
+	if m.Writers == nil {
+		m.Writers = make(map[string]MockWriter)
+	}
+
+	writer, ok := m.Writers[filename]
+	if !ok {
+		return nil, fmt.Errorf("file %s does not exist", filename)
+	}
+	return writer.Buffer.Bytes(), m.Err
+}

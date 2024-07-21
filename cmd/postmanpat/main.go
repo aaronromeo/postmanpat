@@ -10,13 +10,33 @@ import (
 	"aaronromeo.com/postmanpat/pkg/base"
 	imap "aaronromeo.com/postmanpat/pkg/models/imapmanager"
 	"aaronromeo.com/postmanpat/pkg/utils"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/joho/godotenv"
+	"github.com/pkg/errors"
+	"github.com/urfave/cli/v2"
 )
+
+const STORAGE_BUCKET = "postmanpat"
 
 func main() {
 	err := godotenv.Load(".env")
 	if err != nil {
 		log.Fatalf("Error loading .env file: %s", err)
+	}
+
+	sess, err := session.NewSession(&aws.Config{
+		Region:   aws.String("nyc3"),
+		Endpoint: aws.String("nyc3.digitaloceanspaces.com"),
+		Credentials: credentials.NewStaticCredentials(
+			os.Getenv("DIGITALOCEAN_BUCKET_ACCESS_KEY"),
+			os.Getenv("DIGITALOCEAN_BUCKET_SECRET_KEY"),
+			"",
+		),
+	})
+	if err != nil {
+		log.Fatalf("Failed to create AWS session: %v", err)
 	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -34,47 +54,98 @@ func main() {
 		log.Fatal(err)
 	}
 
-	log.Println("Connecting to server...")
+	fileMgr := utils.NewS3FileManager(sess, STORAGE_BUCKET, isi.Username)
 
-	// List mailboxes
-	verifiedMailboxObjs, err := isi.GetMailboxes()
+	// Check if the bucket exists
+	exists, err := fileMgr.BucketExists(STORAGE_BUCKET)
 	if err != nil {
+		log.Fatalf("Failed to check if bucket exists: %v", err)
+	}
+
+	if exists {
+		log.Printf("Found bucket %s\n", STORAGE_BUCKET)
+	} else {
+		// Create the bucket if it doesn't exist
+		err = fileMgr.CreateBucket(STORAGE_BUCKET)
+		if err != nil {
+			log.Fatalf("Failed to create bucket: %v", err)
+		}
+		log.Printf("Created the bucket %s\n", STORAGE_BUCKET)
+	}
+
+	app := &cli.App{
+		Commands: []*cli.Command{
+			{
+				Name:    "mailboxnames",
+				Aliases: []string{"mn"},
+				Usage:   "List mailbox names",
+				Action:  listMailboxNames(isi, fileMgr),
+			},
+			{
+				Name:    "exportmessages",
+				Aliases: []string{"em"},
+				Usage:   "Export the messages in a mailbox",
+				Action:  exportMessages(isi, fileMgr),
+			},
+		},
+	}
+
+	if err := app.Run(os.Args); err != nil {
 		log.Fatal(err)
 	}
+}
 
-	type exportedMailbox struct {
-		Name       string `json:"name"`
-		Deletable  bool   `json:"deletable"`
-		Exportable bool   `json:"exportable"`
-		Lifespan   int    `json:"lifespan"`
-	}
-	exportedMailboxes := make(map[string]exportedMailbox, len(verifiedMailboxObjs))
-	for mailboxName, mailbox := range verifiedMailboxObjs {
-		exportedMailboxes[mailboxName] = exportedMailbox{
-			Name:       mailbox.Name,
-			Deletable:  mailbox.Deletable,
-			Exportable: mailbox.Exportable,
-			Lifespan:   mailbox.Lifespan,
+func listMailboxNames(isi *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cli.Context) error {
+	return func(c *cli.Context) error {
+		// List mailboxes
+		verifiedMailboxObjs, err := isi.GetMailboxes()
+		if err != nil {
+			return errors.Errorf("getting mailboxes error %+v", err)
 		}
-	}
 
-	encodedMailboxes, err := json.MarshalIndent(exportedMailboxes, "", "  ")
-	if err != nil {
-		log.Fatalf("Converting mailbox names to JSON error %+v", err)
-	}
+		type exportedMailbox struct {
+			Name       string `json:"name"`
+			Deletable  bool   `json:"deletable"`
+			Exportable bool   `json:"exportable"`
+			Lifespan   int    `json:"lifespan"`
+		}
+		exportedMailboxes := make(map[string]exportedMailbox, len(verifiedMailboxObjs))
+		for mailboxName, mailbox := range verifiedMailboxObjs {
+			exportedMailboxes[mailboxName] = exportedMailbox{
+				Name:       mailbox.Name,
+				Deletable:  mailbox.Deletable,
+				Exportable: mailbox.Exportable,
+				Lifespan:   mailbox.Lifespan,
+			}
+		}
 
-	if err := os.WriteFile(base.MailboxListFile, encodedMailboxes, 0644); err != nil {
-		log.Fatalf("Writing mailbox names file error %+v", err)
-	}
+		encodedMailboxes, err := json.MarshalIndent(exportedMailboxes, "", "  ")
+		if err != nil {
+			return errors.Errorf("converting mailbox names to JSON error %+v", err)
+		}
 
-	// utils.ExportEmailsFromMailbox(c, os.Getenv("IMAP_FOLDER"))
-	// for _, mailbox := range verifiedMailboxObjs {
-	// log.Printf("Exporting messages from %s\n", mailbox.Name)
-	err = verifiedMailboxObjs[os.Getenv("IMAP_FOLDER")].ExportMessages()
-	if err != nil {
-		log.Fatalf("Exporting mailbox `%s` error", os.Getenv("IMAP_FOLDER"))
-	}
-	// }
+		if err := fileMgr.WriteFile(base.MailboxListFile, encodedMailboxes, 0644); err != nil {
+			return errors.Errorf("writing mailbox names file error %+v", err)
+		}
 
-	log.Println("Done!")
+		return nil
+	}
+}
+
+func exportMessages(_ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cli.Context) error {
+	return func(c *cli.Context) error {
+		// mailboxName := c.String("mailbox")
+		// err := isi  verifiedMailboxObjs[os.Getenv("IMAP_FOLDER")] .ExportMessages()
+		// if err != nil {
+		// 	return errors.Errorf("exporting mailbox `%s` error", mailboxName)
+		// }
+
+		data, err := fileMgr.ReadFile(base.MailboxListFile)
+		if err != nil {
+			return errors.Errorf("exporting mailbox error %+v", err)
+		}
+		log.Println(string(data))
+
+		return nil
+	}
 }

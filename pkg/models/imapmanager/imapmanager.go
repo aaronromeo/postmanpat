@@ -24,7 +24,7 @@ type ImapManager interface {
 type ImapManagerImpl struct {
 	client      base.Client
 	dialTLS     func(address string, tlsConfig *tls.Config) (base.Client, error)
-	username    string
+	Username    string
 	password    string
 	address     string
 	logger      *slog.Logger
@@ -54,7 +54,7 @@ func NewImapManager(opts ...ImapManagerOption) (*ImapManagerImpl, error) {
 		}
 	}
 
-	if imapMgr.username == "" {
+	if imapMgr.Username == "" {
 		return nil, errors.New("requires username")
 	}
 
@@ -95,7 +95,7 @@ func WithTLSConfig(addr string, tlsConfig *tls.Config) ImapManagerOption {
 
 func WithAuth(username string, password string) ImapManagerOption {
 	return func(imapMgr *ImapManagerImpl) error {
-		imapMgr.username = username
+		imapMgr.Username = username
 		imapMgr.password = password
 		return nil
 	}
@@ -143,7 +143,7 @@ func (srv ImapManagerImpl) Login() (base.Client, error) {
 	state := srv.client.State()
 	switch state {
 	case imap.NotAuthenticatedState:
-		if err := srv.client.Login(srv.username, srv.password); err != nil {
+		if err := srv.client.Login(srv.Username, srv.password); err != nil {
 			srv.logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to login: %v", err), slog.Any("error", utils.WrapError(err)))
 			return srv.client, err
 		}
@@ -161,7 +161,7 @@ func (srv ImapManagerImpl) Login() (base.Client, error) {
 		srv.client = c
 		srv.logger.Info("Login success")
 
-		if err := srv.client.Login(srv.username, srv.password); err != nil {
+		if err := srv.client.Login(srv.Username, srv.password); err != nil {
 			srv.logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to login: %v", err), slog.Any("error", utils.WrapError(err)))
 			return srv.client, err
 		}
@@ -245,7 +245,7 @@ func (srv ImapManagerImpl) unserializeMailboxes() (map[string]*mailbox.MailboxIm
 		return mailboxObjs, nil
 	}
 
-	if mailboxFile, err := os.ReadFile(base.MailboxListFile); err != nil {
+	if mailboxFile, err := srv.fileCreator.ReadFile(base.MailboxListFile); err != nil {
 		srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 		return nil, err
 	} else {

@@ -84,7 +84,6 @@ func WithClient(c base.Client) MailboxOption {
 }
 
 func WithLogger(logger *slog.Logger) MailboxOption {
-	// slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	return func(mb *MailboxImpl) error {
 		mb.Logger = logger
 		return nil
@@ -92,7 +91,6 @@ func WithLogger(logger *slog.Logger) MailboxOption {
 }
 
 func WithCtx(ctx context.Context) MailboxOption {
-	// ctx := context.Background()
 	return func(mb *MailboxImpl) error {
 		mb.Ctx = ctx
 		return nil
