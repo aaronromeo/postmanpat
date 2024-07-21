@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, '**' ]
 
 jobs:
   test-and-lint:
@@ -50,7 +50,7 @@ jobs:
 
     steps:
     - name: Check out the repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v2
@@ -64,23 +64,28 @@ jobs:
         token: ${{ secrets.DIGITALOCEAN_CI_ACCESS_TOKEN }}
 
     - name: Extract image name
-      if: github.ref != 'refs/heads/main'
+      id: extract_image_name
       shell: bash
       run: |
-        echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
-        if [[ $GITHUB_HEAD_REF == "main" ]]; then
-          echo "branch=main" >> $GITHUB_OUTPUT
+        if [[ $GITHUB_REF_NAME == "main" ]]; then
+          echo "digest=main" >> $GITHUB_OUTPUT
+        else          
+          echo "digest=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}-${GITHUB_SHA}" >> $GITHUB_OUTPUT
         fi
-      id: extract_image_name
-  
-    - name: Build container image
-      run: docker build -t registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.branch }}-$(echo $GITHUB_SHA | head -c7) .
-    
+
     - name: Log in to DigitalOcean Container Registry with short-lived credentials
       run: doctl registry login --expiry-seconds 1200
-    
+  
+    - name: Build container image
+      run: docker build -t registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.digest }} .
+
+    - name: Clean up old images
+      run: |
+        branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
+        doctl registry repository list-tags postmanpat --output json | jq -r '.[] | select(.tag | contains("'${branch}'")) | .manifest_digest' | xargs -I {} doctl registry repository delete-manifest postmanpat --force {}
+
     - name: Push image to DigitalOcean Container Registry
-      run: docker push registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.branch }}-$(echo $GITHUB_SHA | head -c7)
+      run: docker push registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.digest }}
 
   deploy:
     runs-on: ubuntu-latest
@@ -88,7 +93,7 @@ jobs:
 
     steps:
     - name: Check out the repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     - name: Set up SSH
       run: |
@@ -96,13 +101,42 @@ jobs:
         echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
 
-    - name: Deploy to Production
+    # - name: Deploy to Production
+    #   if: github.ref_name == 'main'
+    #   run: |
+    #     if [[ "${{ secrets.PROD_DROPLET_IP }}" == "" ]]; then
+    #       echo "No production droplet IP provided. Skipping deployment."
+    #       exit 0
+    #     fi
+
+    #     ssh -o StrictHostKeyChecking=no root@${{ secrets.PROD_DROPLET_IP }} << 'EOF'
+    #       echo "${{ secrets.PROD_ENV_FILE }}" > .env.prod
+    #       doctl registry login --expiry-seconds 1200
+    #       docker pull registry.digitalocean.com/aaronromeo/postmanpat:main
+    #       docker stop postmanpat-prod || true
+    #       docker rm postmanpat-prod || true
+    #       docker run -d --env-file .env.prod -p 80:8080 --name postmanpat-prod registry.digitalocean.com/aaronromeo/postmanpat:main
+    #     EOF
+
+    # - name: Deploy to Staging
+    #   if: github.ref_name != 'main'
+    #   run: |
+    #     if [[ "${{ secrets.STAGING_DROPLET_IP }}" == "" ]]; then
+    #       echo "No staging droplet IP provided. Skipping deployment."
+    #       exit 0
+    #     fi
+
+    #     ssh -o StrictHostKeyChecking=no root@${{ secrets.STAGING_DROPLET_IP }} << 'EOF'
+    #       echo "${{ secrets.STAGING_ENV_FILE }}" > .env.staging
+    #       doctl registry login --expiry-seconds 1200
+    #       docker pull registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.digest }}
+    #       docker stop postmanpat-staging || true
+    #       docker rm postmanpat-staging || true
+    #       docker run -d --env-file .env.staging -p 80:8080 --name postmanpat-staging registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.digest }}
+    #     EOF
+
+    - name: Run garbage collection
       if: github.ref_name == 'main'
       run: |
-        ssh -o StrictHostKeyChecking=no root@${{ secrets.PROD_DROPLET_IP }} << 'EOF'
-          doctl registry login --expiry-seconds 1200
-          docker pull registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.branch }}-$(echo $GITHUB_SHA | head -c7)
-          docker stop postmanpat-prod || true
-          docker rm postmanpat-prod || true
-          docker run -d --env-file /path/to/.env.prod -p 80:8080 --name postmanpat-prod registry.digitalocean.com/your-registry/postmanpat:main
-        EOF
+        doctl registry garbage-collection start postmanpat
+
