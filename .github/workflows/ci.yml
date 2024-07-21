@@ -69,8 +69,8 @@ jobs:
       run: |
         if [[ $GITHUB_REF_NAME == "main" ]]; then
           echo "digest=main" >> $GITHUB_OUTPUT
-        else
-          echo "digest=${GITHUB_REF_NAME}-${GITHUB_SHA}" >> $GITHUB_OUTPUT
+        else          
+          echo "digest=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}-${GITHUB_SHA}" >> $GITHUB_OUTPUT
         fi
 
     - name: Build container image
