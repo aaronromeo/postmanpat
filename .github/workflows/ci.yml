@@ -76,8 +76,9 @@ jobs:
     - name: Clean up old images
       run: |
         branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
+        echo "branch ${branch}"
         image_tag="registry.digitalocean.com/aaronromeo/postmanpat:${branch}-*"
-        doctl registry repository list-manifests registry.digitalocean.com/aaronromeo/postmanpat --output json | jq -r '.[] | select(.tags[] | contains("'${GITHUB_REF_NAME}'")) | .digest' | xargs -I {} doctl registry repository delete-manifest registry.digitalocean.com/aaronromeo/postmanpat {}
+        doctl registry repository list-manifests registry.digitalocean.com/aaronromeo/postmanpat --output json | jq -r '.[] | select(.tags[] | contains("'${image_tag}'")) | .digest' | xargs -I {} doctl registry repository delete-manifest registry.digitalocean.com/aaronromeo/postmanpat {}
 
     - name: Build container image
       run: docker build -t registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.digest }} .
