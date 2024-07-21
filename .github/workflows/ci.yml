@@ -151,5 +151,5 @@ jobs:
     - name: Run garbage collection
       if: github.ref_name == 'main'
       run: |
-        doctl registry garbage-collection start postmanpat
+        doctl registry garbage-collection start postmanpat --force
 
