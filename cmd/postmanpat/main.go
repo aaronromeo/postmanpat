@@ -86,13 +86,6 @@ func main() {
 				Aliases: []string{"em"},
 				Usage:   "Export the messages in a mailbox",
 				Action:  exportMessages(isi, fileMgr),
-				// Flags: []cli.Flag{
-				// 	&cli.StringFlag{
-				// 		Name:     "mailbox",
-				// 		Usage:    "the name of the mailbox to export messages from",
-				// 		Required: true,
-				// 	},
-				// },
 			},
 		},
 	}
@@ -142,7 +135,7 @@ func listMailboxNames(isi *imap.ImapManagerImpl, fileMgr utils.FileManager) func
 func exportMessages(_ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cli.Context) error {
 	return func(c *cli.Context) error {
 		// mailboxName := c.String("mailbox")
-		// err := isi   .ExportMessages()
+		// err := isi  verifiedMailboxObjs[os.Getenv("IMAP_FOLDER")] .ExportMessages()
 		// if err != nil {
 		// 	return errors.Errorf("exporting mailbox `%s` error", mailboxName)
 		// }
@@ -156,65 +149,3 @@ func exportMessages(_ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *
 		return nil
 	}
 }
-
-// func main() {
-// 	err := godotenv.Load(".env")
-// 	if err != nil {
-// 		log.Fatalf("Error loading .env file: %s", err)
-// 	}
-
-// 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-// 	ctx := context.Background()
-
-// 	isi, err := imap.NewImapManager(
-// 		// Connect to server
-// 		imap.WithTLSConfig(os.Getenv("IMAP_URL"), nil),
-// 		imap.WithAuth(os.Getenv("IMAP_USER"), os.Getenv("IMAP_PASS")),
-// 		imap.WithCtx(ctx),
-// 		imap.WithLogger(logger),
-// 		imap.WithFileManager(utils.OSFileManager{}),
-// 	)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-
-// 	log.Println("Connecting to server...")
-
-// 	// List mailboxes
-// 	verifiedMailboxObjs, err := isi.GetMailboxes()
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-
-// 	type exportedMailbox struct {
-// 		Name       string `json:"name"`
-// 		Deletable  bool   `json:"deletable"`
-// 		Exportable bool   `json:"exportable"`
-// 		Lifespan   int    `json:"lifespan"`
-// 	}
-// 	exportedMailboxes := make(map[string]exportedMailbox, len(verifiedMailboxObjs))
-// 	for mailboxName, mailbox := range verifiedMailboxObjs {
-// 		exportedMailboxes[mailboxName] = exportedMailbox{
-// 			Name:       mailbox.Name,
-// 			Deletable:  mailbox.Deletable,
-// 			Exportable: mailbox.Exportable,
-// 			Lifespan:   mailbox.Lifespan,
-// 		}
-// 	}
-
-// 	encodedMailboxes, err := json.MarshalIndent(exportedMailboxes, "", "  ")
-// 	if err != nil {
-// 		log.Fatalf("Converting mailbox names to JSON error %+v", err)
-// 	}
-
-// 	if err := os.WriteFile(base.MailboxListFile, encodedMailboxes, 0644); err != nil {
-// 		log.Fatalf("Writing mailbox names file error %+v", err)
-// 	}
-
-// 	err = verifiedMailboxObjs[os.Getenv("IMAP_FOLDER")].ExportMessages()
-// 	if err != nil {
-// 		log.Fatalf("Exporting mailbox `%s` error", os.Getenv("IMAP_FOLDER"))
-// 	}
-
-// 	log.Println("Done!")
-// }
