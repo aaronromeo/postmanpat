@@ -101,39 +101,39 @@ jobs:
         echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
 
-    - name: Deploy to Production
-      if: github.ref_name == 'main'
-      run: |
-        if [[ "${{ secrets.PROD_DROPLET_IP }}" == "" ]]; then
-          echo "No production droplet IP provided. Skipping deployment."
-          exit 0
-        fi
+    # - name: Deploy to Production
+    #   if: github.ref_name == 'main'
+    #   run: |
+    #     if [[ "${{ secrets.PROD_DROPLET_IP }}" == "" ]]; then
+    #       echo "No production droplet IP provided. Skipping deployment."
+    #       exit 0
+    #     fi
 
-        ssh -o StrictHostKeyChecking=no root@${{ secrets.PROD_DROPLET_IP }} << 'EOF'
-          echo "${{ secrets.PROD_ENV_FILE }}" > .env.prod
-          doctl registry login --expiry-seconds 1200
-          docker pull registry.digitalocean.com/aaronromeo/postmanpat:main
-          docker stop postmanpat-prod || true
-          docker rm postmanpat-prod || true
-          docker run -d --env-file .env.prod -p 80:8080 --name postmanpat-prod registry.digitalocean.com/aaronromeo/postmanpat:main
-        EOF
+    #     ssh -o StrictHostKeyChecking=no root@${{ secrets.PROD_DROPLET_IP }} << 'EOF'
+    #       echo "${{ secrets.PROD_ENV_FILE }}" > .env.prod
+    #       doctl registry login --expiry-seconds 1200
+    #       docker pull registry.digitalocean.com/aaronromeo/postmanpat:main
+    #       docker stop postmanpat-prod || true
+    #       docker rm postmanpat-prod || true
+    #       docker run -d --env-file .env.prod -p 80:8080 --name postmanpat-prod registry.digitalocean.com/aaronromeo/postmanpat:main
+    #     EOF
 
-    - name: Deploy to Staging
-      if: github.ref_name != 'main'
-      run: |
-        if [[ "${{ secrets.STAGING_DROPLET_IP }}" == "" ]]; then
-          echo "No staging droplet IP provided. Skipping deployment."
-          exit 0
-        fi
+    # - name: Deploy to Staging
+    #   if: github.ref_name != 'main'
+    #   run: |
+    #     if [[ "${{ secrets.STAGING_DROPLET_IP }}" == "" ]]; then
+    #       echo "No staging droplet IP provided. Skipping deployment."
+    #       exit 0
+    #     fi
 
-        ssh -o StrictHostKeyChecking=no root@${{ secrets.STAGING_DROPLET_IP }} << 'EOF'
-          echo "${{ secrets.STAGING_ENV_FILE }}" > .env.staging
-          doctl registry login --expiry-seconds 1200
-          docker pull registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.digest }}
-          docker stop postmanpat-staging || true
-          docker rm postmanpat-staging || true
-          docker run -d --env-file .env.staging -p 80:8080 --name postmanpat-staging registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.digest }}
-        EOF
+    #     ssh -o StrictHostKeyChecking=no root@${{ secrets.STAGING_DROPLET_IP }} << 'EOF'
+    #       echo "${{ secrets.STAGING_ENV_FILE }}" > .env.staging
+    #       doctl registry login --expiry-seconds 1200
+    #       docker pull registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.digest }}
+    #       docker stop postmanpat-staging || true
+    #       docker rm postmanpat-staging || true
+    #       docker run -d --env-file .env.staging -p 80:8080 --name postmanpat-staging registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.digest }}
+    #     EOF
 
     - name: Run garbage collection
       if: github.ref_name == 'main'
