@@ -73,21 +73,24 @@ jobs:
           echo "digest=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}-${GITHUB_SHA}" >> $GITHUB_OUTPUT
         fi
 
-    - name: Clean up old images
-      run: |
-        branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
-        echo "branch ${branch}"
-        image_tag="registry.digitalocean.com/aaronromeo/postmanpat:${branch}-*"
-        doctl registry repository list-manifests registry.digitalocean.com/aaronromeo/postmanpat --output json | jq -r '.[] | select(.tags[] | contains("'${image_tag}'")) | .digest' | xargs -I {} doctl registry repository delete-manifest registry.digitalocean.com/aaronromeo/postmanpat {}
-
+    - name: Log in to DigitalOcean Container Registry with short-lived credentials
+      run: doctl registry login --expiry-seconds 1200
+  
     - name: Build container image
       run: docker build -t registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.digest }} .
 
-    - name: Log in to DigitalOcean Container Registry with short-lived credentials
-      run: doctl registry login --expiry-seconds 1200
-
     - name: Push image to DigitalOcean Container Registry
       run: docker push registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.digest }}
+
+    - name: Clean up old images
+      run: |
+        branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
+        manifestshas=($(doctl registry repository list-tags postmanpat --output json | jq -r 'sort_by(.updated_at) | .[] | select(.tag | contains("'${branch}'")) | .manifest_digest'))
+        count=${#manifestshas[@]}
+
+        for (( i=1; i<$count; i++ )); do
+            doctl registry repository delete-manifest postmanpat --force ${manifestshas[$i]}
+        done
 
   deploy:
     runs-on: ubuntu-latest
@@ -136,3 +139,9 @@ jobs:
           docker rm postmanpat-staging || true
           docker run -d --env-file .env.staging -p 80:8080 --name postmanpat-staging registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.digest }}
         EOF
+
+    - name: Run garbage collection
+      if: github.ref_name == 'main'
+      run: |
+        doctl registry garbage-collection start postmanpat
+
