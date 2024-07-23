@@ -39,6 +39,20 @@ func (m *MockClient) EXPECT() *MockClientMockRecorder {
 	return m.recorder
 }
 
+// Expunge mocks base method.
+func (m *MockClient) Expunge(ch chan uint32) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Expunge", ch)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Expunge indicates an expected call of Expunge.
+func (mr *MockClientMockRecorder) Expunge(ch any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Expunge", reflect.TypeOf((*MockClient)(nil).Expunge), ch)
+}
+
 // Fetch mocks base method.
 func (m *MockClient) Fetch(seqset *imap.SeqSet, items []imap.FetchItem, ch chan *imap.Message) error {
 	m.ctrl.T.Helper()
@@ -95,6 +109,21 @@ func (mr *MockClientMockRecorder) Logout() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Logout", reflect.TypeOf((*MockClient)(nil).Logout))
 }
 
+// Search mocks base method.
+func (m *MockClient) Search(criteria *imap.SearchCriteria) ([]uint32, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Search", criteria)
+	ret0, _ := ret[0].([]uint32)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Search indicates an expected call of Search.
+func (mr *MockClientMockRecorder) Search(criteria any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Search", reflect.TypeOf((*MockClient)(nil).Search), criteria)
+}
+
 // Select mocks base method.
 func (m *MockClient) Select(name string, readOnly bool) (*imap.MailboxStatus, error) {
 	m.ctrl.T.Helper()
@@ -122,6 +151,20 @@ func (m *MockClient) State() imap.ConnState {
 func (mr *MockClientMockRecorder) State() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "State", reflect.TypeOf((*MockClient)(nil).State))
+}
+
+// Store mocks base method.
+func (m *MockClient) Store(seqset *imap.SeqSet, item imap.StoreItem, value any, ch chan *imap.Message) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Store", seqset, item, value, ch)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Store indicates an expected call of Store.
+func (mr *MockClientMockRecorder) Store(seqset, item, value, ch any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Store", reflect.TypeOf((*MockClient)(nil).Store), seqset, item, value, ch)
 }
 
 // MockService is a mock of Service interface.

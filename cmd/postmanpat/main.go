@@ -9,6 +9,7 @@ import (
 
 	"aaronromeo.com/postmanpat/pkg/base"
 	imap "aaronromeo.com/postmanpat/pkg/models/imapmanager"
+	"aaronromeo.com/postmanpat/pkg/models/mailbox"
 	"aaronromeo.com/postmanpat/pkg/utils"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -85,7 +86,7 @@ func main() {
 				Name:    "exportmessages",
 				Aliases: []string{"em"},
 				Usage:   "Export the messages in a mailbox",
-				Action:  exportMessages(isi, fileMgr),
+				Action:  reapMessages(isi, fileMgr),
 			},
 		},
 	}
@@ -132,7 +133,7 @@ func listMailboxNames(isi *imap.ImapManagerImpl, fileMgr utils.FileManager) func
 	}
 }
 
-func exportMessages(_ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cli.Context) error {
+func reapMessages(_ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cli.Context) error {
 	return func(c *cli.Context) error {
 		// mailboxName := c.String("mailbox")
 		// err := isi  verifiedMailboxObjs[os.Getenv("IMAP_FOLDER")] .ExportMessages()
@@ -140,11 +141,35 @@ func exportMessages(_ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *
 		// 	return errors.Errorf("exporting mailbox `%s` error", mailboxName)
 		// }
 
+		// Read the mailbox list file
 		data, err := fileMgr.ReadFile(base.MailboxListFile)
 		if err != nil {
 			return errors.Errorf("exporting mailbox error %+v", err)
 		}
-		log.Println(string(data))
+		mailboxes := make(map[string]mailbox.MailboxImpl)
+
+		err = json.Unmarshal(data, &mailboxes)
+		if err != nil {
+			return errors.Errorf("unable to marshal mailboxes %+v", err)
+		}
+
+		for mailboxName, mailbox := range mailboxes {
+			if mailbox.Exportable {
+				log.Printf("Exporting mailbox %s\n", mailboxName)
+				// 		err := mailbox.ExportMessages()
+				// 		if err != nil {
+				// 			return errors.Errorf("exporting mailbox `%s` error", mailboxName)
+				// 		}
+			}
+
+			if mailbox.Deletable {
+				log.Printf("Deleting mailbox %s\n", mailboxName)
+				// 		err := mailbox.ExportMessages()
+				// 		if err != nil {
+				// 			return errors.Errorf("exporting mailbox `%s` error", mailboxName)
+				// 		}
+			}
+		}
 
 		return nil
 	}

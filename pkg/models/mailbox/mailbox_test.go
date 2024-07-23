@@ -302,20 +302,29 @@ func TestExportMessages(t *testing.T) {
 				Logger:      logger,
 				Ctx:         ctx,
 				FileManager: mockfileManager,
+				Lifespan:    30,
 			}
 
+			expectedSeq := []uint32{1, 2, 3, 4, 5}
+			seqSet := new(imap.SeqSet)
+			seqSet.AddNum(expectedSeq...)
 			mboxStatus := &imap.MailboxStatus{Messages: (uint32)(len(tc.messages))}
 			mockClient.EXPECT().Select("INBOX", false).Return(mboxStatus, nil)
-			mockClient.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
-				func(seqset *imap.SeqSet, items []imap.FetchItem, ch chan<- *imap.Message) error {
-					defer close(ch)
 
-					for i := 0; i < int(mboxStatus.Messages); i++ {
-						ch <- tc.messages[i]
-					}
-					return nil
-				},
-			)
+			criteria := imap.NewSearchCriteria()
+			criteria.Before = time.Now().Add(time.Hour * 24 * time.Duration(mb.Lifespan))
+			tolerance := time.Second
+			mockClient.EXPECT().Search(mock.NewSearchCriteriaMatcher(criteria, tolerance)).Return(expectedSeq, nil)
+
+			fetchRet := func(seqset *imap.SeqSet, items []imap.FetchItem, ch chan<- *imap.Message) error {
+				defer close(ch)
+
+				for i := 0; i < int(mboxStatus.Messages); i++ {
+					ch <- tc.messages[i]
+				}
+				return nil
+			}
+			mockClient.EXPECT().Fetch(seqSet, gomock.Any(), gomock.Any()).DoAndReturn(fetchRet)
 
 			// Export messages and check results
 			err := mb.ExportMessages()
