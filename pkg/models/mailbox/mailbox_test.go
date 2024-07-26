@@ -65,7 +65,7 @@ func TestNewMailbox(t *testing.T) {
 	}
 }
 
-func TestExportMessages(t *testing.T) {
+func TestProcessMailbox(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -73,8 +73,8 @@ func TestExportMessages(t *testing.T) {
 		name             string
 		messages         []*imap.Message
 		exportable       bool
+		deletable        bool
 		wantFileContents map[string]string
-		wantErrorMsg     string
 	}
 
 	tests := []test{
@@ -149,6 +149,7 @@ func TestExportMessages(t *testing.T) {
 				},
 			},
 			exportable: true,
+			deletable:  true,
 			wantFileContents: map[string]string{
 				"exportedemails/INBOX/20210315T123456Z-Test_Subject_Beethoven-60e4e2abcbc4c6971acbae5201788dd8/metadata.json": `{
   "subject": "Test Subject Beethoven",
@@ -200,6 +201,7 @@ func TestExportMessages(t *testing.T) {
 				},
 			},
 			exportable: true,
+			deletable:  true,
 			wantFileContents: map[string]string{
 				"exportedemails/INBOX/20220510T061245Z-Plain_Text_Email-4bd44a2a01f19b1e6600c1a4d9e0ab3d/metadata.json": `{
   "subject": "Plain Text Email",
@@ -238,6 +240,7 @@ func TestExportMessages(t *testing.T) {
 				},
 			},
 			exportable: true,
+			deletable:  true,
 			wantFileContents: map[string]string{
 				"exportedemails/INBOX/20220510T061245Z-HTML_Email-9eecf1f98b33e0eb9a85a3de45223a8d/metadata.json": `{
   "subject": "HTML Email",
@@ -275,6 +278,7 @@ func TestExportMessages(t *testing.T) {
 				},
 			},
 			exportable: true,
+			deletable:  true,
 			wantFileContents: map[string]string{
 				"exportedemails/INBOX/20220510T061245Z-Mixed_Content-a4873d8180ccba2c487f47eb6a0bb8c3/metadata.json": `{
   "subject": "Mixed Content",
@@ -313,8 +317,8 @@ func TestExportMessages(t *testing.T) {
 				},
 			},
 			exportable:       false,
+			deletable:        false,
 			wantFileContents: map[string]string{},
-			wantErrorMsg:     "mailbox INBOX is not exportable",
 		},
 	}
 
@@ -335,9 +339,10 @@ func TestExportMessages(t *testing.T) {
 				FileManager: mockfileManager,
 				Lifespan:    30,
 				Exportable:  tc.exportable,
+				Deletable:   tc.deletable,
 			}
 
-			if tc.wantErrorMsg == "" {
+			if tc.exportable || tc.deletable {
 				mboxStatus := &imap.MailboxStatus{Messages: (uint32)(len(tc.messages))}
 				mockClient.EXPECT().Select("INBOX", false).Return(mboxStatus, nil)
 
@@ -360,41 +365,36 @@ func TestExportMessages(t *testing.T) {
 				mockClient.EXPECT().Search(mock.NewSearchCriteriaMatcher(criteria, tolerance)).Return(expectedSeq, nil)
 			}
 
-			// Export messages and check results
-			err := mb.ExportMessages()
-
-			if tc.wantErrorMsg != "" {
-				if err == nil {
-					t.Fatalf("Expected error but got nil")
-				}
-				if !strings.Contains(err.Error(), tc.wantErrorMsg) {
-					t.Fatalf("Expected error message to contain %q but got %q", tc.wantErrorMsg, err.Error())
-				}
-
-				return
+			if tc.deletable {
+				mockClient.EXPECT().Store(gomock.Any(), imap.FormatFlagsOp(imap.AddFlags, true), []interface{}{imap.DeletedFlag}, nil).Return(nil)
+				mockClient.EXPECT().Expunge(nil).Return(nil)
 			}
 
+			// Export messages and check results
+			err := mb.ProcessMailbox()
 			if err != nil {
 				t.Fatalf("Unexpected error %+v", err)
 			}
 
-			if len(tc.wantFileContents) != len(mockfileManager.Writers) {
-				fileNames := []string{}
-				for key := range mockfileManager.Writers {
-					fileNames = append(fileNames, key)
-				}
-				t.Fatalf("Incorrect file count. want: %d got: %d\n%+v", len(tc.wantFileContents), len(mockfileManager.Writers), fileNames)
-			}
-
-			for key, expectedBody := range tc.wantFileContents {
-				actualMockWriter, ok := mockfileManager.Writers[key]
-				if !ok {
-					t.Fatalf("Missing expected file %s from the exported files", key)
+			if tc.exportable {
+				if len(tc.wantFileContents) != len(mockfileManager.Writers) {
+					fileNames := []string{}
+					for key := range mockfileManager.Writers {
+						fileNames = append(fileNames, key)
+					}
+					t.Fatalf("Incorrect file count. want: %d got: %d\n%+v", len(tc.wantFileContents), len(mockfileManager.Writers), fileNames)
 				}
 
-				actualBody := actualMockWriter.Buffer.String()
-				if strings.TrimSpace(actualBody) != strings.TrimSpace(expectedBody) {
-					t.Fatalf("Exported file %s mismatch. got: `%s` want: `%s` ", key, actualBody, expectedBody)
+				for key, expectedBody := range tc.wantFileContents {
+					actualMockWriter, ok := mockfileManager.Writers[key]
+					if !ok {
+						t.Fatalf("Missing expected file %s from the exported files", key)
+					}
+
+					actualBody := actualMockWriter.Buffer.String()
+					if strings.TrimSpace(actualBody) != strings.TrimSpace(expectedBody) {
+						t.Fatalf("Exported file %s mismatch. got: `%s` want: `%s` ", key, actualBody, expectedBody)
+					}
 				}
 			}
 		})

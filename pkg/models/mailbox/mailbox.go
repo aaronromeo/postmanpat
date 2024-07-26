@@ -132,12 +132,36 @@ func (mb *MailboxImpl) wrappedLogoutFn() func() {
 	}
 }
 
-func (mb *MailboxImpl) ExportMessages() error {
+func (mb *MailboxImpl) ProcessMailbox() error {
+	switch {
+	case mb.Exportable && mb.Deletable:
+		mb.Logger.InfoContext(mb.Ctx, "Exporting and deleting mailbox", slog.String("name", mb.Name))
+		err := mb.ExportAndDeleteMessages()
+		if err != nil {
+			return err
+		}
+	case mb.Deletable:
+		mb.Logger.InfoContext(mb.Ctx, "Deleting mailbox", slog.String("name", mb.Name))
+		err := mb.DeleteMessages()
+		if err != nil {
+			return err
+		}
+	default:
+		mb.Logger.InfoContext(mb.Ctx, "Skipping mailbox", slog.String("name", mb.Name))
+	}
+	return nil
+}
+
+func (mb *MailboxImpl) ExportAndDeleteMessages() error {
 	// Defer logout
 	defer mb.wrappedLogoutFn()
 
 	if !mb.Exportable {
 		return fmt.Errorf("mailbox %s is not exportable", mb.Name)
+	}
+
+	if !mb.Deletable {
+		return fmt.Errorf("mailbox %s is not deletable", mb.Name)
 	}
 
 	// Login
@@ -148,15 +172,19 @@ func (mb *MailboxImpl) ExportMessages() error {
 	}
 	mb.Client = c
 
-	messages, _, err := mb.fetchMessages()
+	messages, seqSet, err := mb.fetchMessages()
 	if err != nil {
 		return err
 	}
 
+	// Export messages
 	err = mb.exportMessages(messages)
 	if err != nil {
 		return err
 	}
+
+	// Call the delete helper
+	mb.deleteMessages(c, seqSet)
 
 	return nil
 }
@@ -182,17 +210,8 @@ func (mb *MailboxImpl) DeleteMessages() error {
 		return err
 	}
 
-	// First mark the message as deleted
-	item := imap.FormatFlagsOp(imap.AddFlags, true)
-	flags := []interface{}{imap.DeletedFlag}
-	if err := c.Store(seqSet, item, flags, nil); err != nil {
-		log.Fatal(err)
-	}
-
-	// Then delete it
-	if err := mb.Client.Expunge(nil); err != nil {
-		log.Fatal(err)
-	}
+	// Call the delete helper
+	mb.deleteMessages(c, seqSet)
 
 	return nil
 }
@@ -204,6 +223,20 @@ func (mb *MailboxImpl) Serialize() (base.SerializedMailbox, error) {
 		Delete:   mb.Deletable,
 		Lifespan: mb.Lifespan,
 	}, nil
+}
+
+func (mb *MailboxImpl) deleteMessages(c base.Client, seqSet *imap.SeqSet) {
+	// First mark the message as deleted
+	item := imap.FormatFlagsOp(imap.AddFlags, true)
+	flags := []interface{}{imap.DeletedFlag}
+	if err := c.Store(seqSet, item, flags, nil); err != nil {
+		log.Fatal(err)
+	}
+
+	// Then delete it
+	if err := mb.Client.Expunge(nil); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func (mb *MailboxImpl) fetchMessages() (chan *imap.Message, *imap.SeqSet, error) {

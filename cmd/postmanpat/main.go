@@ -135,12 +135,6 @@ func listMailboxNames(isi *imap.ImapManagerImpl, fileMgr utils.FileManager) func
 
 func reapMessages(_ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cli.Context) error {
 	return func(c *cli.Context) error {
-		// mailboxName := c.String("mailbox")
-		// err := isi  verifiedMailboxObjs[os.Getenv("IMAP_FOLDER")] .ExportMessages()
-		// if err != nil {
-		// 	return errors.Errorf("exporting mailbox `%s` error", mailboxName)
-		// }
-
 		// Read the mailbox list file
 		data, err := fileMgr.ReadFile(base.MailboxListFile)
 		if err != nil {
@@ -153,21 +147,10 @@ func reapMessages(_ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cl
 			return errors.Errorf("unable to marshal mailboxes %+v", err)
 		}
 
-		for mailboxName, mailbox := range mailboxes {
-			if mailbox.Exportable {
-				log.Printf("Exporting mailbox %s\n", mailboxName)
-				// 		err := mailbox.ExportMessages()
-				// 		if err != nil {
-				// 			return errors.Errorf("exporting mailbox `%s` error", mailboxName)
-				// 		}
-			}
-
-			if mailbox.Deletable {
-				log.Printf("Deleting mailbox %s\n", mailboxName)
-				// 		err := mailbox.ExportMessages()
-				// 		if err != nil {
-				// 			return errors.Errorf("exporting mailbox `%s` error", mailboxName)
-				// 		}
+		for _, mailbox := range mailboxes {
+			err := mailbox.ProcessMailbox()
+			if err != nil {
+				return errors.Errorf("unable to process mailboxes %+v", err)
 			}
 		}
 
