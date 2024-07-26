@@ -68,7 +68,7 @@ jobs:
       shell: bash
       run: |
         if [[ $GITHUB_REF_NAME == "main" ]]; then
-          echo "digest=main" >> $GITHUB_OUTPUT
+          echo "digest=main-${GITHUB_SHA}" >> $GITHUB_OUTPUT
         else          
           echo "digest=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}-${GITHUB_SHA}" >> $GITHUB_OUTPUT
         fi
@@ -86,6 +86,13 @@ jobs:
 
     - name: Push image to DigitalOcean Container Registry
       run: docker push registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.digest }}
+
+    - name: Tag and push latest image to DigitalOcean Container Registry
+      run: |
+        if [[ $GITHUB_REF_NAME == "main" ]]; then
+          docker tag registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.digest }} registry.digitalocean.com/aaronromeo/postmanpat:latest
+          docker push registry.digitalocean.com/aaronromeo/postmanpat:latest
+        fi
 
   deploy:
     runs-on: ubuntu-latest
