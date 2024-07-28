@@ -1,4 +1,4 @@
-variable "digitalocean_token" {
+variable "do_token" {
   description = "DigitalOcean API token"
   type        = string
 }
@@ -8,7 +8,17 @@ variable "ssh_fingerprint" {
   type        = string
 }
 
-variable "private_key_path" {
+variable "pvt_key" {
   description = "Path to the SSH private key"
+  type        = string
+}
+
+variable "spaces_access_key" {
+  description = "Spaces access key"
+  type        = string
+}
+
+variable "spaces_secret_key" {
+  description = "Spaces secret key"
   type        = string
 }

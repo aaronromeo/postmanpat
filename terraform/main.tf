@@ -1,12 +1,8 @@
-provider "digitalocean" {
-  token = var.digitalocean_token
-}
-
 resource "digitalocean_droplet" "web" {
-  image  = "ubuntu-22-04-x64"
-  name   = "docker-droplet"
-  region = "nyc1"
-  size   = "s-1vcpu-1gb"
+  image    = "ubuntu-22-04-x64"
+  name     = "docker-ubuntu-postmanpat"
+  region   = "nyc3"
+  size     = "s-1vcpu-1gb"
   ssh_keys = [var.ssh_fingerprint]
 }
 
