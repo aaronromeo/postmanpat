@@ -60,7 +60,7 @@ variable "spaces_secret_key" {
 
 variable "ssh_fingerprints" {
   description = "SSH key fingerprints"
-  type        = array(string)
+  type        = list(string)
 }
 
 variable "region" {
