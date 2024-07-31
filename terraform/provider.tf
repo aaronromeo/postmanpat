@@ -11,8 +11,8 @@ terraform {
       s3 = "https://nyc3.digitaloceanspaces.com"
     }
 
-    bucket     = "tf-state-storage-box-aaronromeo"
-    key        = "postmanpat.tfstate"
+    bucket = "tf-state-storage-box-aaronromeo"
+    key    = "postmanpat.tfstate"
 
     # Deactivate a few AWS-specific checks
     skip_credentials_validation = true
@@ -29,5 +29,5 @@ provider "digitalocean" {
 }
 
 data "digitalocean_ssh_key" "terraform" {
-  name = "do_tf"
+  name = var.pvt_key_file
 }
