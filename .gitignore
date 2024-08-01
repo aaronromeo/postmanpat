@@ -3,3 +3,6 @@ build
 workingfiles/*.json
 exportedemails
 cover.out
+*.tfvars
+terraform/.terraform/terraform.tfstate
+terraform/.terraform/environment

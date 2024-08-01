@@ -21,18 +21,36 @@ import (
 
 const STORAGE_BUCKET = "postmanpat"
 
+const DIGITALOCEAN_BUCKET_ACCESS_KEY = "DIGITALOCEAN_BUCKET_ACCESS_KEY"
+const DIGITALOCEAN_BUCKET_SECRET_KEY = "DIGITALOCEAN_BUCKET_SECRET_KEY"
+const IMAP_URL = "IMAP_URL"
+const IMAP_USER = "IMAP_USER"
+const IMAP_PASS = "IMAP_PASS"
+
 func main() {
 	err := godotenv.Load(".env")
 	if err != nil {
-		log.Fatalf("Error loading .env file: %s", err)
+		log.Printf("Error loading .env file, proceeding: %s", err)
+	}
+
+	for _, key := range []string{
+		DIGITALOCEAN_BUCKET_ACCESS_KEY,
+		DIGITALOCEAN_BUCKET_SECRET_KEY,
+		IMAP_URL,
+		IMAP_USER,
+		IMAP_PASS,
+	} {
+		if _, ok := os.LookupEnv(key); !ok {
+			log.Fatalf("Environment variable %s is not set", key)
+		}
 	}
 
 	sess, err := session.NewSession(&aws.Config{
 		Region:   aws.String("nyc3"),
 		Endpoint: aws.String("nyc3.digitaloceanspaces.com"),
 		Credentials: credentials.NewStaticCredentials(
-			os.Getenv("DIGITALOCEAN_BUCKET_ACCESS_KEY"),
-			os.Getenv("DIGITALOCEAN_BUCKET_SECRET_KEY"),
+			os.Getenv(DIGITALOCEAN_BUCKET_ACCESS_KEY),
+			os.Getenv(DIGITALOCEAN_BUCKET_SECRET_KEY),
 			"",
 		),
 	})
@@ -45,8 +63,8 @@ func main() {
 
 	isi, err := imap.NewImapManager(
 		// Connect to server
-		imap.WithTLSConfig(os.Getenv("IMAP_URL"), nil),
-		imap.WithAuth(os.Getenv("IMAP_USER"), os.Getenv("IMAP_PASS")),
+		imap.WithTLSConfig(os.Getenv(IMAP_URL), nil),
+		imap.WithAuth(os.Getenv(IMAP_USER), os.Getenv(IMAP_PASS)),
 		imap.WithCtx(ctx),
 		imap.WithLogger(logger),
 		imap.WithFileManager(utils.OSFileManager{}),
