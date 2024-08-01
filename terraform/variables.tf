@@ -38,6 +38,17 @@ variable "digitalocean_user" {
   type        = string
 }
 
+variable "domain" {
+  description = "Domain name"
+  type        = string
+}
+
+variable "subdomain" {
+  description = "Subdomain name"
+  type        = string
+  default = "postman"
+}
+
 variable "pvt_key" {
   description = "Path to the SSH private key"
   type        = string

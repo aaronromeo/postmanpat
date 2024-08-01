@@ -9,6 +9,10 @@ resource "digitalocean_droplet" "web" {
 
   user_data = <<-EOF
     #!/bin/bash
+
+    # Enable strict mode
+    set -euxo pipefail
+
     echo '
       export IMAP_URL="${var.imap_url}"
       export IMAP_USER="${var.imap_user}"
@@ -20,7 +24,23 @@ resource "digitalocean_droplet" "web" {
       export DIGITALOCEAN_USER="${var.digitalocean_user}"
 
     ' > /etc/profile.d/postmanpat.sh
+
+    chmod +x /etc/profile.d/postmanpat.sh
   EOF
+}
+
+
+resource "digitalocean_domain" "example" {
+  name = var.domain
+}
+
+resource "digitalocean_record" "subdomain" {
+  domain = digitalocean_domain.example.name
+  type   = "A"
+  name   = var.subdomain
+  value  = digitalocean_droplet.web.ipv4_address
+
+  depends_on = [digitalocean_droplet.web]
 }
 
 resource "null_resource" "provision" {
@@ -85,6 +105,8 @@ resource "null_resource" "provision" {
       "/usr/local/bin/update-script.sh"
     ]
   }
+
+  depends_on = [digitalocean_droplet.web]
 }
 
 output "droplet_ip" {
