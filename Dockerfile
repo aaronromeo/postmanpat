@@ -4,6 +4,12 @@ FROM golang:1.23rc1-bullseye
 # Set the Current Working Directory inside the container
 WORKDIR /app
 
+# Install cron
+RUN apt-get update && apt-get install -y cron
+
+# Copy over the crontab
+COPY crontab /etc/cron.d/postmanpat-crontab
+
 # Copy go.mod and go.sum files
 COPY go.mod go.sum ./
 
@@ -19,5 +25,5 @@ RUN make build
 # # Expose port 8080 to the outside world
 # EXPOSE 8080
 
-# Command to run the executable
-CMD ["/app/build/postmanpat"]
+# Updating the crontab file perms
+RUN chmod 0644 /etc/cron.d/postmanpat-crontab && crontab /etc/cron.d/postmanpat-crontab
