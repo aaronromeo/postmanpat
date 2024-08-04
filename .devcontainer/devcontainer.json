@@ -3,5 +3,13 @@
 	"features": {
 		"ghcr.io/devcontainers-contrib/features/terraform-asdf:2": {},
 		"ghcr.io/devcontainers-contrib/features/digitalocean-cli:1": {}
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-azuretools.vscode-azureterraform",
+				"hashicorp.terraform"
+			]
+		}
 	}
 }
