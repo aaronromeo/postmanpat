@@ -2,6 +2,6 @@
 	"image": "mcr.microsoft.com/devcontainers/universal:2",
 	"features": {
 		"ghcr.io/devcontainers-contrib/features/terraform-asdf:2": {},
-		"ghcr.io/elanhasson/devcontainer-features/digitalocean-doctl-cli-persistence:1": {}
+		"ghcr.io/devcontainers-contrib/features/digitalocean-cli:1": {}
 	}
 }
