@@ -1,55 +1,55 @@
-variable "do_token" {
+variable "DO_TOKEN" {
   description = "DigitalOcean API token"
   type        = string
 }
 
-variable "imap_pass" {
+variable "IMAP_PASS" {
   description = "IMAP password"
   type        = string
 
 }
-variable "imap_url" {
+variable "IMAP_URL" {
   description = "IMAP URL"
   type        = string
 
 }
-variable "imap_user" {
+variable "IMAP_USER" {
   description = "IMAP user"
   type        = string
 
 }
-variable "digitalocean_bucket_access_key" {
+variable "DIGITALOCEAN_BUCKET_ACCESS_KEY" {
   description = "Digitaocean bucket access key"
   type        = string
 
 }
-variable "digitalocean_bucket_secret_key" {
+variable "DIGITALOCEAN_BUCKET_SECRET_KEY" {
   description = "Digitaocean bucket secret key"
   type        = string
 }
 
-variable "digitalocean_container_registry_token" {
+variable "DIGITALOCEAN_CONTAINER_REGISTRY_TOKEN" {
   description = "Digitaocean container registry token"
   type        = string
 }
 
-variable "digitalocean_user" {
+variable "DIGITALOCEAN_USER" {
   description = "Digitaocean user"
   type        = string
 }
 
-variable "domain" {
+variable "DOMAIN" {
   description = "Domain name"
   type        = string
 }
 
-variable "subdomain" {
+variable "SUBDOMAIN" {
   description = "Subdomain name"
   type        = string
-  default = "postman"
+  default     = "postmanpat"
 }
 
-variable "pvt_key" {
+variable "PVT_KEY" {
   description = "Path to the SSH private key"
   type        = string
 }
@@ -57,19 +57,10 @@ variable "pvt_key" {
 variable "pvt_key_file" {
   description = "Name of the SSH private key"
   type        = string
+  default     = "do_tf"
 }
 
-variable "spaces_access_key" {
-  description = "Spaces access key"
-  type        = string
-}
-
-variable "spaces_secret_key" {
-  description = "Spaces secret key"
-  type        = string
-}
-
-variable "ssh_fingerprints" {
+variable "SSH_FINGERPRINTS" {
   description = "SSH key fingerprints"
   type        = list(string)
 }
