@@ -3,24 +3,45 @@ resource "digitalocean_droplet" "web" {
   name     = "docker-ubuntu-postmanpat"
   region   = var.region
   size     = "s-1vcpu-1gb"
-  ssh_keys = var.ssh_fingerprints
+  ssh_keys = var.SSH_FINGERPRINTS
 
   tags = ["postmanpat"]
 
   user_data = <<-EOF
     #!/bin/bash
-    echo '
-      export IMAP_URL="${var.imap_url}"
-      export IMAP_USER="${var.imap_user}"
-      export IMAP_PASS="${var.imap_pass}"
 
-      export DIGITALOCEAN_BUCKET_ACCESS_KEY="${var.digitalocean_bucket_access_key}"
-      export DIGITALOCEAN_BUCKET_SECRET_KEY="${var.digitalocean_bucket_secret_key}"
-      export DIGITALOCEAN_CONTAINER_REGISTRY_TOKEN="${var.digitalocean_container_registry_token}"
-      export DIGITALOCEAN_USER="${var.digitalocean_user}"
+    # Enable strict mode
+    set -euxo pipefail
+
+    echo '
+      export IMAP_URL="${var.IMAP_URL}"
+      export IMAP_USER="${var.IMAP_USER}"
+      export IMAP_PASS="${var.IMAP_PASS}"
+
+      export DIGITALOCEAN_BUCKET_ACCESS_KEY="${var.DIGITALOCEAN_BUCKET_ACCESS_KEY}"
+      export DIGITALOCEAN_BUCKET_SECRET_KEY="${var.DIGITALOCEAN_BUCKET_SECRET_KEY}"
+      export DIGITALOCEAN_CONTAINER_REGISTRY_TOKEN="${var.DIGITALOCEAN_CONTAINER_REGISTRY_TOKEN}"
+      export DIGITALOCEAN_USER="${var.DIGITALOCEAN_USER}"
 
     ' > /etc/profile.d/postmanpat.sh
+
+    chmod +x /etc/profile.d/postmanpat.sh
   EOF
+}
+
+
+resource "digitalocean_domain" "app_domain" {
+  name = var.DOMAIN
+}
+
+resource "digitalocean_record" "subdomain" {
+  domain = digitalocean_domain.app_domain.name
+  type   = "A"
+  name   = var.SUBDOMAIN
+  ttl    = 1800
+  value  = digitalocean_droplet.web.ipv4_address
+
+  depends_on = [digitalocean_droplet.web]
 }
 
 resource "null_resource" "provision" {
@@ -85,6 +106,8 @@ resource "null_resource" "provision" {
       "/usr/local/bin/update-script.sh"
     ]
   }
+
+  depends_on = [digitalocean_droplet.web]
 }
 
 output "droplet_ip" {

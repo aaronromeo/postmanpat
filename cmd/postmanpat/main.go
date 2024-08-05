@@ -101,9 +101,9 @@ func main() {
 				Action:  listMailboxNames(isi, fileMgr),
 			},
 			{
-				Name:    "exportmessages",
-				Aliases: []string{"em"},
-				Usage:   "Export the messages in a mailbox",
+				Name:    "reapmessages",
+				Aliases: []string{"re"},
+				Usage:   "Reap the messages in a mailbox",
 				Action:  reapMessages(isi, fileMgr),
 			},
 		},
