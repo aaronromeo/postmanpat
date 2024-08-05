@@ -27,3 +27,6 @@ RUN make build
 
 # Updating the crontab file perms
 RUN chmod 0644 /etc/cron.d/postmanpat-crontab && crontab /etc/cron.d/postmanpat-crontab
+
+# Run the crontab
+ENTRYPOINT ["cron", "-f"]

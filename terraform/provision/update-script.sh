@@ -27,4 +27,10 @@ if sudo docker ps -a -q -f name=postmanpat | grep -q .; then
     sudo docker rm postmanpat
 fi
 
-sudo docker run -d --env-file /tmp/postmanpat.env --name postmanpat -p 80:80 registry.digitalocean.com/aaronromeo/postmanpat:latest
+sudo docker run -d \
+    --env-file /tmp/postmanpat.env \
+    --name postmanpat \
+    --log-driver json-file \
+    --log-opt max-size=10m \
+    --log-opt max-file=3 \
+    -p 80:80 registry.digitalocean.com/aaronromeo/postmanpat:latest
