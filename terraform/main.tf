@@ -41,7 +41,7 @@ resource "digitalocean_record" "subdomain" {
   ttl    = 1800
   value  = digitalocean_droplet.web.ipv4_address
 
-  depends_on = [digitalocean_droplet.web]
+  depends_on = [digitalocean_droplet.web, digitalocean_domain.app_domain]
 }
 
 resource "null_resource" "provision" {
