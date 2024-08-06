@@ -5,9 +5,11 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"aaronromeo.com/postmanpat/pkg/base"
 	"aaronromeo.com/postmanpat/pkg/utils"
@@ -130,9 +132,37 @@ func (mb *MailboxImpl) wrappedLogoutFn() func() {
 	}
 }
 
-func (mb *MailboxImpl) ExportMessages() error {
+func (mb *MailboxImpl) ProcessMailbox() error {
+	switch {
+	case mb.Exportable && mb.Deletable:
+		mb.Logger.InfoContext(mb.Ctx, "Exporting and deleting mailbox", slog.String("name", mb.Name))
+		err := mb.ExportAndDeleteMessages()
+		if err != nil {
+			return err
+		}
+	case mb.Deletable:
+		mb.Logger.InfoContext(mb.Ctx, "Deleting mailbox", slog.String("name", mb.Name))
+		err := mb.DeleteMessages()
+		if err != nil {
+			return err
+		}
+	default:
+		mb.Logger.InfoContext(mb.Ctx, "Skipping mailbox", slog.String("name", mb.Name))
+	}
+	return nil
+}
+
+func (mb *MailboxImpl) ExportAndDeleteMessages() error {
 	// Defer logout
 	defer mb.wrappedLogoutFn()
+
+	if !mb.Exportable {
+		return fmt.Errorf("mailbox %s is not exportable", mb.Name)
+	}
+
+	if !mb.Deletable {
+		return fmt.Errorf("mailbox %s is not deletable", mb.Name)
+	}
 
 	// Login
 	c, err := mb.LoginFn()
@@ -142,16 +172,95 @@ func (mb *MailboxImpl) ExportMessages() error {
 	}
 	mb.Client = c
 
-	// Select mailbox
-	mbox, err := mb.Client.Select(mb.Name, false)
+	messages, seqSet, err := mb.fetchMessages()
+	if err != nil {
+		return err
+	}
+
+	// Export messages
+	err = mb.exportMessages(messages)
+	if err != nil {
+		return err
+	}
+
+	// Call the delete helper
+	mb.deleteMessages(c, seqSet)
+
+	return nil
+}
+
+func (mb *MailboxImpl) DeleteMessages() error {
+	// Defer logout
+	defer mb.wrappedLogoutFn()
+
+	if !mb.Deletable {
+		return fmt.Errorf("mailbox %s is not deletable", mb.Name)
+	}
+
+	// Login
+	c, err := mb.LoginFn()
 	if err != nil {
 		mb.Logger.ErrorContext(mb.Ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 		return err
 	}
+	mb.Client = c
+
+	_, seqSet, err := mb.fetchMessages()
+	if err != nil {
+		return err
+	}
+
+	// Call the delete helper
+	mb.deleteMessages(c, seqSet)
+
+	return nil
+}
+
+func (mb *MailboxImpl) Serialize() (base.SerializedMailbox, error) {
+	return base.SerializedMailbox{
+		Name:     mb.Name,
+		Export:   mb.Exportable,
+		Delete:   mb.Deletable,
+		Lifespan: mb.Lifespan,
+	}, nil
+}
+
+func (mb *MailboxImpl) deleteMessages(c base.Client, seqSet *imap.SeqSet) {
+	// First mark the message as deleted
+	item := imap.FormatFlagsOp(imap.AddFlags, true)
+	flags := []interface{}{imap.DeletedFlag}
+	if err := c.Store(seqSet, item, flags, nil); err != nil {
+		log.Fatal(err)
+	}
+
+	// Then delete it
+	if err := mb.Client.Expunge(nil); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func (mb *MailboxImpl) fetchMessages() (chan *imap.Message, *imap.SeqSet, error) {
+	// Select mailbox
+	mbox, err := mb.Client.Select(mb.Name, false)
+	if err != nil {
+		mb.Logger.ErrorContext(mb.Ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
+		return nil, nil, err
+	}
 	mb.Logger.Info(mb.Name, "Mailbox messages", mbox.Messages)
 
+	// Set search criteria
+	criteria := imap.NewSearchCriteria()
+	criteria.Before = time.Now().Add(time.Hour * 24 * time.Duration(mb.Lifespan))
+	ids, err := mb.Client.Search(criteria)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	seqSet := new(imap.SeqSet)
-	seqSet.AddRange(1, mbox.Messages)
+	if len(ids) <= 0 {
+		return nil, seqSet, nil
+	}
+	seqSet.AddNum(ids...)
 
 	section := imap.BodySectionName{}
 	messages := make(chan *imap.Message, mbox.Messages)
@@ -162,6 +271,10 @@ func (mb *MailboxImpl) ExportMessages() error {
 
 	mb.Logger.Info(mb.Name, "Fetched messages count", len(messages))
 
+	return messages, seqSet, nil
+}
+
+func (mb *MailboxImpl) exportMessages(messages chan *imap.Message) error {
 	for msg := range messages {
 		metadata := CreateExportedEmailMetadata(msg, mb.Name)
 		metadataBytes, err := json.MarshalIndent(metadata, "", "  ")
@@ -171,6 +284,7 @@ func (mb *MailboxImpl) ExportMessages() error {
 		}
 		baseFolder := filepath.Join(".", "exportedemails")
 		basePath := filepath.Join(baseFolder, sanitize(mb.Name))
+
 		// Unique folder for each email
 		msgHash, err := json.Marshal(metadata)
 		if err != nil {
@@ -207,20 +321,8 @@ func (mb *MailboxImpl) ExportMessages() error {
 				return err
 			}
 		}
+
+		mb.Logger.Info(mb.Name, "Exported message", msg.Envelope.Subject)
 	}
-
 	return nil
-}
-
-func (mb *MailboxImpl) DeleteMessages() error {
-	return nil
-}
-
-func (mb *MailboxImpl) Serialize() (base.SerializedMailbox, error) {
-	return base.SerializedMailbox{
-		Name:     mb.Name,
-		Export:   mb.Exportable,
-		Delete:   mb.Deletable,
-		Lifespan: mb.Lifespan,
-	}, nil
 }

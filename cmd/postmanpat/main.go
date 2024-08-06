@@ -9,6 +9,7 @@ import (
 
 	"aaronromeo.com/postmanpat/pkg/base"
 	imap "aaronromeo.com/postmanpat/pkg/models/imapmanager"
+	"aaronromeo.com/postmanpat/pkg/models/mailbox"
 	"aaronromeo.com/postmanpat/pkg/utils"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -20,18 +21,36 @@ import (
 
 const STORAGE_BUCKET = "postmanpat"
 
+const DIGITALOCEAN_BUCKET_ACCESS_KEY = "DIGITALOCEAN_BUCKET_ACCESS_KEY"
+const DIGITALOCEAN_BUCKET_SECRET_KEY = "DIGITALOCEAN_BUCKET_SECRET_KEY"
+const IMAP_URL = "IMAP_URL"
+const IMAP_USER = "IMAP_USER"
+const IMAP_PASS = "IMAP_PASS"
+
 func main() {
 	err := godotenv.Load(".env")
 	if err != nil {
-		log.Fatalf("Error loading .env file: %s", err)
+		log.Printf("Error loading .env file, proceeding: %s", err)
+	}
+
+	for _, key := range []string{
+		DIGITALOCEAN_BUCKET_ACCESS_KEY,
+		DIGITALOCEAN_BUCKET_SECRET_KEY,
+		IMAP_URL,
+		IMAP_USER,
+		IMAP_PASS,
+	} {
+		if _, ok := os.LookupEnv(key); !ok {
+			log.Fatalf("Environment variable %s is not set", key)
+		}
 	}
 
 	sess, err := session.NewSession(&aws.Config{
 		Region:   aws.String("nyc3"),
 		Endpoint: aws.String("nyc3.digitaloceanspaces.com"),
 		Credentials: credentials.NewStaticCredentials(
-			os.Getenv("DIGITALOCEAN_BUCKET_ACCESS_KEY"),
-			os.Getenv("DIGITALOCEAN_BUCKET_SECRET_KEY"),
+			os.Getenv(DIGITALOCEAN_BUCKET_ACCESS_KEY),
+			os.Getenv(DIGITALOCEAN_BUCKET_SECRET_KEY),
 			"",
 		),
 	})
@@ -44,8 +63,8 @@ func main() {
 
 	isi, err := imap.NewImapManager(
 		// Connect to server
-		imap.WithTLSConfig(os.Getenv("IMAP_URL"), nil),
-		imap.WithAuth(os.Getenv("IMAP_USER"), os.Getenv("IMAP_PASS")),
+		imap.WithTLSConfig(os.Getenv(IMAP_URL), nil),
+		imap.WithAuth(os.Getenv(IMAP_USER), os.Getenv(IMAP_PASS)),
 		imap.WithCtx(ctx),
 		imap.WithLogger(logger),
 		imap.WithFileManager(utils.OSFileManager{}),
@@ -82,10 +101,10 @@ func main() {
 				Action:  listMailboxNames(isi, fileMgr),
 			},
 			{
-				Name:    "exportmessages",
-				Aliases: []string{"em"},
-				Usage:   "Export the messages in a mailbox",
-				Action:  exportMessages(isi, fileMgr),
+				Name:    "reapmessages",
+				Aliases: []string{"re"},
+				Usage:   "Reap the messages in a mailbox",
+				Action:  reapMessages(isi, fileMgr),
 			},
 		},
 	}
@@ -132,19 +151,26 @@ func listMailboxNames(isi *imap.ImapManagerImpl, fileMgr utils.FileManager) func
 	}
 }
 
-func exportMessages(_ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cli.Context) error {
+func reapMessages(_ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cli.Context) error {
 	return func(c *cli.Context) error {
-		// mailboxName := c.String("mailbox")
-		// err := isi  verifiedMailboxObjs[os.Getenv("IMAP_FOLDER")] .ExportMessages()
-		// if err != nil {
-		// 	return errors.Errorf("exporting mailbox `%s` error", mailboxName)
-		// }
-
+		// Read the mailbox list file
 		data, err := fileMgr.ReadFile(base.MailboxListFile)
 		if err != nil {
 			return errors.Errorf("exporting mailbox error %+v", err)
 		}
-		log.Println(string(data))
+		mailboxes := make(map[string]mailbox.MailboxImpl)
+
+		err = json.Unmarshal(data, &mailboxes)
+		if err != nil {
+			return errors.Errorf("unable to marshal mailboxes %+v", err)
+		}
+
+		for _, mailbox := range mailboxes {
+			err := mailbox.ProcessMailbox()
+			if err != nil {
+				return errors.Errorf("unable to process mailboxes %+v", err)
+			}
+		}
 
 		return nil
 	}
