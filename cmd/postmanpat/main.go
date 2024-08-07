@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
-	"net/http"
 	"os"
 
-	"aaronromeo.com/postmanpat/internal/handler/mailboxes"
 	"aaronromeo.com/postmanpat/pkg/base"
 	imap "aaronromeo.com/postmanpat/pkg/models/imapmanager"
 	"aaronromeo.com/postmanpat/pkg/models/mailbox"
@@ -17,7 +15,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
 	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
@@ -33,40 +30,6 @@ const IMAP_USER = "IMAP_USER"
 const IMAP_PASS = "IMAP_PASS"
 
 func main() {
-	// Connect to server
-	// Check if the bucket exists
-	// Create the bucket if it doesn't exist
-	isi, fileMgr := envSetup()
-
-	app := &cli.App{
-		Commands: []*cli.Command{
-			{
-				Name:    "mailboxnames",
-				Aliases: []string{"mn"},
-				Usage:   "List mailbox names",
-				Action:  listMailboxNames(isi, fileMgr),
-			},
-			{
-				Name:    "reapmessages",
-				Aliases: []string{"re"},
-				Usage:   "Reap the messages in a mailbox",
-				Action:  reapMessages(isi, fileMgr),
-			},
-			{
-				Name:    "webserver",
-				Aliases: []string{"ws"},
-				Usage:   "Start the web server",
-				Action:  webserver(),
-			},
-		},
-	}
-
-	if err := app.Run(os.Args); err != nil {
-		log.Fatal(err)
-	}
-}
-
-func envSetup() (*imap.ImapManagerImpl, *utils.S3FileManager) {
 	err := godotenv.Load(".env")
 	if err != nil {
 		log.Printf("Error loading .env file, proceeding: %s", err)
@@ -113,7 +76,7 @@ func envSetup() (*imap.ImapManagerImpl, *utils.S3FileManager) {
 	ctx := context.Background()
 
 	isi, err := imap.NewImapManager(
-
+		// Connect to server
 		imap.WithTLSConfig(os.Getenv(IMAP_URL), nil),
 		imap.WithAuth(os.Getenv(IMAP_USER), os.Getenv(IMAP_PASS)),
 		imap.WithCtx(ctx),
@@ -126,6 +89,7 @@ func envSetup() (*imap.ImapManagerImpl, *utils.S3FileManager) {
 
 	fileMgr := utils.NewS3FileManager(sess, STORAGE_BUCKET, isi.Username)
 
+	// Check if the bucket exists
 	exists, err := fileMgr.BucketExists(STORAGE_BUCKET)
 	if err != nil {
 		log.Fatalf("Failed to check if bucket exists: %v", err)
@@ -134,14 +98,34 @@ func envSetup() (*imap.ImapManagerImpl, *utils.S3FileManager) {
 	if exists {
 		log.Printf("Found bucket %s\n", STORAGE_BUCKET)
 	} else {
-
+		// Create the bucket if it doesn't exist
 		err = fileMgr.CreateBucket(STORAGE_BUCKET)
 		if err != nil {
 			log.Fatalf("Failed to create bucket: %v", err)
 		}
 		log.Printf("Created the bucket %s\n", STORAGE_BUCKET)
 	}
-	return isi, fileMgr
+
+	app := &cli.App{
+		Commands: []*cli.Command{
+			{
+				Name:    "mailboxnames",
+				Aliases: []string{"mn"},
+				Usage:   "List mailbox names",
+				Action:  listMailboxNames(isi, fileMgr),
+			},
+			{
+				Name:    "reapmessages",
+				Aliases: []string{"re"},
+				Usage:   "Reap the messages in a mailbox",
+				Action:  reapMessages(isi, fileMgr),
+			},
+		},
+	}
+
+	if err := app.Run(os.Args); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func listMailboxNames(isi *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cli.Context) error {
@@ -201,21 +185,6 @@ func reapMessages(_ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cl
 				return errors.Errorf("unable to process mailboxes %+v", err)
 			}
 		}
-
-		return nil
-	}
-}
-
-func webserver() func(c *cli.Context) error {
-	return func(c *cli.Context) error {
-		r := mux.NewRouter()
-		r.HandleFunc("/", mailboxes.IndexPage).Methods("GET")
-		http.Handle("/", r)
-
-		log.Printf("Starting server on :8000")
-		http.ListenAndServe(":8000", nil)
-		// http.HandleFunc("/", handler.IndexPage)
-		// http.ListenAndServe(":8000", nil)
 
 		return nil
 	}
