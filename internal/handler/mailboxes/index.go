@@ -7,8 +7,8 @@ import (
 
 func IndexPage(w http.ResponseWriter, r *http.Request) {
 	var templates *template.Template
-	templates = template.Must(templates.ParseGlob("web/templates/*.html"))
-	templates.ExecuteTemplate(w, "home.html", nil)
+	templates = template.Must(templates.ParseGlob("web/templates/mailboxes/*.html"))
+	templates.ExecuteTemplate(w, "index.html", nil)
 
 	// fmt.Fprintf(
 	// 		w, `<h1>Hello, Gophers</h1>

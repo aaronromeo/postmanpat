@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
@@ -24,6 +25,7 @@ import (
 
 const STORAGE_BUCKET = "postmanpat"
 
+const TF_VAR_PREFIX = "TF_VAR_"
 const DIGITALOCEAN_BUCKET_ACCESS_KEY = "DIGITALOCEAN_BUCKET_ACCESS_KEY"
 const DIGITALOCEAN_BUCKET_SECRET_KEY = "DIGITALOCEAN_BUCKET_SECRET_KEY"
 const IMAP_URL = "IMAP_URL"
@@ -68,6 +70,18 @@ func envSetup() (*imap.ImapManagerImpl, *utils.S3FileManager) {
 	err := godotenv.Load(".env")
 	if err != nil {
 		log.Printf("Error loading .env file, proceeding: %s", err)
+	}
+
+	for _, key := range []string{
+		DIGITALOCEAN_BUCKET_ACCESS_KEY,
+		DIGITALOCEAN_BUCKET_SECRET_KEY,
+		IMAP_URL,
+		IMAP_USER,
+		IMAP_PASS,
+	} {
+		if _, ok := os.LookupEnv(key); !ok {
+			os.Setenv(key, os.Getenv(fmt.Sprintf("%s%s", TF_VAR_PREFIX, key)))
+		}
 	}
 
 	for _, key := range []string{
