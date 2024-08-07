@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"log"
 	"log/slog"
 	"os"
+	"path/filepath"
 
+	"aaronromeo.com/postmanpat/handlers"
 	"aaronromeo.com/postmanpat/pkg/base"
 	imap "aaronromeo.com/postmanpat/pkg/models/imapmanager"
 	"aaronromeo.com/postmanpat/pkg/models/mailbox"
@@ -15,8 +18,15 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
+
+	// "github.com/gofiber/fiber/v3"
 	"github.com/joho/godotenv"
 	"github.com/pkg/errors"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/template/html/v2"
 	"github.com/urfave/cli/v2"
 )
 
@@ -120,6 +130,12 @@ func main() {
 				Usage:   "Reap the messages in a mailbox",
 				Action:  reapMessages(isi, fileMgr),
 			},
+			{
+				Name:    "webserver",
+				Aliases: []string{"ws"},
+				Usage:   "Start the web server",
+				Action:  webserver(),
+			},
 		},
 	}
 
@@ -187,5 +203,51 @@ func reapMessages(_ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cl
 		}
 
 		return nil
+	}
+}
+
+func webserver() func(c *cli.Context) error {
+	return func(c *cli.Context) error {
+		// Create view engine
+		engine := html.New("./views", ".html")
+
+		// Disable this in production
+		engine.Reload(true)
+
+		engine.AddFunc("getCssAsset", func(name string) (res template.HTML) {
+			filepath.Walk("public/assets", func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if info.Name() == name {
+					res = template.HTML("<link rel=\"stylesheet\" href=\"/" + path + "\">")
+				}
+				return nil
+			})
+			return
+		})
+
+		// Create fiber app
+		app := fiber.New(fiber.Config{
+			Views:       engine,
+			ViewsLayout: "layouts/main",
+		})
+
+		// Middleware
+		app.Use(recover.New())
+		app.Use(logger.New())
+
+		// Setup routes
+		app.Get("/", handlers.Home)
+		app.Get("/about", handlers.About)
+
+		// Setup static files
+		app.Static("/public", "./public")
+
+		// Handle not founds
+		app.Use(handlers.NotFound)
+
+		// Start the server on port 3000
+		return app.Listen(":3000")
 	}
 }
