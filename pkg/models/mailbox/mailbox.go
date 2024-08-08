@@ -26,10 +26,8 @@ type Mailbox interface {
 }
 
 type MailboxImpl struct {
-	Name        string `json:"name"`
-	Deletable   bool   `json:"delete"`
-	Exportable  bool   `json:"export"`
-	Lifespan    int    `json:"lifespan"`
+	base.SerializedMailbox
+
 	Client      base.Client
 	Ctx         context.Context
 	FileManager utils.FileManager
@@ -218,10 +216,10 @@ func (mb *MailboxImpl) DeleteMessages() error {
 
 func (mb *MailboxImpl) Serialize() (base.SerializedMailbox, error) {
 	return base.SerializedMailbox{
-		Name:     mb.Name,
-		Export:   mb.Exportable,
-		Delete:   mb.Deletable,
-		Lifespan: mb.Lifespan,
+		Name:       mb.Name,
+		Exportable: mb.Exportable,
+		Deletable:  mb.Deletable,
+		Lifespan:   mb.Lifespan,
 	}, nil
 }
 

@@ -91,7 +91,7 @@ func main() {
 		imap.WithAuth(os.Getenv(IMAP_USER), os.Getenv(IMAP_PASS)),
 		imap.WithCtx(ctx),
 		imap.WithLogger(logger),
-		imap.WithFileManager(utils.OSFileManager{}),
+		imap.WithFileManager(utils.OSFileManager{}), // TODO: What is this used for?
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -152,15 +152,9 @@ func listMailboxNames(isi *imap.ImapManagerImpl, fileMgr utils.FileManager) func
 			return errors.Errorf("getting mailboxes error %+v", err)
 		}
 
-		type exportedMailbox struct {
-			Name       string `json:"name"`
-			Deletable  bool   `json:"deletable"`
-			Exportable bool   `json:"exportable"`
-			Lifespan   int    `json:"lifespan"`
-		}
-		exportedMailboxes := make(map[string]exportedMailbox, len(verifiedMailboxObjs))
+		exportedMailboxes := make(map[string]base.SerializedMailbox, len(verifiedMailboxObjs))
 		for mailboxName, mailbox := range verifiedMailboxObjs {
-			exportedMailboxes[mailboxName] = exportedMailbox{
+			exportedMailboxes[mailboxName] = base.SerializedMailbox{
 				Name:       mailbox.Name,
 				Deletable:  mailbox.Deletable,
 				Exportable: mailbox.Exportable,
