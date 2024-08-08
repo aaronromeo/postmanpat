@@ -53,7 +53,10 @@ func main() {
 		IMAP_PASS,
 	} {
 		if _, ok := os.LookupEnv(key); !ok {
-			os.Setenv(key, os.Getenv(fmt.Sprintf("%s%s", TF_VAR_PREFIX, key)))
+			err := os.Setenv(key, os.Getenv(fmt.Sprintf("%s%s", TF_VAR_PREFIX, key)))
+			if err != nil {
+				log.Printf("Error unable to set the env var: %s %s", key, err)
+			}
 		}
 	}
 
@@ -218,6 +221,9 @@ func webserver() func(c *cli.Context) error {
 				}
 				return nil
 			})
+			if err != nil {
+				log.Printf("unable to process mailboxes %+v", err)
+			}
 			return
 		})
 
