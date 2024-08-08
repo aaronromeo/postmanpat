@@ -14,9 +14,11 @@ BUILT_BINARY = $(BUILD_DIR)/$(BINARY_NAME)
 
 all: test build
 
-build:
+ws-build:
 	$(NPMINSTALL)
 	$(NPMBUILD)
+
+build:
 	$(GOBUILD) -o $(BUILT_BINARY) -v ./cmd/postmanpat
 
 test:
