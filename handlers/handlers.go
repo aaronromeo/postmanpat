@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"aaronromeo.com/postmanpat/pkg/base"
 	"aaronromeo.com/postmanpat/pkg/models/mailbox"
@@ -29,12 +30,19 @@ func NotFound(c *fiber.Ctx) error {
 
 // Home renders the home view
 func Mailboxes(c *fiber.Ctx) error {
-	fileMgr := utils.NewS3FileManager(sess, STORAGE_BUCKET, isi.Username)
+	fileMgr, ok := c.Locals("fileMgr").(utils.FileManager)
+	if !ok {
+		return c.Status(fiber.StatusInternalServerError).SendString("Could not retrieve file manager")
+	}
 
 	data, err := fileMgr.ReadFile(base.MailboxListFile)
 	if err != nil {
-		return errors.Errorf("exporting mailbox error %+v", err)
+		return c.Status(fiber.StatusInternalServerError).SendString(
+			fmt.Sprintf("Reading mailbox error %+v", err),
+		)
 	}
+	defer fileMgr.Close()
+
 	mailboxes := make(map[string]mailbox.MailboxImpl)
 
 	err = json.Unmarshal(data, &mailboxes)
@@ -44,6 +52,6 @@ func Mailboxes(c *fiber.Ctx) error {
 
 	return c.Render("mailboxes/index", fiber.Map{
 		"Title":     "Hello, World!",
-		"mailboxes": mailboxes,
+		"Mailboxes": mailboxes,
 	})
 }

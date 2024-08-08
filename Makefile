@@ -15,7 +15,7 @@ BUILT_BINARY = $(BUILD_DIR)/$(BINARY_NAME)
 all: test build
 
 # TODO: better build names seperating the Go build from the web service
-ws-build:
+build-npm:
 	$(NPMINSTALL)
 	$(NPMBUILD)
 
@@ -32,6 +32,9 @@ clean:
 # eg. make run ARGS="mn"
 run: build
 	./$(BUILT_BINARY) $(ARGS)
+
+webserver: build build-npm
+	./$(BUILT_BINARY) ws
 
 lint:
 	golangci-lint run --config .golangci.yml

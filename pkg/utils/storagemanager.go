@@ -86,12 +86,13 @@ func (s3fm *S3FileManager) Create(name string) (Writer, error) {
 }
 
 func (s3fm *S3FileManager) Close() error {
-	_, err := s3fm.svc.PutObject(&s3.PutObjectInput{
-		Bucket: aws.String(s3fm.bucket),
-		Key:    aws.String(s3fm.objKey),
-		Body:   bytes.NewReader((*s3fm.writer).buffer.Bytes()),
-	})
-	return err
+	// _, err := s3fm.svc.PutObject(&s3.PutObjectInput{
+	// 	Bucket: aws.String(s3fm.bucket),
+	// 	Key:    aws.String(s3fm.objKey),
+	// 	Body:   bytes.NewReader((*s3fm.writer).buffer.Bytes()),
+	// })
+	// return err
+	return nil
 }
 
 func (s3fm *S3FileManager) MkdirAll(path string, perm os.FileMode) error {

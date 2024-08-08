@@ -23,7 +23,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/pkg/errors"
 
-	"github.com/gofiber/fiber/v2"
+	fiber "github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/template/html/v2"
@@ -194,7 +194,7 @@ func reapMessages(_ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cl
 	}
 }
 
-func webserver(_ utils.FileManager) func(c *cli.Context) error {
+func webserver(fileMgr utils.FileManager) func(c *cli.Context) error {
 	return func(c *cli.Context) error {
 		// Create view engine
 		engine := html.New("./views", ".html")
@@ -227,6 +227,11 @@ func webserver(_ utils.FileManager) func(c *cli.Context) error {
 		// Middleware
 		app.Use(recover.New())
 		app.Use(logger.New())
+
+		app.Use(func(c *fiber.Ctx) error {
+			c.Locals("fileMgr", fileMgr)
+			return c.Next()
+		})
 
 		// Setup routes
 		app.Get("/", handlers.Home)
