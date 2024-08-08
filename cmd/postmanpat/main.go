@@ -30,15 +30,6 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-const STORAGE_BUCKET = "postmanpat"
-
-const TF_VAR_PREFIX = "TF_VAR_"
-const DIGITALOCEAN_BUCKET_ACCESS_KEY = "DIGITALOCEAN_BUCKET_ACCESS_KEY"
-const DIGITALOCEAN_BUCKET_SECRET_KEY = "DIGITALOCEAN_BUCKET_SECRET_KEY"
-const IMAP_URL = "IMAP_URL"
-const IMAP_USER = "IMAP_USER"
-const IMAP_PASS = "IMAP_PASS"
-
 func main() {
 	err := godotenv.Load(".env")
 	if err != nil {
@@ -137,7 +128,7 @@ func main() {
 				Name:    "webserver",
 				Aliases: []string{"ws"},
 				Usage:   "Start the web server",
-				Action:  webserver(),
+				Action:  webserver(fileMgr),
 			},
 		},
 	}
@@ -203,7 +194,7 @@ func reapMessages(_ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cl
 	}
 }
 
-func webserver() func(c *cli.Context) error {
+func webserver(_ utils.FileManager) func(c *cli.Context) error {
 	return func(c *cli.Context) error {
 		// Create view engine
 		engine := html.New("./views", ".html")
@@ -240,6 +231,7 @@ func webserver() func(c *cli.Context) error {
 		// Setup routes
 		app.Get("/", handlers.Home)
 		app.Get("/about", handlers.About)
+		app.Get("/mailboxes", handlers.Mailboxes)
 
 		// Setup static files
 		app.Static("/public", "./public")
