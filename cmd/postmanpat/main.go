@@ -212,7 +212,7 @@ func webserver() func(c *cli.Context) error {
 		engine.Reload(true)
 
 		engine.AddFunc("getCssAsset", func(name string) (res template.HTML) {
-			filepath.Walk("public/assets", func(path string, info os.FileInfo, err error) error {
+			err := filepath.Walk("public/assets", func(path string, info os.FileInfo, err error) error {
 				if err != nil {
 					return err
 				}
