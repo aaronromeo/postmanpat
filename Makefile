@@ -14,6 +14,7 @@ BUILT_BINARY = $(BUILD_DIR)/$(BINARY_NAME)
 
 all: test build
 
+# TODO: better build names seperating the Go build from the web service
 ws-build:
 	$(NPMINSTALL)
 	$(NPMBUILD)
@@ -28,6 +29,7 @@ clean:
 	$(GOCLEAN)
 	rm -f $(BUILT_BINARY)
 
+# eg. make run ARGS="mn"
 run: build
 	./$(BUILT_BINARY) $(ARGS)
 
