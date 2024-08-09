@@ -330,16 +330,18 @@ func TestProcessMailbox(t *testing.T) {
 			mockfileManager := mock.MockFileWriter{Writers: map[string]mock.MockWriter{}}
 
 			mb := &mailbox.MailboxImpl{
-				Name:        "INBOX",
+				SerializedMailbox: base.SerializedMailbox{
+					Name:       "INBOX",
+					Lifespan:   30,
+					Exportable: tc.exportable,
+					Deletable:  tc.deletable,
+				},
 				LoginFn:     func() (base.Client, error) { return mockClient, nil },
 				LogoutFn:    func() error { return nil },
 				Client:      mockClient,
 				Logger:      logger,
 				Ctx:         ctx,
 				FileManager: mockfileManager,
-				Lifespan:    30,
-				Exportable:  tc.exportable,
-				Deletable:   tc.deletable,
 			}
 
 			if tc.exportable || tc.deletable {

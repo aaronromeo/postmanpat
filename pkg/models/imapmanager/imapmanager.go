@@ -270,8 +270,8 @@ func (srv ImapManagerImpl) unserializeMailboxes() (map[string]*mailbox.MailboxIm
 		}
 
 		mb.Name = name
-		mb.Deletable = serializedMailbox.Delete
-		mb.Exportable = serializedMailbox.Export
+		mb.Deletable = serializedMailbox.Deletable
+		mb.Exportable = serializedMailbox.Exportable
 		mb.Lifespan = serializedMailbox.Lifespan
 
 		mailboxObjs[name] = mb

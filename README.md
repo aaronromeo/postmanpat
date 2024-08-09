@@ -11,4 +11,4 @@ IMAP_FOLDER="AFolderNamedWork" make run
 ### ToDo List
 
 - [ ] Change to use ufave cli
-- [ ] Use a GIST to store the JSON blob
+- [ ] Multi app droplet (https://danielwachtel.com/devops/deploying-multiple-dockerized-apps-digitalocean-docker-compose-contexts)

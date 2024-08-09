@@ -3,10 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"html/template"
 	"log"
 	"log/slog"
 	"os"
+	"path/filepath"
 
+	"aaronromeo.com/postmanpat/handlers"
 	"aaronromeo.com/postmanpat/pkg/base"
 	imap "aaronromeo.com/postmanpat/pkg/models/imapmanager"
 	"aaronromeo.com/postmanpat/pkg/models/mailbox"
@@ -14,23 +18,37 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
+
+	// "github.com/gofiber/fiber/v3"
 	"github.com/joho/godotenv"
 	"github.com/pkg/errors"
+
+	fiber "github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/template/html/v2"
 	"github.com/urfave/cli/v2"
 )
-
-const STORAGE_BUCKET = "postmanpat"
-
-const DIGITALOCEAN_BUCKET_ACCESS_KEY = "DIGITALOCEAN_BUCKET_ACCESS_KEY"
-const DIGITALOCEAN_BUCKET_SECRET_KEY = "DIGITALOCEAN_BUCKET_SECRET_KEY"
-const IMAP_URL = "IMAP_URL"
-const IMAP_USER = "IMAP_USER"
-const IMAP_PASS = "IMAP_PASS"
 
 func main() {
 	err := godotenv.Load(".env")
 	if err != nil {
 		log.Printf("Error loading .env file, proceeding: %s", err)
+	}
+
+	for _, key := range []string{
+		DIGITALOCEAN_BUCKET_ACCESS_KEY,
+		DIGITALOCEAN_BUCKET_SECRET_KEY,
+		IMAP_URL,
+		IMAP_USER,
+		IMAP_PASS,
+	} {
+		if _, ok := os.LookupEnv(key); !ok {
+			err := os.Setenv(key, os.Getenv(fmt.Sprintf("%s%s", TF_VAR_PREFIX, key)))
+			if err != nil {
+				log.Printf("Error unable to set the env var: %s %s", key, err)
+			}
+		}
 	}
 
 	for _, key := range []string{
@@ -67,7 +85,7 @@ func main() {
 		imap.WithAuth(os.Getenv(IMAP_USER), os.Getenv(IMAP_PASS)),
 		imap.WithCtx(ctx),
 		imap.WithLogger(logger),
-		imap.WithFileManager(utils.OSFileManager{}),
+		imap.WithFileManager(utils.OSFileManager{}), // TODO: What is this used for?
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -106,6 +124,12 @@ func main() {
 				Usage:   "Reap the messages in a mailbox",
 				Action:  reapMessages(isi, fileMgr),
 			},
+			{
+				Name:    "webserver",
+				Aliases: []string{"ws"},
+				Usage:   "Start the web server",
+				Action:  webserver(fileMgr),
+			},
 		},
 	}
 
@@ -122,15 +146,9 @@ func listMailboxNames(isi *imap.ImapManagerImpl, fileMgr utils.FileManager) func
 			return errors.Errorf("getting mailboxes error %+v", err)
 		}
 
-		type exportedMailbox struct {
-			Name       string `json:"name"`
-			Deletable  bool   `json:"deletable"`
-			Exportable bool   `json:"exportable"`
-			Lifespan   int    `json:"lifespan"`
-		}
-		exportedMailboxes := make(map[string]exportedMailbox, len(verifiedMailboxObjs))
+		exportedMailboxes := make(map[string]base.SerializedMailbox, len(verifiedMailboxObjs))
 		for mailboxName, mailbox := range verifiedMailboxObjs {
-			exportedMailboxes[mailboxName] = exportedMailbox{
+			exportedMailboxes[mailboxName] = base.SerializedMailbox{
 				Name:       mailbox.Name,
 				Deletable:  mailbox.Deletable,
 				Exportable: mailbox.Exportable,
@@ -173,5 +191,60 @@ func reapMessages(_ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cl
 		}
 
 		return nil
+	}
+}
+
+func webserver(fileMgr utils.FileManager) func(c *cli.Context) error {
+	return func(c *cli.Context) error {
+		// Create view engine
+		engine := html.New("./views", ".html")
+
+		// Disable this in production
+		engine.Reload(true)
+
+		engine.AddFunc("getCssAsset", func(name string) (res template.HTML) {
+			err := filepath.Walk("public/assets", func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if info.Name() == name {
+					res = template.HTML("<link rel=\"stylesheet\" href=\"/" + path + "\">")
+				}
+				return nil
+			})
+			if err != nil {
+				log.Printf("unable to process mailboxes %+v", err)
+			}
+			return
+		})
+
+		// Create fiber app
+		app := fiber.New(fiber.Config{
+			Views:       engine,
+			ViewsLayout: "layouts/main",
+		})
+
+		// Middleware
+		app.Use(recover.New())
+		app.Use(logger.New())
+
+		app.Use(func(c *fiber.Ctx) error {
+			c.Locals("fileMgr", fileMgr)
+			return c.Next()
+		})
+
+		// Setup routes
+		app.Get("/", handlers.Home)
+		app.Get("/about", handlers.About)
+		app.Get("/mailboxes", handlers.Mailboxes)
+
+		// Setup static files
+		app.Static("/public", "./public")
+
+		// Handle not founds
+		app.Use(handlers.NotFound)
+
+		// Start the server on port 3000
+		return app.Listen(":3000")
 	}
 }

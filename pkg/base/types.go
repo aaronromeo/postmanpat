@@ -5,10 +5,10 @@ import (
 )
 
 type SerializedMailbox struct {
-	Name     string `json:"name"`
-	Delete   bool   `json:"delete"`
-	Export   bool   `json:"export"`
-	Lifespan int    `json:"lifespan"`
+	Name       string `json:"name"`
+	Deletable  bool   `json:"delete"`
+	Exportable bool   `json:"export"`
+	Lifespan   int    `json:"lifespan"`
 }
 
 // Client is an interface to abstract the client.Client methods used

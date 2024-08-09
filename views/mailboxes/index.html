@@ -1,0 +1,30 @@
+<table class="w-full text-left border-collapse table-fixed mailboxes h-dvh">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Deletable</th>
+      <th>Exportable</th>
+      <th>Lifespan</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Mailboxes}}
+      <tr>
+        <td>{{.Name}}</td>
+        <td>
+          <form>
+            <input type="checkbox" {{if .Deletable}}checked{{end}} disabled>
+          </form>
+        </td>
+        <td>
+          <form>
+            <input type="checkbox" {{if .Exportable}}checked{{end}} disabled>
+          </form>
+        </td>
+        <td>{{.Lifespan}}</td>
+        <td>Edit</td>
+      </tr>
+    {{end}}
+  </tbody>
+</table>
