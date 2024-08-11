@@ -8,3 +8,5 @@ terraform/.terraform/terraform.tfstate
 terraform/.terraform/environment
 do_tf
 do_tf.pub
+node_modules
+.parcel-cache

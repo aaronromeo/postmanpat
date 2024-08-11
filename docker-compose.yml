@@ -1,0 +1,20 @@
+version: '3.7'
+services:
+  web:
+    image: registry.digitalocean.com/aaronromeo/postmanpat/cron:latest
+    ports:
+      - "3000:80"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: 3
+  cron:
+    image: registry.digitalocean.com/aaronromeo/postmanpat/ws:latest
+    ports:
+      - "3000:80"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: 3

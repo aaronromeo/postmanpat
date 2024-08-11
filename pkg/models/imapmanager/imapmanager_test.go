@@ -131,11 +131,11 @@ func TestGetMailboxesX(t *testing.T) {
 
 	// Define expected results
 	expected := map[string]base.SerializedMailbox{
-		"Folder1": {Name: "Folder1", Delete: false, Export: false},
-		"Folder2": {Name: "Folder2", Delete: false, Export: false},
-		"Folder3": {Name: "Folder3", Delete: false, Export: false},
-		"Folder4": {Name: "Folder4", Delete: false, Export: false},
-		"Folder5": {Name: "Folder5", Delete: false, Export: false},
+		"Folder1": {Name: "Folder1", Deletable: false, Exportable: false},
+		"Folder2": {Name: "Folder2", Deletable: false, Exportable: false},
+		"Folder3": {Name: "Folder3", Deletable: false, Exportable: false},
+		"Folder4": {Name: "Folder4", Deletable: false, Exportable: false},
+		"Folder5": {Name: "Folder5", Deletable: false, Exportable: false},
 	}
 
 	// Check if the results meet the expectations
