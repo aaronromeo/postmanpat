@@ -1,0 +1,10 @@
+version: '3.7'
+services:
+  web:
+    image: registry.digitalocean.com/aaronromeo/postmanpat:latest
+    ports:
+      - "3000:80"
+  cron:
+    image: registry.digitalocean.com/aaronromeo/postmanpat:latest
+    ports:
+      - "3000:80"

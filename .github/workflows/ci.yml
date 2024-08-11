@@ -81,8 +81,26 @@ jobs:
     - name: Log in to DigitalOcean Container Registry with short-lived credentials
       run: doctl registry login --expiry-seconds 1200
   
+    - name: Build container cron image
+      run: docker build -t registry.digitalocean.com/aaronromeo/postmanpat/cron:${{ steps.extract_image_name.outputs.digest }} ./Dockerfile.cron
+
+    - name: Clean up old cron images
+      run: |
+        branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
+        doctl registry repository list-tags postmanpat --output json | jq -r '.[] | select(.tag | contains("'${branch}'")) | .manifest_digest' | xargs -I {} doctl registry repository delete-manifest postmanpat --force {}
+
+    - name: Push cron image to DigitalOcean Container Registry
+      run: docker push registry.digitalocean.com/aaronromeo/postmanpat/cron:${{ steps.extract_image_name.outputs.digest }}
+
+    - name: Tag and push latest cron image to DigitalOcean Container Registry
+      run: |
+        if [[ $GITHUB_REF_NAME == "main" ]]; then
+          docker tag registry.digitalocean.com/aaronromeo/postmanpat/cron:${{ steps.extract_image_name.outputs.digest }} registry.digitalocean.com/aaronromeo/postmanpat/cron:latest
+          docker push registry.digitalocean.com/aaronromeo/postmanpat/cron:latest
+        fi
+
     - name: Build container image
-      run: docker build -t registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.digest }} .
+      run: docker build -t registry.digitalocean.com/aaronromeo/postmanpat/ws:${{ steps.extract_image_name.outputs.digest }} ./Dockerfile.ws
 
     - name: Clean up old images
       run: |
@@ -90,13 +108,13 @@ jobs:
         doctl registry repository list-tags postmanpat --output json | jq -r '.[] | select(.tag | contains("'${branch}'")) | .manifest_digest' | xargs -I {} doctl registry repository delete-manifest postmanpat --force {}
 
     - name: Push image to DigitalOcean Container Registry
-      run: docker push registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.digest }}
+      run: docker push registry.digitalocean.com/aaronromeo/postmanpat/ws:${{ steps.extract_image_name.outputs.digest }}
 
     - name: Tag and push latest image to DigitalOcean Container Registry
       run: |
         if [[ $GITHUB_REF_NAME == "main" ]]; then
-          docker tag registry.digitalocean.com/aaronromeo/postmanpat:${{ steps.extract_image_name.outputs.digest }} registry.digitalocean.com/aaronromeo/postmanpat:latest
-          docker push registry.digitalocean.com/aaronromeo/postmanpat:latest
+          docker tag registry.digitalocean.com/aaronromeo/postmanpat/ws:${{ steps.extract_image_name.outputs.digest }} registry.digitalocean.com/aaronromeo/postmanpat/ws:latest
+          docker push registry.digitalocean.com/aaronromeo/postmanpat/ws:latest
         fi
 
   deploy:
