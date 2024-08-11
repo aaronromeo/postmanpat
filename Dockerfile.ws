@@ -26,18 +26,9 @@ COPY --from=builder /app /app
 WORKDIR /app
 
 # Build the Node Web Service app
-RUN make ws-build
+RUN make build-npm
 
-# Install cron
-RUN apt-get update && apt-get install -y cron
-
-# Copy over the crontab
-COPY crontab /etc/cron.d/postmanpat-crontab
-
-# Updating the crontab file perms
-RUN chmod 0644 /etc/cron.d/postmanpat-crontab && crontab /etc/cron.d/postmanpat-crontab
-
-# # Expose port 8080 to the outside world
+# Expose port 3000 to the outside world
 EXPOSE 3000
 
 # Run the crontab

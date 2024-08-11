@@ -16,18 +16,6 @@ COPY . .
 # Build the Go app
 RUN make build
 
-# Stage 2: Create the final image with Node.js
-FROM node:20-bullseye
-
-# Copy the built Go app from the builder stage
-COPY --from=builder /app /app
-
-# Set the Current Working Directory inside the container
-WORKDIR /app
-
-# Build the Node Web Service app
-RUN make ws-build
-
 # Install cron
 RUN apt-get update && apt-get install -y cron
 
@@ -36,9 +24,6 @@ COPY crontab /etc/cron.d/postmanpat-crontab
 
 # Updating the crontab file perms
 RUN chmod 0644 /etc/cron.d/postmanpat-crontab && crontab /etc/cron.d/postmanpat-crontab
-
-# # Expose port 8080 to the outside world
-# EXPOSE 8080
 
 # Run the crontab
 ENTRYPOINT ["cron", "-f"]
