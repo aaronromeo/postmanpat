@@ -98,7 +98,7 @@ jobs:
       run: doctl registry login --expiry-seconds 1200
   
     - name: Build container cron image
-      run: docker build -t registry.digitalocean.com/aaronromeo/postmanpat/cron:${{ steps.extract_image_name.outputs.digest }} ./Dockerfile.cron
+      run: docker build -t registry.digitalocean.com/aaronromeo/postmanpat/cron:${{ steps.extract_image_name.outputs.digest }} -f Dockerfile.cron .
 
     - name: Clean up old cron images
       run: |
@@ -115,18 +115,18 @@ jobs:
           docker push registry.digitalocean.com/aaronromeo/postmanpat/cron:latest
         fi
 
-    - name: Build container image
-      run: docker build -t registry.digitalocean.com/aaronromeo/postmanpat/ws:${{ steps.extract_image_name.outputs.digest }} ./Dockerfile.ws
+    - name: Build container ws image
+      run: docker build -t registry.digitalocean.com/aaronromeo/postmanpat/ws:${{ steps.extract_image_name.outputs.digest }} -f Dockerfile.ws .
 
-    - name: Clean up old images
+    - name: Clean up old ws images
       run: |
         branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
         doctl registry repository list-tags postmanpat --output json | jq -r '.[] | select(.tag | contains("'${branch}'")) | .manifest_digest' | xargs -I {} doctl registry repository delete-manifest postmanpat --force {}
 
-    - name: Push image to DigitalOcean Container Registry
+    - name: Push ws image to DigitalOcean Container Registry
       run: docker push registry.digitalocean.com/aaronromeo/postmanpat/ws:${{ steps.extract_image_name.outputs.digest }}
 
-    - name: Tag and push latest image to DigitalOcean Container Registry
+    - name: Tag and push latest ws image to DigitalOcean Container Registry
       run: |
         if [[ $GITHUB_REF_NAME == "main" ]]; then
           docker tag registry.digitalocean.com/aaronromeo/postmanpat/ws:${{ steps.extract_image_name.outputs.digest }} registry.digitalocean.com/aaronromeo/postmanpat/ws:latest
