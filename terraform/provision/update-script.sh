@@ -38,11 +38,6 @@ if sudo docker ps -a -q -f name=postmanpat-ws | grep -q .; then
     sudo docker rm postmanpat-ws
 fi
 
-# TODO: Replace the following command with a docker-compose
-# sudo docker run -d \
-#     --env-file /tmp/postmanpat.env \
-#     --name postmanpat \
-#     --log-driver json-file \
-#     --log-opt max-size=10m \
-#     --log-opt max-file=3 \
-#     -p 80:80 registry.digitalocean.com/aaronromeo/postmanpat:latest
+sudo docker-compose up -d \
+    --file /tmp/docker-compose.yml \
+    --env-file  /tmp/postmanpat.env

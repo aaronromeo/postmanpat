@@ -74,6 +74,19 @@ resource "null_resource" "provision" {
       agent = true
       host  = digitalocean_droplet.web.ipv4_address
     }
+    source      = "../docker-compose.yml"
+    destination = "/tmp/docker-compose.yml"
+  }
+
+  provisioner "file" {
+    connection {
+      type = "ssh"
+      user = "root"
+
+      # The key is password protected
+      agent = true
+      host  = digitalocean_droplet.web.ipv4_address
+    }
     source      = "provision/update-script.sh"
     destination = "/usr/local/bin/update-script.sh"
   }
