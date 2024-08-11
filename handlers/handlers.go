@@ -41,7 +41,7 @@ func Mailboxes(c *fiber.Ctx) error {
 			fmt.Sprintf("Reading mailbox error %+v", err),
 		)
 	}
-	defer fileMgr.Close()
+	defer fileMgr.Close() //nolint:errcheck
 
 	mailboxes := make(map[string]mailbox.MailboxImpl)
 
