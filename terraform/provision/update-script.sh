@@ -18,26 +18,14 @@ sudo docker login -u ${DIGITALOCEAN_USER} -p ${DIGITALOCEAN_CONTAINER_REGISTRY_T
 
 sudo docker pull registry.digitalocean.com/aaronromeo/postmanpat/cron:latest
 
-if sudo docker ps -q -f name=postmanpat-cron | grep -q .; then
-    sudo docker stop postmanpat-cron
-fi
-
-# Remove the existing container if it exists
-if sudo docker ps -a -q -f name=postmanpat-cron | grep -q .; then
-    sudo docker rm postmanpat-cron
-fi
-
 sudo docker pull registry.digitalocean.com/aaronromeo/postmanpat/ws:latest
 
-if sudo docker ps -q -f name=postmanpat-ws | grep -q .; then
-    sudo docker stop postmanpat-ws
-fi
+sudo docker system prune -f
 
-# Remove the existing container if it exists
-if sudo docker ps -a -q -f name=postmanpat-ws | grep -q .; then
-    sudo docker rm postmanpat-ws
-fi
+# docker compose ps
+# https://docs.docker.com/reference/cli/docker/compose/ps/
 
 sudo docker-compose up -d \
     --file /tmp/docker-compose.yml \
-    --env-file  /tmp/postmanpat.env
+    --env-file  /tmp/postmanpat.env \
+    --watch

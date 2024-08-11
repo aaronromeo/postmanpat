@@ -141,15 +141,26 @@ jobs:
     - name: Check out the repository
       uses: actions/checkout@v4
 
-    - name: Set up SSH
-      run: |
-        mkdir -p ~/.ssh
-        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
+    # - name: Set up SSH
+    #   run: |
+    #     mkdir -p ~/.ssh
+    #     echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+    #     chmod 600 ~/.ssh/id_rsa
 
     # - name: Deploy to Production
     #   if: github.ref_name == 'main'
     #   run: |
+    #     if [[ "${{ secrets.PROD_DROPLET_URL }}" == "" ]]; then
+    #       echo "No production droplet URL provided. Skipping deployment."
+    #       exit 0
+    #     fi
+
+    - name: Deploy to Production
+      if: github.ref_name == 'main'
+      uses: joelwmale/webhook-action@master
+      with:
+        url: ${{ secrets.PROD_DROPLET_URL }}
+
     #     if [[ "${{ secrets.PROD_DROPLET_IP }}" == "" ]]; then
     #       echo "No production droplet IP provided. Skipping deployment."
     #       exit 0
