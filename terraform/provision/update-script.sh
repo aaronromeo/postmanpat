@@ -25,7 +25,6 @@ sudo docker system prune -f
 # docker compose ps
 # https://docs.docker.com/reference/cli/docker/compose/ps/
 
-sudo docker-compose up -d \
-    --file /tmp/docker-compose.yml \
-    --env-file  /tmp/postmanpat.env \
-    --watch
+sudo docker compose --file /tmp/docker-compose.yml \
+    --env-file /tmp/postmanpat.env \
+    up --detach

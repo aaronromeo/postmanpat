@@ -46,10 +46,11 @@ resource "digitalocean_record" "subdomain" {
 
 resource "null_resource" "provision" {
   triggers = {
-    droplet_id           = digitalocean_droplet.web.id
-    main_script_sha256   = filemd5("provision/main.sh")
-    update_script_sha256 = filemd5("provision/update-script.sh")
-    hooks_json_sha256    = filemd5("provision/hooks.json")
+    droplet_id            = digitalocean_droplet.web.id
+    main_script_sha256    = filemd5("provision/main.sh")
+    update_script_sha256  = filemd5("provision/update-script.sh")
+    hooks_json_sha256     = filemd5("provision/hooks.json")
+    docker_compose_sha256 = filemd5("../docker-compose.yml")
   }
 
   provisioner "file" {
