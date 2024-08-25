@@ -155,11 +155,13 @@ jobs:
     #       exit 0
     #     fi
 
-    - name: Deploy to Production
-      if: github.ref_name == 'main'
-      uses: joelwmale/webhook-action@master
-      with:
-        url: ${{ secrets.PROD_DROPLET_URL }}
+    # Note: The following code is commented out because the image uses `containrrr/watchtower` 
+    #       to automatically update the container when a new image is pushed to the registry.
+    # - name: Deploy to Production
+    #   if: github.ref_name == 'main'
+    #   uses: joelwmale/webhook-action@master
+    #   with:
+    #     url: ${{ secrets.PROD_DROPLET_URL }}
 
     #     if [[ "${{ secrets.PROD_DROPLET_IP }}" == "" ]]; then
     #       echo "No production droplet IP provided. Skipping deployment."
