@@ -36,12 +36,10 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
-const OTEL_NAME = "postmanpat"
-
 var (
-	tracer     = otel.Tracer(OTEL_NAME)
-	meter      = otel.Meter(OTEL_NAME)
-	otelLogger = otelslog.NewLogger(OTEL_NAME)
+	tracer     = otel.Tracer(base.OTEL_NAME)
+	meter      = otel.Meter(base.OTEL_NAME)
+	otelLogger = otelslog.NewLogger(base.OTEL_NAME)
 	rollCnt    metric.Int64Counter
 )
 
@@ -72,6 +70,7 @@ func main() {
 		IMAP_URL,
 		IMAP_USER,
 		IMAP_PASS,
+		base.UPTRACE_DSN_ENV_VAR,
 	} {
 		if _, ok := os.LookupEnv(key); !ok {
 			log.Fatalf("Environment variable %s is not set", key)
@@ -104,7 +103,7 @@ func main() {
 		log.Printf("Handling shutdown: %v", otelShutdown(context.Background()))
 	}()
 
-	_, span := tracer.Start(ctx, OTEL_NAME)
+	_, span := tracer.Start(ctx, base.OTEL_NAME)
 	defer span.End()
 
 	isi, err := imap.NewImapManager(

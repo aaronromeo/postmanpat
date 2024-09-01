@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"aaronromeo.com/postmanpat/pkg/base"
 	"go.opentelemetry.io/contrib/propagators/aws/xray"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -22,8 +23,6 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/grpc/encoding/gzip"
 )
-
-const UPTRACE_DSN = "UPTRACE_DSN"
 
 // setupOTelSDK bootstraps the OpenTelemetry pipeline.
 // If it does not return an error, make sure to call shutdown for proper cleanup.
@@ -56,7 +55,7 @@ func SetupOTelSDK(ctx context.Context) (shutdown func(context.Context) error, er
 		resource.WithTelemetrySDK(),
 		resource.WithHost(),
 		resource.WithAttributes(
-			attribute.String("service.name", "postmanpat"),
+			attribute.String("service.name", base.UPTRACE_SERVICE),
 			attribute.String("service.version", "1.0.0"),
 		))
 	if err != nil {
@@ -103,9 +102,9 @@ func newPropagator() propagation.TextMapPropagator {
 }
 
 func newTraceExporter(ctx context.Context) (trace.SpanExporter, error) {
-	dsn := os.Getenv(UPTRACE_DSN)
+	dsn := os.Getenv(base.UPTRACE_DSN_ENV_VAR)
 	if dsn == "" {
-		panic(fmt.Sprintf("%s environment variable is required", UPTRACE_DSN))
+		panic(fmt.Sprintf("%s environment variable is required", base.UPTRACE_DSN_ENV_VAR))
 	}
 	// fmt.Println("using DSN:", dsn)
 
@@ -142,9 +141,9 @@ func newTraceProvider(ctx context.Context, resource *resource.Resource) (*trace.
 }
 
 func newMeterExporter(ctx context.Context) (*otlpmetricgrpc.Exporter, error) {
-	dsn := os.Getenv(UPTRACE_DSN)
+	dsn := os.Getenv(base.UPTRACE_DSN_ENV_VAR)
 	if dsn == "" {
-		panic(fmt.Sprintf("%s environment variable is required", UPTRACE_DSN))
+		panic(fmt.Sprintf("%s environment variable is required", base.UPTRACE_DSN_ENV_VAR))
 	}
 	// fmt.Println("using DSN:", dsn)
 
@@ -170,7 +169,7 @@ func newMeterExporter(ctx context.Context) (*otlpmetricgrpc.Exporter, error) {
 	)
 }
 
-func newMeterProvider(ctx context.Context, resource *resource.Resource) (*metric.MeterProvider, error) {
+func newMeterProvider(ctx context.Context, _ *resource.Resource) (*metric.MeterProvider, error) {
 	metricExporter, err := newMeterExporter(ctx)
 	if err != nil {
 		return nil, err
@@ -188,9 +187,9 @@ func newMeterProvider(ctx context.Context, resource *resource.Resource) (*metric
 }
 
 func newLoggerExporter(ctx context.Context) (*otlploghttp.Exporter, error) {
-	dsn := os.Getenv(UPTRACE_DSN)
+	dsn := os.Getenv(base.UPTRACE_DSN_ENV_VAR)
 	if dsn == "" {
-		panic(fmt.Sprintf("%s environment variable is required", UPTRACE_DSN))
+		panic(fmt.Sprintf("%s environment variable is required", base.UPTRACE_DSN_ENV_VAR))
 	}
 	// fmt.Println("using DSN:", dsn)
 
