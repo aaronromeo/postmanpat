@@ -23,6 +23,7 @@ resource "digitalocean_droplet" "web" {
       export DIGITALOCEAN_CONTAINER_REGISTRY_TOKEN="${var.DIGITALOCEAN_CONTAINER_REGISTRY_TOKEN}"
       export DIGITALOCEAN_USER="${var.DIGITALOCEAN_USER}"
 
+      export UPTRACE_DSN="${var.UPTRACE_DSN}"
     ' > /etc/profile.d/postmanpat.sh
 
     chmod +x /etc/profile.d/postmanpat.sh
