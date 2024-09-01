@@ -23,11 +23,26 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/pkg/errors"
 
+	otelfiber "github.com/gofiber/contrib/otelfiber/v2"
 	fiber "github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/template/html/v2"
 	"github.com/urfave/cli/v2"
+
+	"go.opentelemetry.io/contrib/bridges/otelslog"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+)
+
+const OTEL_NAME = "postmanpat"
+
+var (
+	tracer     = otel.Tracer(OTEL_NAME)
+	meter      = otel.Meter(OTEL_NAME)
+	otelLogger = otelslog.NewLogger(OTEL_NAME)
+	rollCnt    metric.Int64Counter
 )
 
 func main() {
@@ -79,6 +94,19 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	ctx := context.Background()
 
+	// Set up OpenTelemetry.
+	otelShutdown, err := utils.SetupOTelSDK(ctx)
+	if err != nil {
+		return
+	}
+	// Handle shutdown properly so nothing leaks.
+	defer func() {
+		log.Printf("Handling shutdown: %v", otelShutdown(context.Background()))
+	}()
+
+	_, span := tracer.Start(ctx, OTEL_NAME)
+	defer span.End()
+
 	isi, err := imap.NewImapManager(
 		// Connect to server
 		imap.WithTLSConfig(os.Getenv(IMAP_URL), nil),
@@ -116,19 +144,19 @@ func main() {
 				Name:    "mailboxnames",
 				Aliases: []string{"mn"},
 				Usage:   "List mailbox names",
-				Action:  listMailboxNames(isi, fileMgr),
+				Action:  listMailboxNames(ctx, isi, fileMgr),
 			},
 			{
 				Name:    "reapmessages",
 				Aliases: []string{"re"},
 				Usage:   "Reap the messages in a mailbox",
-				Action:  reapMessages(isi, fileMgr),
+				Action:  reapMessages(ctx, isi, fileMgr),
 			},
 			{
 				Name:    "webserver",
 				Aliases: []string{"ws"},
 				Usage:   "Start the web server",
-				Action:  webserver(fileMgr),
+				Action:  webserver(ctx, fileMgr),
 			},
 		},
 	}
@@ -138,8 +166,11 @@ func main() {
 	}
 }
 
-func listMailboxNames(isi *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cli.Context) error {
+func listMailboxNames(ctx context.Context, isi *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cli.Context) error {
 	return func(c *cli.Context) error {
+		_, span := tracer.Start(ctx, "listMailboxNames")
+		defer span.End()
+
 		// List mailboxes
 		verifiedMailboxObjs, err := isi.GetMailboxes()
 		if err != nil {
@@ -161,6 +192,10 @@ func listMailboxNames(isi *imap.ImapManagerImpl, fileMgr utils.FileManager) func
 			return errors.Errorf("converting mailbox names to JSON error %+v", err)
 		}
 
+		span.SetAttributes(
+			attribute.String("mailboxListFile.name", base.MailboxListFile),
+			attribute.Int("encodedMailboxes.count", len(encodedMailboxes)),
+		)
 		if err := fileMgr.WriteFile(base.MailboxListFile, encodedMailboxes, 0644); err != nil {
 			return errors.Errorf("writing mailbox names file error %+v", err)
 		}
@@ -169,8 +204,11 @@ func listMailboxNames(isi *imap.ImapManagerImpl, fileMgr utils.FileManager) func
 	}
 }
 
-func reapMessages(_ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cli.Context) error {
+func reapMessages(ctx context.Context, _ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cli.Context) error {
 	return func(c *cli.Context) error {
+		_, span := tracer.Start(ctx, "reapMessages")
+		defer span.End()
+
 		// Read the mailbox list file
 		data, err := fileMgr.ReadFile(base.MailboxListFile)
 		if err != nil {
@@ -194,8 +232,11 @@ func reapMessages(_ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cl
 	}
 }
 
-func webserver(fileMgr utils.FileManager) func(c *cli.Context) error {
+func webserver(ctx context.Context, fileMgr utils.FileManager) func(c *cli.Context) error {
 	return func(c *cli.Context) error {
+		_, span := tracer.Start(ctx, "webserver")
+		defer span.End()
+
 		// Create view engine
 		engine := html.New("./views", ".html")
 
@@ -227,6 +268,7 @@ func webserver(fileMgr utils.FileManager) func(c *cli.Context) error {
 		// Middleware
 		app.Use(recover.New())
 		app.Use(logger.New())
+		app.Use(otelfiber.Middleware())
 
 		app.Use(func(c *fiber.Ctx) error {
 			c.Locals("fileMgr", fileMgr)

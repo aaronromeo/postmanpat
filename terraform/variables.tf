@@ -70,3 +70,8 @@ variable "region" {
   type        = string
   default     = "nyc3"
 }
+
+variable "UPTRACE_DSN" {
+  description = "Uptrace DSN"
+  type        = string
+}
