@@ -73,7 +73,9 @@ func main() {
 		base.UPTRACE_DSN_ENV_VAR,
 	} {
 		if _, ok := os.LookupEnv(key); !ok {
-			log.Fatalf("Environment variable %s is not set", key)
+			log.Fatalf("Environment variable %s is not set\n", key)
+		} else {
+			log.Printf("Environment variable %s is set\n", key)
 		}
 	}
 
