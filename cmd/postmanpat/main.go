@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"html/template"
 	"log"
-	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -92,7 +91,7 @@ func main() {
 		log.Fatalf("Failed to create AWS session: %v", err)
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := otelLogger
 	ctx := context.Background()
 
 	// Set up OpenTelemetry.
@@ -223,7 +222,7 @@ func reapMessages(ctx context.Context, _ *imap.ImapManagerImpl, fileMgr utils.Fi
 		}
 
 		for _, mailbox := range mailboxes {
-			err := mailbox.ProcessMailbox()
+			err := mailbox.ProcessMailbox(ctx)
 			if err != nil {
 				return errors.Errorf("unable to process mailboxes %+v", err)
 			}

@@ -130,22 +130,23 @@ func (mb *MailboxImpl) wrappedLogoutFn() func() {
 	}
 }
 
-func (mb *MailboxImpl) ProcessMailbox() error {
+func (mb *MailboxImpl) ProcessMailbox(ctx context.Context) error {
 	switch {
 	case mb.Exportable && mb.Deletable:
-		mb.Logger.InfoContext(mb.Ctx, "Exporting and deleting mailbox", slog.String("name", mb.Name))
+		mb.Logger.InfoContext(ctx, "Exporting and deleting mailbox", slog.String("name", mb.Name))
 		err := mb.ExportAndDeleteMessages()
 		if err != nil {
 			return err
 		}
 	case mb.Deletable:
-		mb.Logger.InfoContext(mb.Ctx, "Deleting mailbox", slog.String("name", mb.Name))
+		mb.Logger.InfoContext(ctx, "Deleting mailbox", slog.String("name", mb.Name))
 		err := mb.DeleteMessages()
 		if err != nil {
 			return err
 		}
 	default:
-		mb.Logger.InfoContext(mb.Ctx, "Skipping mailbox", slog.String("name", mb.Name))
+		fmt.Println("fmt.Prinln Skipping mailbox", mb.Name)
+		mb.Logger.InfoContext(ctx, "Skipping mailbox", slog.String("name", mb.Name))
 	}
 	return nil
 }
