@@ -114,8 +114,8 @@ jobs:
           docker tag registry.digitalocean.com/aaronromeo/postmanpat/cron:${{ steps.extract_image_name.outputs.digest }} registry.digitalocean.com/aaronromeo/postmanpat/cron:latest
           docker push registry.digitalocean.com/aaronromeo/postmanpat/cron:latest
         else
-          docker tag registry.digitalocean.com/aaronromeo/postmanpat/cron:${{ steps.extract_image_name.outputs.digest }} registry.digitalocean.com/aaronromeo/postmanpat/cron:${GITHUB_REF_NAME}
-          docker push registry.digitalocean.com/aaronromeo/postmanpat/cron:${GITHUB_REF_NAME}
+          docker tag registry.digitalocean.com/aaronromeo/postmanpat/cron:${{ steps.extract_image_name.outputs.digest }} registry.digitalocean.com/aaronromeo/postmanpat/cron:${{ github.ref_name }}
+          docker push registry.digitalocean.com/aaronromeo/postmanpat/cron:${{ github.ref_name }}
         fi
 
     - name: Build container ws image
@@ -124,6 +124,7 @@ jobs:
     - name: Clean up old ws images
       run: |
         branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
+        echo "Branch: ${branch}"
         doctl registry repository list-tags postmanpat --output json | jq -r '.[] | select(.tag | contains("'${branch}'")) | .manifest_digest' | xargs -I {} doctl registry repository delete-manifest postmanpat --force {}
 
     - name: Push ws image to DigitalOcean Container Registry
@@ -135,8 +136,8 @@ jobs:
           docker tag registry.digitalocean.com/aaronromeo/postmanpat/ws:${{ steps.extract_image_name.outputs.digest }} registry.digitalocean.com/aaronromeo/postmanpat/ws:latest
           docker push registry.digitalocean.com/aaronromeo/postmanpat/ws:latest
         else
-          docker tag registry.digitalocean.com/aaronromeo/postmanpat/ws:${{ steps.extract_image_name.outputs.digest }} registry.digitalocean.com/aaronromeo/postmanpat/ws:${GITHUB_REF_NAME}
-          docker push registry.digitalocean.com/aaronromeo/postmanpat/ws:${GITHUB_REF_NAME}
+          docker tag registry.digitalocean.com/aaronromeo/postmanpat/ws:${{ steps.extract_image_name.outputs.digest }} registry.digitalocean.com/aaronromeo/postmanpat/ws:${{ github.ref_name }}
+          docker push registry.digitalocean.com/aaronromeo/postmanpat/ws:${{ github.ref_name }}
         fi
 
   deploy:
