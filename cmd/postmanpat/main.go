@@ -35,9 +35,9 @@ import (
 )
 
 var (
-	tracer = otel.Tracer(base.OTEL_NAME)
-	// meter      = otel.Meter(base.OTEL_NAME)
+	tracer     = otel.Tracer(base.OTEL_NAME)
 	otelLogger = otelslog.NewLogger(base.OTEL_NAME)
+	// meter      = otel.Meter(base.OTEL_NAME)
 	// rollCnt    metric.Int64Counter
 )
 
@@ -104,6 +104,10 @@ func main() {
 
 	_, span := tracer.Start(ctx, base.OTEL_NAME)
 	defer span.End()
+
+	if otelLogger == nil {
+		log.Fatalf("Failed to create logger")
+	}
 
 	isi, err := imap.NewImapManager(
 		// Connect to server
