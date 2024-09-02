@@ -91,7 +91,6 @@ func main() {
 		log.Fatalf("Failed to create AWS session: %v", err)
 	}
 
-	logger := otelLogger
 	ctx := context.Background()
 
 	// Set up OpenTelemetry.
@@ -112,7 +111,7 @@ func main() {
 		imap.WithTLSConfig(os.Getenv(IMAP_URL), nil),
 		imap.WithAuth(os.Getenv(IMAP_USER), os.Getenv(IMAP_PASS)),
 		imap.WithCtx(ctx),
-		imap.WithLogger(logger),
+		imap.WithLogger(otelLogger),
 		imap.WithFileManager(utils.OSFileManager{}), // TODO: What is this used for?
 	)
 	if err != nil {
@@ -206,7 +205,7 @@ func listMailboxNames(ctx context.Context, isi *imap.ImapManagerImpl, fileMgr ut
 
 func reapMessages(ctx context.Context, _ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cli.Context) error {
 	return func(c *cli.Context) error {
-		_, span := tracer.Start(ctx, "reapMessages")
+		ctx, span := tracer.Start(ctx, "reapMessages")
 		defer span.End()
 
 		// Read the mailbox list file

@@ -146,6 +146,8 @@ func (mb *MailboxImpl) ProcessMailbox(ctx context.Context) error {
 		}
 	default:
 		fmt.Println("fmt.Prinln Skipping mailbox", mb.Name)
+		fmt.Printf("fmt.Prinln %v\n", ctx)
+		fmt.Printf("fmt.Prinln %v\n", mb.Logger)
 		mb.Logger.InfoContext(ctx, "Skipping mailbox", slog.String("name", mb.Name))
 	}
 	return nil
