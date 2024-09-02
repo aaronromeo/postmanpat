@@ -32,14 +32,13 @@ import (
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 )
 
 var (
-	tracer     = otel.Tracer(base.OTEL_NAME)
-	meter      = otel.Meter(base.OTEL_NAME)
+	tracer = otel.Tracer(base.OTEL_NAME)
+	// meter      = otel.Meter(base.OTEL_NAME)
 	otelLogger = otelslog.NewLogger(base.OTEL_NAME)
-	rollCnt    metric.Int64Counter
+	// rollCnt    metric.Int64Counter
 )
 
 func main() {

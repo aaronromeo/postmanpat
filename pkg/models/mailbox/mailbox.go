@@ -131,6 +131,10 @@ func (mb *MailboxImpl) wrappedLogoutFn() func() {
 }
 
 func (mb *MailboxImpl) ProcessMailbox(ctx context.Context) error {
+	if mb.Logger == nil {
+		return fmt.Errorf("logger is nil")
+	}
+
 	switch {
 	case mb.Exportable && mb.Deletable:
 		mb.Logger.InfoContext(ctx, "Exporting and deleting mailbox", slog.String("name", mb.Name))
