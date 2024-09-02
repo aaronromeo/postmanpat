@@ -22,12 +22,12 @@ type ImapManager interface {
 }
 
 type ImapManagerImpl struct {
-	client      base.Client
+	Client      base.Client
 	dialTLS     func(address string, tlsConfig *tls.Config) (base.Client, error)
 	Username    string
 	password    string
 	address     string
-	logger      *slog.Logger
+	Logger      *slog.Logger
 	tlsConfig   *tls.Config
 	ctx         context.Context
 	fileCreator utils.FileManager
@@ -62,19 +62,19 @@ func NewImapManager(opts ...ImapManagerOption) (*ImapManagerImpl, error) {
 		return nil, errors.New("requires password")
 	}
 
-	if imapMgr.client == nil && imapMgr.address == "" {
+	if imapMgr.Client == nil && imapMgr.address == "" {
 		return nil, errors.New("requires client or address")
 	}
 
-	if imapMgr.client == nil {
+	if imapMgr.Client == nil {
 		c, err := imapMgr.dialTLS(imapMgr.address, imapMgr.tlsConfig)
 		if err != nil {
 			return nil, err
 		}
-		imapMgr.client = c
+		imapMgr.Client = c
 	}
 
-	if imapMgr.logger == nil {
+	if imapMgr.Logger == nil {
 		return nil, errors.New("requires slogger")
 	}
 
@@ -103,7 +103,7 @@ func WithAuth(username string, password string) ImapManagerOption {
 
 func WithClient(c base.Client) ImapManagerOption {
 	return func(imapMgr *ImapManagerImpl) error {
-		imapMgr.client = c
+		imapMgr.Client = c
 		return nil
 	}
 }
@@ -118,7 +118,7 @@ func WithDialTLS(d func(address string, tlsConfig *tls.Config) (base.Client, err
 func WithLogger(logger *slog.Logger) ImapManagerOption {
 	// slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	return func(isi *ImapManagerImpl) error {
-		isi.logger = logger
+		isi.Logger = logger
 		return nil
 	}
 }
@@ -140,42 +140,42 @@ func WithFileManager(fileCreator utils.FileManager) ImapManagerOption {
 
 // Login
 func (srv ImapManagerImpl) Login() (base.Client, error) {
-	state := srv.client.State()
+	state := srv.Client.State()
 	switch state {
 	case imap.NotAuthenticatedState:
-		if err := srv.client.Login(srv.Username, srv.password); err != nil {
-			srv.logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to login: %v", err), slog.Any("error", utils.WrapError(err)))
-			return srv.client, err
+		if err := srv.Client.Login(srv.Username, srv.password); err != nil {
+			srv.Logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to login: %v", err), slog.Any("error", utils.WrapError(err)))
+			return srv.Client, err
 		}
-		srv.logger.Info("Login success")
+		srv.Logger.Info("Login success")
 	case imap.AuthenticatedState:
-		srv.logger.Info("Already authenticated")
+		srv.Logger.Info("Already authenticated")
 	case imap.SelectedState:
-		srv.logger.Info("Already selected mailbox")
+		srv.Logger.Info("Already selected mailbox")
 	default: // imap.LogoutState and imap.ConnectedState
 		c, err := srv.dialTLS(srv.address, srv.tlsConfig)
 		if err != nil {
-			srv.logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to create a client: %v", err), slog.Any("error", utils.WrapError(err)))
-			return srv.client, err
+			srv.Logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to create a client: %v", err), slog.Any("error", utils.WrapError(err)))
+			return srv.Client, err
 		}
-		srv.client = c
-		srv.logger.Info("Login success")
+		srv.Client = c
+		srv.Logger.Info("Login success")
 
-		if err := srv.client.Login(srv.Username, srv.password); err != nil {
-			srv.logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to login: %v", err), slog.Any("error", utils.WrapError(err)))
-			return srv.client, err
+		if err := srv.Client.Login(srv.Username, srv.password); err != nil {
+			srv.Logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to login: %v", err), slog.Any("error", utils.WrapError(err)))
+			return srv.Client, err
 		}
-		srv.logger.Info("Login success")
+		srv.Logger.Info("Login success")
 	}
 
-	return srv.client, nil
+	return srv.Client, nil
 }
 
 // Logout
 func (srv ImapManagerImpl) LogoutFn() func() {
 	return func() {
-		if err := srv.client.Logout(); err != nil {
-			srv.logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to logout: %v", err), slog.Any("error", utils.WrapError(err)))
+		if err := srv.Client.Logout(); err != nil {
+			srv.Logger.ErrorContext(srv.ctx, fmt.Sprintf("Failed to logout: %v", err), slog.Any("error", utils.WrapError(err)))
 		}
 	}
 }
@@ -185,38 +185,38 @@ func (srv ImapManagerImpl) GetMailboxes() (map[string]*mailbox.MailboxImpl, erro
 	defer srv.LogoutFn()()
 
 	if _, err := srv.Login(); err != nil {
-		srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
+		srv.Logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 		return nil, err
 	}
 
 	mailboxes := make(chan *imap.MailboxInfo, 10)
 	done := make(chan error, 1)
 	go func() {
-		done <- srv.client.List("", "*", mailboxes)
+		done <- srv.Client.List("", "*", mailboxes)
 	}()
 
 	verifiedMailboxObjs := map[string]*mailbox.MailboxImpl{}
 	serializedMailboxObjs, err := srv.unserializeMailboxes()
 	if err != nil {
-		srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
+		srv.Logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 		return nil, err
 	}
-	srv.logger.Info("Retrieved serializedMailboxObjs")
+	srv.Logger.Info("Retrieved serializedMailboxObjs")
 
 	for m := range mailboxes {
-		srv.logger.Info(fmt.Sprintf("Mailbox: %s", m.Name))
+		srv.Logger.Info(fmt.Sprintf("Mailbox: %s", m.Name))
 		if _, ok := serializedMailboxObjs[m.Name]; !ok {
 			verifiedMailboxObjs[m.Name], err = mailbox.NewMailbox(
-				mailbox.WithClient(srv.client),
-				mailbox.WithLogger(srv.logger),
+				mailbox.WithClient(srv.Client),
+				mailbox.WithLogger(srv.Logger),
 				mailbox.WithCtx(srv.ctx),
 				mailbox.WithLoginFn(srv.Login),
-				mailbox.WithLogoutFn(srv.client.Logout),
+				mailbox.WithLogoutFn(srv.Client.Logout),
 				mailbox.WithFileManager(utils.OSFileManager{}),
 			)
 
 			if err != nil {
-				srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
+				srv.Logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 				return nil, err
 			}
 
@@ -229,7 +229,7 @@ func (srv ImapManagerImpl) GetMailboxes() (map[string]*mailbox.MailboxImpl, erro
 	}
 
 	if err := <-done; err != nil {
-		srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
+		srv.Logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 		return nil, err
 	}
 
@@ -246,26 +246,26 @@ func (srv ImapManagerImpl) unserializeMailboxes() (map[string]*mailbox.MailboxIm
 	}
 
 	if mailboxFile, err := srv.fileCreator.ReadFile(base.MailboxListFile); err != nil {
-		srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
+		srv.Logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 		return nil, err
 	} else {
 		if err := json.Unmarshal(mailboxFile, &serializedMailboxObjs); err != nil {
-			srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
+			srv.Logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 			return nil, err
 		}
 	}
 
 	for name, serializedMailbox := range serializedMailboxObjs {
 		mb, err := mailbox.NewMailbox(
-			mailbox.WithClient(srv.client),
-			mailbox.WithLogger(srv.logger),
+			mailbox.WithClient(srv.Client),
+			mailbox.WithLogger(srv.Logger),
 			mailbox.WithCtx(srv.ctx),
 			mailbox.WithLoginFn(srv.Login),
-			mailbox.WithLogoutFn(srv.client.Logout),
+			mailbox.WithLogoutFn(srv.Client.Logout),
 			mailbox.WithFileManager(utils.OSFileManager{}),
 		)
 		if err != nil {
-			srv.logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
+			srv.Logger.ErrorContext(srv.ctx, err.Error(), slog.Any("error", utils.WrapError(err)))
 			return nil, err
 		}
 

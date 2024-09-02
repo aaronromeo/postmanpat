@@ -2,6 +2,7 @@ services:
   cron:
     image: registry.digitalocean.com/aaronromeo/postmanpat/cron:latest
     env_file: "postmanpat.env"
+    container_name: cron-container
     logging:
       driver: "json-file"
       options:
@@ -12,6 +13,7 @@ services:
     ports:
       - "3000:3000" # Access http://<host>:3000
     env_file: "postmanpat.env"
+    container_name: web-container
     logging:
       driver: "json-file"
       options:
@@ -21,3 +23,7 @@ services:
     image: containrrr/watchtower
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - /root/.docker/config.json:/config.json
+    container_name: watchtower-container
+    command: --interval 30 web-container cron-container
+

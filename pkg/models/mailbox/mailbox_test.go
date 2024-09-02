@@ -336,11 +336,11 @@ func TestProcessMailbox(t *testing.T) {
 					Exportable: tc.exportable,
 					Deletable:  tc.deletable,
 				},
-				LoginFn:     func() (base.Client, error) { return mockClient, nil },
-				LogoutFn:    func() error { return nil },
-				Client:      mockClient,
-				Logger:      logger,
-				Ctx:         ctx,
+				LoginFn:  func() (base.Client, error) { return mockClient, nil },
+				LogoutFn: func() error { return nil },
+				Client:   mockClient,
+				Logger:   logger,
+				// Ctx:         ctx,
 				FileManager: mockfileManager,
 			}
 
@@ -373,7 +373,7 @@ func TestProcessMailbox(t *testing.T) {
 			}
 
 			// Export messages and check results
-			err := mb.ProcessMailbox()
+			err := mb.ProcessMailbox(ctx)
 			if err != nil {
 				t.Fatalf("Unexpected error %+v", err)
 			}

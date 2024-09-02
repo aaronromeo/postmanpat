@@ -1,4 +1,4 @@
-resource "digitalocean_droplet" "web" {
+resource "digitalocean_droplet" "postmanpat" {
   image    = "ubuntu-22-04-x64"
   name     = "docker-ubuntu-postmanpat"
   region   = var.region
@@ -27,6 +27,8 @@ resource "digitalocean_droplet" "web" {
     ' > /etc/profile.d/postmanpat.sh
 
     chmod +x /etc/profile.d/postmanpat.sh
+
+    snap install doctl
   EOF
 }
 
@@ -40,18 +42,18 @@ resource "digitalocean_record" "subdomain" {
   type   = "A"
   name   = var.SUBDOMAIN
   ttl    = 1800
-  value  = digitalocean_droplet.web.ipv4_address
+  value  = digitalocean_droplet.postmanpat.ipv4_address
 
-  depends_on = [digitalocean_droplet.web, digitalocean_domain.app_domain]
+  depends_on = [digitalocean_droplet.postmanpat, digitalocean_domain.app_domain]
 }
 
-resource "null_resource" "provision" {
+resource "null_resource" "source_files" {
   triggers = {
-    droplet_id            = digitalocean_droplet.web.id
+    droplet_id            = digitalocean_droplet.postmanpat.id
     main_script_sha256    = filemd5("provision/main.sh")
-    update_script_sha256  = filemd5("provision/update-script.sh")
+    update_script_sha256  = filemd5("workingfiles/update-script.sh")
     hooks_json_sha256     = filemd5("provision/hooks.json")
-    docker_compose_sha256 = filemd5("../docker-compose.yml")
+    docker_compose_sha256 = filemd5("workingfiles/docker-compose.yml")
   }
 
   provisioner "file" {
@@ -61,7 +63,7 @@ resource "null_resource" "provision" {
 
       # The key is password protected
       agent = true
-      host  = digitalocean_droplet.web.ipv4_address
+      host  = digitalocean_droplet.postmanpat.ipv4_address
     }
     source      = "provision/main.sh"
     destination = "/tmp/provision.sh"
@@ -74,9 +76,9 @@ resource "null_resource" "provision" {
 
       # The key is password protected
       agent = true
-      host  = digitalocean_droplet.web.ipv4_address
+      host  = digitalocean_droplet.postmanpat.ipv4_address
     }
-    source      = "../docker-compose.yml"
+    source      = "workingfiles/docker-compose.yml"
     destination = "/tmp/docker-compose.yml"
   }
 
@@ -87,9 +89,9 @@ resource "null_resource" "provision" {
 
       # The key is password protected
       agent = true
-      host  = digitalocean_droplet.web.ipv4_address
+      host  = digitalocean_droplet.postmanpat.ipv4_address
     }
-    source      = "provision/update-script.sh"
+    source      = "workingfiles/update-script.sh"
     destination = "/usr/local/bin/update-script.sh"
   }
 
@@ -100,12 +102,23 @@ resource "null_resource" "provision" {
 
       # The key is password protected
       agent = true
-      host  = digitalocean_droplet.web.ipv4_address
+      host  = digitalocean_droplet.postmanpat.ipv4_address
     }
     source      = "provision/hooks.json"
     destination = "/etc/webhook/hooks.json"
   }
 
+  depends_on = [digitalocean_droplet.postmanpat]
+}
+
+resource "null_resource" "provision" {
+  triggers = {
+    droplet_id            = digitalocean_droplet.postmanpat.id
+    main_script_sha256    = filemd5("provision/main.sh")
+    update_script_sha256  = filemd5("workingfiles/update-script.sh")
+    hooks_json_sha256     = filemd5("provision/hooks.json")
+    docker_compose_sha256 = filemd5("workingfiles/docker-compose.yml")
+  }
   provisioner "remote-exec" {
     connection {
       type = "ssh"
@@ -113,7 +126,7 @@ resource "null_resource" "provision" {
 
       # The key is password protected
       agent = true
-      host  = digitalocean_droplet.web.ipv4_address
+      host  = digitalocean_droplet.postmanpat.ipv4_address
     }
     inline = [
       "chmod +x /tmp/provision.sh",
@@ -122,9 +135,9 @@ resource "null_resource" "provision" {
     ]
   }
 
-  depends_on = [digitalocean_droplet.web]
+  depends_on = [null_resource.source_files]
 }
 
 output "droplet_ip" {
-  value = digitalocean_droplet.web.ipv4_address
+  value = digitalocean_droplet.postmanpat.ipv4_address
 }
