@@ -49,9 +49,9 @@ resource "null_resource" "provision" {
   triggers = {
     droplet_id            = digitalocean_droplet.web.id
     main_script_sha256    = filemd5("provision/main.sh")
-    update_script_sha256  = filemd5("provision/update-script.sh")
+    update_script_sha256  = filemd5("workingfiles/update-script.sh")
     hooks_json_sha256     = filemd5("provision/hooks.json")
-    docker_compose_sha256 = filemd5("../docker-compose.yml")
+    docker_compose_sha256 = filemd5("workingfiles/docker-compose.yml")
   }
 
   provisioner "file" {
@@ -76,7 +76,7 @@ resource "null_resource" "provision" {
       agent = true
       host  = digitalocean_droplet.web.ipv4_address
     }
-    source      = "../docker-compose.yml"
+    source      = "workingfiles/docker-compose.yml"
     destination = "/tmp/docker-compose.yml"
   }
 
@@ -89,7 +89,7 @@ resource "null_resource" "provision" {
       agent = true
       host  = digitalocean_droplet.web.ipv4_address
     }
-    source      = "provision/update-script.sh"
+    source      = "workingfiles/update-script.sh"
     destination = "/usr/local/bin/update-script.sh"
   }
 
