@@ -106,7 +106,10 @@ func main() {
 	defer span.End()
 
 	if otelLogger == nil {
-		log.Fatalf("Failed to create logger")
+		log.Fatalf("Failed to create logger (in main)")
+	} else {
+		otelLogger.Info("Logger created")
+		otelLogger.InfoContext(ctx, "Logger created (with context)")
 	}
 
 	isi, err := imap.NewImapManager(
@@ -206,7 +209,7 @@ func listMailboxNames(ctx context.Context, isi *imap.ImapManagerImpl, fileMgr ut
 	}
 }
 
-func reapMessages(ctx context.Context, _ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cli.Context) error {
+func reapMessages(ctx context.Context, isi *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cli.Context) error {
 	return func(c *cli.Context) error {
 		ctx, span := tracer.Start(ctx, "reapMessages")
 		defer span.End()
@@ -224,6 +227,9 @@ func reapMessages(ctx context.Context, _ *imap.ImapManagerImpl, fileMgr utils.Fi
 		}
 
 		for _, mailbox := range mailboxes {
+			mailbox.Client = isi.Client
+			mailbox.Logger = isi.Logger
+
 			err := mailbox.ProcessMailbox(ctx)
 			if err != nil {
 				return errors.Errorf("unable to process mailboxes %+v", err)

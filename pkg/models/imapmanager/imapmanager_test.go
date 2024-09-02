@@ -34,8 +34,8 @@ func TestNewImapManager(t *testing.T) {
 		assert.NotNil(t, service)
 		assert.Equal(t, "username", service.Username)
 		assert.Equal(t, "password", service.password)
-		assert.Equal(t, mockClient, service.client)
-		assert.Equal(t, logger, service.logger)
+		assert.Equal(t, mockClient, service.Client)
+		assert.Equal(t, logger, service.Logger)
 		assert.Equal(t, ctx, service.ctx)
 	})
 
