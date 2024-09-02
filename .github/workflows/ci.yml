@@ -108,8 +108,11 @@ jobs:
 
     - name: Clean up old cron images
       run: |
+        set -euo pipefail
+
         branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
-        doctl registry repository list-tags postmanpat --output json | jq -r '.[] | select(.tag | contains("'${branch}'")) | .manifest_digest' | xargs -I {} doctl registry repository delete-manifest postmanpat --force {}
+        doctl registry repository list-tags postmanpat/cron --output json | jq -r '.[] | select(.tag | contains("'${branch}'")) | .manifest_digest' | xargs -I {} doctl registry repository delete-manifest postmanpat --force {}
+        doctl registry repository list-tags postmanpat/ws --output json | jq -r '.[] | select(.tag | contains("'${branch}'")) | .manifest_digest' | xargs -I {} doctl registry repository delete-manifest postmanpat --force {}
 
     - name: Push cron image to DigitalOcean Container Registry
       run: docker push registry.digitalocean.com/aaronromeo/postmanpat/cron:${{ steps.extract_image_name.outputs.digest }}

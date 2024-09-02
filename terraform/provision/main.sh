@@ -23,21 +23,15 @@ if ! command -v docker &> /dev/null; then
   sudo apt-get update
 
   VERSION_STRING=5:27.1.1-1~ubuntu.22.04~jammy
-  sudo apt-get install -y docker-ce=$VERSION_STRING docker-ce-cli=$VERSION_STRING containerd.io docker-buildx-plugin docker-compose-plugin
+  sudo aptdcon --hide-terminal --install docker-ce=$VERSION_STRING docker-ce-cli=$VERSION_STRING containerd.io docker-buildx-plugin docker-compose-plugin
 
   sudo systemctl start docker
   sudo systemctl enable docker  
 fi
 
-# # Install docker-compose if not already installed
-# if ! command -v docker-compose &> /dev/null; then
-#   sudo curl -L "https://github.com/docker/compose/releases/download/v2.29.1/docker-compose-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)" -o /usr/local/bin/docker-compose
-#   sudo chmod +x /usr/local/bin/docker-compose
-# fi
-
 # Install webhook if not already installed
 if ! command -v webhook &> /dev/null; then
-  sudo apt-get install -y webhook
+  sudo aptdcon --hide-terminal --install webhook
 fi
 
 # Copy over the update script

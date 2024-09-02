@@ -23,6 +23,7 @@ services:
     image: containrrr/watchtower
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - /root/.docker/config.json:/config.json
     container_name: watchtower-container
     command: --interval 30 web-container cron-container
 
