@@ -113,6 +113,9 @@ jobs:
         if [[ $GITHUB_REF_NAME == "main" ]]; then
           docker tag registry.digitalocean.com/aaronromeo/postmanpat/cron:${{ steps.extract_image_name.outputs.digest }} registry.digitalocean.com/aaronromeo/postmanpat/cron:latest
           docker push registry.digitalocean.com/aaronromeo/postmanpat/cron:latest
+        else
+          docker tag registry.digitalocean.com/aaronromeo/postmanpat/cron:${{ steps.extract_image_name.outputs.digest }} registry.digitalocean.com/aaronromeo/postmanpat/cron:${GITHUB_REF_NAME}
+          docker push registry.digitalocean.com/aaronromeo/postmanpat/cron:${GITHUB_REF_NAME}
         fi
 
     - name: Build container ws image
@@ -131,6 +134,9 @@ jobs:
         if [[ $GITHUB_REF_NAME == "main" ]]; then
           docker tag registry.digitalocean.com/aaronromeo/postmanpat/ws:${{ steps.extract_image_name.outputs.digest }} registry.digitalocean.com/aaronromeo/postmanpat/ws:latest
           docker push registry.digitalocean.com/aaronromeo/postmanpat/ws:latest
+        else
+          docker tag registry.digitalocean.com/aaronromeo/postmanpat/ws:${{ steps.extract_image_name.outputs.digest }} registry.digitalocean.com/aaronromeo/postmanpat/ws:${GITHUB_REF_NAME}
+          docker push registry.digitalocean.com/aaronromeo/postmanpat/ws:${GITHUB_REF_NAME}
         fi
 
   deploy:
