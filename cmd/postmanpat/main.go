@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"html/template"
 	"log"
-	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -33,14 +32,13 @@ import (
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 )
 
 var (
 	tracer     = otel.Tracer(base.OTEL_NAME)
-	meter      = otel.Meter(base.OTEL_NAME)
 	otelLogger = otelslog.NewLogger(base.OTEL_NAME)
-	rollCnt    metric.Int64Counter
+	// meter      = otel.Meter(base.OTEL_NAME)
+	// rollCnt    metric.Int64Counter
 )
 
 func main() {
@@ -92,7 +90,6 @@ func main() {
 		log.Fatalf("Failed to create AWS session: %v", err)
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	ctx := context.Background()
 
 	// Set up OpenTelemetry.
@@ -108,12 +105,19 @@ func main() {
 	_, span := tracer.Start(ctx, base.OTEL_NAME)
 	defer span.End()
 
+	if otelLogger == nil {
+		log.Fatalf("Failed to create logger (in main)")
+	} else {
+		otelLogger.Info("Logger created")
+		otelLogger.InfoContext(ctx, "Logger created (with context)")
+	}
+
 	isi, err := imap.NewImapManager(
 		// Connect to server
 		imap.WithTLSConfig(os.Getenv(IMAP_URL), nil),
 		imap.WithAuth(os.Getenv(IMAP_USER), os.Getenv(IMAP_PASS)),
 		imap.WithCtx(ctx),
-		imap.WithLogger(logger),
+		imap.WithLogger(otelLogger),
 		imap.WithFileManager(utils.OSFileManager{}), // TODO: What is this used for?
 	)
 	if err != nil {
@@ -205,9 +209,9 @@ func listMailboxNames(ctx context.Context, isi *imap.ImapManagerImpl, fileMgr ut
 	}
 }
 
-func reapMessages(ctx context.Context, _ *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cli.Context) error {
+func reapMessages(ctx context.Context, isi *imap.ImapManagerImpl, fileMgr utils.FileManager) func(c *cli.Context) error {
 	return func(c *cli.Context) error {
-		_, span := tracer.Start(ctx, "reapMessages")
+		ctx, span := tracer.Start(ctx, "reapMessages")
 		defer span.End()
 
 		// Read the mailbox list file
@@ -223,7 +227,10 @@ func reapMessages(ctx context.Context, _ *imap.ImapManagerImpl, fileMgr utils.Fi
 		}
 
 		for _, mailbox := range mailboxes {
-			err := mailbox.ProcessMailbox()
+			mailbox.Client = isi.Client
+			mailbox.Logger = isi.Logger
+
+			err := mailbox.ProcessMailbox(ctx)
 			if err != nil {
 				return errors.Errorf("unable to process mailboxes %+v", err)
 			}

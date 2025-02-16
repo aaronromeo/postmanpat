@@ -10,3 +10,5 @@ do_tf
 do_tf.pub
 node_modules
 .parcel-cache
+terraform/workingfiles/docker-compose.yml
+terraform/workingfiles/update-script.sh
