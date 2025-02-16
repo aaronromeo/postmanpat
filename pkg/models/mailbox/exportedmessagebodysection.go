@@ -148,7 +148,11 @@ func sanitize(input string) string {
 func ExportedEmailContainerFactory(mailboxName string, msg *imap.Message) ([]ExportedEmailContainer, error) {
 	containers := []ExportedEmailContainer{}
 	for bodySectionName, literal := range msg.Body {
-		convertedContainers, err := convertBodySectionToContainers(mailboxName, bodySectionName.BodyPartName.Specifier, literal.(io.Reader))
+		r, ok := literal.(io.Reader)
+		if !ok {
+			return nil, errors.New("unable to convert literal to io.Reader")
+		}
+		convertedContainers, err := convertBodySectionToContainers(mailboxName, bodySectionName.BodyPartName.Specifier, r)
 		if err != nil {
 			return nil, err
 		}
