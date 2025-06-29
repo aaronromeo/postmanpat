@@ -226,11 +226,13 @@ func reapMessages(ctx context.Context, isi *imap.ImapManagerImpl, fileMgr utils.
 			return errors.Errorf("unable to marshal mailboxes %+v", err)
 		}
 
-		for _, mailbox := range mailboxes {
-			mailbox.Client = isi.Client
-			mailbox.Logger = isi.Logger
+		for _, mb := range mailboxes {
+			// Since we're working with concrete types from JSON unmarshaling,
+			// we need to set the client and logger directly
+			mb.Client = isi.Client
+			mb.Logger = isi.Logger
 
-			err := mailbox.ProcessMailbox(ctx)
+			err := mb.ProcessMailbox(ctx)
 			if err != nil {
 				return errors.Errorf("unable to process mailboxes %+v", err)
 			}

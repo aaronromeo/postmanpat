@@ -17,8 +17,10 @@ import (
 )
 
 type ImapManager interface {
-	GetMailboxes() (map[string]base.SerializedMailbox, error)
-	UnserializeMailboxes() (map[string]base.SerializedMailbox, error)
+	GetMailboxes() (map[string]*mailbox.MailboxImpl, error)
+	UnserializeMailboxes() (map[string]*mailbox.MailboxImpl, error)
+	GetMailboxesAsInterfaces() (map[string]mailbox.Mailbox, error)
+	UnserializeMailboxesAsInterfaces() (map[string]mailbox.Mailbox, error)
 }
 
 type ImapManagerImpl struct {
@@ -206,7 +208,7 @@ func (srv ImapManagerImpl) GetMailboxes() (map[string]*mailbox.MailboxImpl, erro
 	for m := range mailboxes {
 		srv.Logger.Info(fmt.Sprintf("Mailbox: %s", m.Name))
 		if _, ok := serializedMailboxObjs[m.Name]; !ok {
-			verifiedMailboxObjs[m.Name], err = mailbox.NewMailbox(
+			verifiedMailboxObjs[m.Name], err = mailbox.NewMailboxImpl(
 				mailbox.WithClient(srv.Client),
 				mailbox.WithLogger(srv.Logger),
 				mailbox.WithCtx(srv.ctx),
@@ -256,7 +258,7 @@ func (srv ImapManagerImpl) unserializeMailboxes() (map[string]*mailbox.MailboxIm
 	}
 
 	for name, serializedMailbox := range serializedMailboxObjs {
-		mb, err := mailbox.NewMailbox(
+		mb, err := mailbox.NewMailboxImpl(
 			mailbox.WithClient(srv.Client),
 			mailbox.WithLogger(srv.Logger),
 			mailbox.WithCtx(srv.ctx),
@@ -279,6 +281,38 @@ func (srv ImapManagerImpl) unserializeMailboxes() (map[string]*mailbox.MailboxIm
 	}
 
 	return mailboxObjs, nil
+}
+
+// GetMailboxesAsInterfaces returns mailboxes as interface types for better abstraction.
+func (srv ImapManagerImpl) GetMailboxesAsInterfaces() (map[string]mailbox.Mailbox, error) {
+	impls, err := srv.GetMailboxes()
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert map of implementations to map of interfaces
+	mailboxes := make(map[string]mailbox.Mailbox, len(impls))
+	for name, impl := range impls {
+		mailboxes[name] = impl
+	}
+
+	return mailboxes, nil
+}
+
+// UnserializeMailboxesAsInterfaces returns unserialized mailboxes as interface types.
+func (srv ImapManagerImpl) UnserializeMailboxesAsInterfaces() (map[string]mailbox.Mailbox, error) {
+	impls, err := srv.unserializeMailboxes()
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert map of implementations to map of interfaces
+	mailboxes := make(map[string]mailbox.Mailbox, len(impls))
+	for name, impl := range impls {
+		mailboxes[name] = impl
+	}
+
+	return mailboxes, nil
 }
 
 // Internal functions
