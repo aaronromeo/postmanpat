@@ -24,10 +24,8 @@ terraform {
   }
 }
 
+# The DigitalOcean provider is still needed for state management
+# even though we're not creating new DigitalOcean resources
 provider "digitalocean" {
   token = var.DO_TOKEN
-}
-
-data "digitalocean_ssh_key" "terraform" {
-  name = var.pvt_key_file
 }

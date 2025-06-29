@@ -1,7 +1,34 @@
-ssh_fingerprints   = ""
-do_token          = ""
-pvt_key           = ""
-pvt_key_file      = ""
-spaces_access_key = ""
-spaces_secret_key = ""
+# Required variables
+# =================
 
+# DigitalOcean API token (needed for state management)
+DO_TOKEN = "dop_v1_xxxxxxxxxxxxxxxxxxxx"
+
+# Domain or IP address of the existing Dokku server
+DOKKU_DOMAIN = "dokku.example.com"
+
+# IMAP configuration (required)
+IMAP_URL = "imap.example.com:993"
+IMAP_USER = "user@example.com"
+IMAP_PASS = "your-secure-password"
+
+# DigitalOcean Spaces credentials (required)
+DIGITALOCEAN_BUCKET_ACCESS_KEY = "your-spaces-access-key"
+DIGITALOCEAN_BUCKET_SECRET_KEY = "your-spaces-secret-key"
+
+# Uptrace monitoring (required)
+UPTRACE_DSN = "https://token@api.uptrace.dev/project_id"
+
+# Optional variables
+# =================
+
+# Name of the Dokku application (default: "postmanpat")
+# APP_NAME = "postmanpat"
+
+# Enable Let's Encrypt SSL for the app (default: false)
+# ENABLE_LETSENCRYPT = false
+
+# Note: The S3 backend for Terraform state uses AWS-compatible credentials
+# These should be set as environment variables, not in this file:
+# export AWS_ACCESS_KEY_ID=your-spaces-access-key
+# export AWS_SECRET_ACCESS_KEY=your-spaces-secret-key
