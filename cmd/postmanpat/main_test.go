@@ -9,31 +9,17 @@ import (
 
 	"aaronromeo.com/postmanpat/pkg/base"
 	"aaronromeo.com/postmanpat/pkg/models/mailbox"
+	"aaronromeo.com/postmanpat/pkg/testutil"
 	"aaronromeo.com/postmanpat/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/urfave/cli/v2"
 	"go.opentelemetry.io/otel/attribute"
 )
 
-// TestableImapManager interface for testing
-type TestableImapManager interface {
-	GetMailboxes() (map[string]*mailbox.MailboxImpl, error)
-}
-
-// MockImapManager implements TestableImapManager for testing
-type MockImapManager struct {
-	GetMailboxesFunc func() (map[string]*mailbox.MailboxImpl, error)
-}
-
-func (m *MockImapManager) GetMailboxes() (map[string]*mailbox.MailboxImpl, error) {
-	if m.GetMailboxesFunc != nil {
-		return m.GetMailboxesFunc()
-	}
-	return nil, nil
-}
+// Note: MockImapManager and TestableImapManager are now defined in pkg/testutil/mocks.go
 
 // testableListMailboxNames is a testable version of listMailboxNames that accepts an interface
-func testableListMailboxNames(ctx context.Context, isi TestableImapManager, fileMgr utils.FileManager) func(c *cli.Context) error {
+func testableListMailboxNames(ctx context.Context, isi testutil.TestableImapManager, fileMgr utils.FileManager) func(c *cli.Context) error {
 	return func(c *cli.Context) error {
 		_, span := tracer.Start(ctx, "listMailboxNames")
 		defer span.End()
@@ -47,10 +33,10 @@ func testableListMailboxNames(ctx context.Context, isi TestableImapManager, file
 		exportedMailboxes := make(map[string]base.SerializedMailbox, len(verifiedMailboxObjs))
 		for mailboxName, mailbox := range verifiedMailboxObjs {
 			exportedMailboxes[mailboxName] = base.SerializedMailbox{
-				Name:       mailbox.Name,
-				Deletable:  mailbox.Deletable,
-				Exportable: mailbox.Exportable,
-				Lifespan:   mailbox.Lifespan,
+				Name:       mailbox.SerializedMailbox.Name,
+				Deletable:  mailbox.SerializedMailbox.Deletable,
+				Exportable: mailbox.SerializedMailbox.Exportable,
+				Lifespan:   mailbox.SerializedMailbox.Lifespan,
 			}
 		}
 
@@ -71,62 +57,7 @@ func testableListMailboxNames(ctx context.Context, isi TestableImapManager, file
 	}
 }
 
-// MockFileManager implements utils.FileManager for testing
-type MockFileManager struct {
-	WriteFileFunc func(filename string, data []byte, perm os.FileMode) error
-	ReadFileFunc  func(filename string) ([]byte, error)
-	CloseFunc     func() error
-	CreateFunc    func(name string) (utils.Writer, error)
-	MkdirAllFunc  func(path string, perm os.FileMode) error
-
-	// Track calls for verification
-	WrittenFiles map[string][]byte
-	WrittenPerms map[string]os.FileMode
-}
-
-func NewMockFileManager() *MockFileManager {
-	return &MockFileManager{
-		WrittenFiles: make(map[string][]byte),
-		WrittenPerms: make(map[string]os.FileMode),
-	}
-}
-
-func (m *MockFileManager) WriteFile(filename string, data []byte, perm os.FileMode) error {
-	m.WrittenFiles[filename] = data
-	m.WrittenPerms[filename] = perm
-	if m.WriteFileFunc != nil {
-		return m.WriteFileFunc(filename, data, perm)
-	}
-	return nil
-}
-
-func (m *MockFileManager) ReadFile(filename string) ([]byte, error) {
-	if m.ReadFileFunc != nil {
-		return m.ReadFileFunc(filename)
-	}
-	return nil, nil
-}
-
-func (m *MockFileManager) Close() error {
-	if m.CloseFunc != nil {
-		return m.CloseFunc()
-	}
-	return nil
-}
-
-func (m *MockFileManager) Create(name string) (utils.Writer, error) {
-	if m.CreateFunc != nil {
-		return m.CreateFunc(name)
-	}
-	return nil, nil
-}
-
-func (m *MockFileManager) MkdirAll(path string, perm os.FileMode) error {
-	if m.MkdirAllFunc != nil {
-		return m.MkdirAllFunc(path, perm)
-	}
-	return nil
-}
+// Note: MockFileManager is now defined in pkg/testutil/mocks.go
 
 func TestListMailboxNamesTableDriven(t *testing.T) {
 	tests := []struct {
@@ -211,7 +142,7 @@ func TestListMailboxNamesTableDriven(t *testing.T) {
 			ctx := context.Background()
 
 			// Create mock file manager
-			mockFileManager := NewMockFileManager()
+			mockFileManager := testutil.NewMockFileManager()
 			if tt.mockWriteFileError != nil {
 				mockFileManager.WriteFileFunc = func(filename string, data []byte, perm os.FileMode) error {
 					return tt.mockWriteFileError
@@ -219,7 +150,7 @@ func TestListMailboxNamesTableDriven(t *testing.T) {
 			}
 
 			// Create mock IMAP manager
-			mockIsi := &MockImapManager{
+			mockIsi := &testutil.MockImapManager{
 				GetMailboxesFunc: func() (map[string]*mailbox.MailboxImpl, error) {
 					if tt.mockGetMailboxesError != nil {
 						return nil, tt.mockGetMailboxesError
@@ -276,7 +207,7 @@ func TestListMailboxNamesBasic(t *testing.T) {
 	ctx := context.Background()
 
 	// Create mock IMAP manager
-	mockIsi := &MockImapManager{
+	mockIsi := &testutil.MockImapManager{
 		GetMailboxesFunc: func() (map[string]*mailbox.MailboxImpl, error) {
 			return map[string]*mailbox.MailboxImpl{
 				"INBOX": {
@@ -292,7 +223,7 @@ func TestListMailboxNamesBasic(t *testing.T) {
 	}
 
 	// Create mock file manager
-	mockFileManager := NewMockFileManager()
+	mockFileManager := testutil.NewMockFileManager()
 
 	// Create the function under test
 	listMailboxNamesFunc := testableListMailboxNames(ctx, mockIsi, mockFileManager)
