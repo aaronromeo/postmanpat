@@ -42,6 +42,10 @@ var (
 )
 
 func main() {
+	// Debug: Print that main function started
+	log.Printf("Main function started")
+	log.Printf("os.Args at start: %v (length: %d)", os.Args, len(os.Args))
+
 	err := godotenv.Load(".env")
 	if err != nil {
 		log.Printf("Error loading .env file, proceeding: %s", err)
@@ -143,6 +147,7 @@ func main() {
 		log.Printf("Created the bucket %s\n", STORAGE_BUCKET)
 	}
 
+	log.Printf("About to create CLI app")
 	app := &cli.App{
 		Commands: []*cli.Command{
 			{
@@ -164,6 +169,20 @@ func main() {
 				Action:  webserver(ctx, fileMgr),
 			},
 		},
+	}
+
+	// Debug: Print os.Args to understand what's being passed
+	log.Printf("os.Args: %v (length: %d)", os.Args, len(os.Args))
+
+	// If no command is provided, default to webserver
+	if len(os.Args) == 1 {
+		log.Printf("No command provided, starting webserver")
+		// Directly call the webserver function instead of modifying os.Args
+		wsAction := webserver(ctx, fileMgr)
+		if err := wsAction(nil); err != nil {
+			log.Fatal(err)
+		}
+		return
 	}
 
 	if err := app.Run(os.Args); err != nil {

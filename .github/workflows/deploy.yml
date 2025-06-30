@@ -1,0 +1,84 @@
+name: Deploy to Dokku
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.DOKKU_SSH_PRIVATE_KEY }}" > ~/.ssh/dokku_key
+        chmod 600 ~/.ssh/dokku_key
+        ssh-keyscan -H overachieverlabs.com >> ~/.ssh/known_hosts
+        
+        # Add SSH config
+        cat >> ~/.ssh/config << EOF
+        Host dokku-admin
+          HostName overachieverlabs.com
+          User root
+          IdentityFile ~/.ssh/dokku_key
+          IdentitiesOnly yes
+        EOF
+
+    - name: Test SSH connection
+      run: |
+        ssh dokku-admin "echo 'SSH connection successful'"
+
+    - name: Setup Dokku app (if needed)
+      env:
+        IMAP_URL: ${{ secrets.IMAP_URL }}
+        IMAP_USER: ${{ secrets.IMAP_USER }}
+        IMAP_PASS: ${{ secrets.IMAP_PASS }}
+        DIGITALOCEAN_BUCKET_ACCESS_KEY: ${{ secrets.DIGITALOCEAN_BUCKET_ACCESS_KEY }}
+        DIGITALOCEAN_BUCKET_SECRET_KEY: ${{ secrets.DIGITALOCEAN_BUCKET_SECRET_KEY }}
+        UPTRACE_DSN: ${{ secrets.UPTRACE_DSN }}
+        ENABLE_LETSENCRYPT: ${{ vars.ENABLE_LETSENCRYPT || 'false' }}
+      run: |
+        chmod +x ./scripts/setup-dokku-app.sh
+        ./scripts/setup-dokku-app.sh
+
+    - name: Deploy to Dokku
+      run: |
+        chmod +x ./scripts/deploy.sh
+        ./scripts/deploy.sh
+
+    - name: Verify deployment
+      run: |
+        echo "Waiting for deployment to stabilize..."
+        sleep 30
+        
+        # Check if app is running
+        if ! ssh dokku-admin "dokku ps:report postmanpat" | grep -q "Running:.*true"; then
+          echo "❌ App is not running"
+          exit 1
+        fi
+        
+        # Health check
+        echo "Performing health check..."
+        for i in {1..10}; do
+          if curl -f -s http://postmanpat.overachieverlabs.com > /dev/null; then
+            echo "✅ Health check passed"
+            break
+          fi
+          echo "Health check attempt $i failed, retrying in 10 seconds..."
+          sleep 10
+          if [ $i -eq 10 ]; then
+            echo "❌ Health check failed after 10 attempts"
+            echo "Rolling back deployment..."
+            ssh dokku-admin "dokku ps:rollback postmanpat"
+            exit 1
+          fi
+        done
+        
+        echo "🚀 Deployment successful!"

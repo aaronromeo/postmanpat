@@ -1,0 +1,74 @@
+#!/bin/bash
+
+# Setup script for Dokku app configuration
+# This script is idempotent and can be run multiple times safely
+
+set -e
+
+# Load environment variables from .env file if it exists
+if [ -f .env ]; then
+    echo "📄 Loading environment variables from .env file"
+    export $(cat .env | grep -v '^#' | grep -v '^$' | xargs)
+fi
+
+APP_NAME="postmanpat"
+DOMAIN="postmanpat.overachieverlabs.com"
+
+echo "🔧 Setting up Dokku app: $APP_NAME"
+
+# Create app if it doesn't exist
+if ! ssh dokku-admin "dokku apps:exists $APP_NAME" 2>/dev/null; then
+    echo "📱 Creating Dokku app: $APP_NAME"
+    ssh dokku-admin "dokku apps:create $APP_NAME"
+else
+    echo "✅ App $APP_NAME already exists"
+fi
+
+# Configure domain
+echo "🌐 Configuring domain: $DOMAIN"
+if ! ssh dokku-admin "dokku domains:report $APP_NAME" | grep -q "$DOMAIN"; then
+    ssh dokku-admin "dokku domains:add $APP_NAME $DOMAIN"
+    echo "✅ Domain $DOMAIN added"
+else
+    echo "✅ Domain $DOMAIN already configured"
+fi
+
+# Configure ports
+echo "🔌 Configuring ports"
+ssh dokku-admin "dokku ports:set $APP_NAME http:80:3000"
+
+# Set environment variables from GitHub secrets
+echo "🔐 Setting environment variables"
+
+# Set sensitive environment variables (from GitHub secrets)
+if [ -n "$IMAP_URL" ]; then
+    ssh dokku-admin "dokku config:set --no-restart $APP_NAME IMAP_URL='$IMAP_URL'"
+fi
+
+if [ -n "$IMAP_USER" ]; then
+    ssh dokku-admin "dokku config:set --no-restart $APP_NAME IMAP_USER='$IMAP_USER'"
+fi
+
+if [ -n "$IMAP_PASS" ]; then
+    ssh dokku-admin "dokku config:set --no-restart $APP_NAME IMAP_PASS='$IMAP_PASS'"
+fi
+
+if [ -n "$DIGITALOCEAN_BUCKET_ACCESS_KEY" ]; then
+    ssh dokku-admin "dokku config:set --no-restart $APP_NAME DIGITALOCEAN_BUCKET_ACCESS_KEY='$DIGITALOCEAN_BUCKET_ACCESS_KEY'"
+fi
+
+if [ -n "$DIGITALOCEAN_BUCKET_SECRET_KEY" ]; then
+    ssh dokku-admin "dokku config:set --no-restart $APP_NAME DIGITALOCEAN_BUCKET_SECRET_KEY='$DIGITALOCEAN_BUCKET_SECRET_KEY'"
+fi
+
+if [ -n "$UPTRACE_DSN" ]; then
+    ssh dokku-admin "dokku config:set --no-restart $APP_NAME UPTRACE_DSN='$UPTRACE_DSN'"
+fi
+
+# Configure Let's Encrypt (optional)
+if [ "$ENABLE_LETSENCRYPT" = "true" ]; then
+    echo "🔒 Enabling Let's Encrypt SSL"
+    ssh dokku-admin "dokku letsencrypt:enable $APP_NAME" || echo "⚠️  Let's Encrypt setup failed, continuing without SSL"
+fi
+
+echo "✅ Dokku app setup complete"

@@ -1,2 +1,2 @@
-web: /app/build/postmanpat ws
-cron: cron -f
+web: ./bin/postmanpat
+cron: ./bin/postmanpat re
