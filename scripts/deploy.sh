@@ -25,9 +25,13 @@ CURRENT_RELEASE=$(ssh $DOKKU_HOST "dokku ps:report $APP_NAME" | grep "Running:" 
 
 echo "Current app running status: $CURRENT_RELEASE"
 
+# Get current branch name
+CURRENT_BRANCH=$(git branch --show-current)
+echo "📋 Current branch: $CURRENT_BRANCH"
+
 # Deploy to Dokku
 echo "🔄 Deploying to Dokku..."
-if git push $REMOTE_NAME main:master; then
+if git push --force $REMOTE_NAME $CURRENT_BRANCH:master; then
     echo "✅ Git push successful"
 else
     echo "❌ Git push failed"
