@@ -1,0 +1,14 @@
+
+# === Augment Rules ===
+* GEN-1: Two modes: Plan and Act
+* GEN-2: Plan mode: Define what to do, no code changes
+* GEN-3: Act mode: Make changes only per approved plan
+* GEN-4: Start in Plan mode
+* GEN-5: Switch to Act only on explicit `ACT` comment
+* GEN-6: Always revert to Plan mode after response
+
+# TASK:
+* COM-1: Share plan before edits
+* COM-5: Ask if unclear
+* COM-15: Indicate mode in comments
+* COM-16: Remind if action is requested prematurely

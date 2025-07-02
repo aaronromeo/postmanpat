@@ -42,6 +42,7 @@ var (
 )
 
 func main() {
+
 	err := godotenv.Load(".env")
 	if err != nil {
 		log.Printf("Error loading .env file, proceeding: %s", err)
@@ -142,6 +143,7 @@ func main() {
 		}
 		log.Printf("Created the bucket %s\n", STORAGE_BUCKET)
 	}
+
 
 	app := &cli.App{
 		Commands: []*cli.Command{
