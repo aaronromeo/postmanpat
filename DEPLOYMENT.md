@@ -9,7 +9,7 @@ The application uses **Git-based deployment** to a Dokku instance at `overachiev
 ## Architecture
 
 - **Dokku Server**: `overachieverlabs.com`
-- **App URL**: `http://postmanpat.overachieverlabs.com`
+- **App URL**: `https://postmanpat.overachieverlabs.com` (SSL enabled via Let's Encrypt)
 - **Process Types**: 
   - `web`: Main web server (port 3000)
   - `cron`: Background cron jobs
@@ -50,7 +50,7 @@ Configure the following secrets in your GitHub repository settings:
 - `UPTRACE_DSN`: Uptrace monitoring DSN
 
 ### Optional Variables
-- `ENABLE_LETSENCRYPT`: Set to `true` to enable Let's Encrypt SSL (default: `false`)
+- `ENABLE_LETSENCRYPT`: Set to `true` to enable Let's Encrypt SSL (default: `false`, **currently enabled**)
 
 ## Local Development
 
@@ -68,12 +68,27 @@ docker-compose up
 open http://localhost:3000
 ```
 
+## SSL/HTTPS Configuration
+
+The application is configured with **Let's Encrypt SSL certificates** for secure HTTPS access:
+
+- **Certificate Provider**: Let's Encrypt (free, automated SSL certificates)
+- **Auto-Renewal**: Certificates automatically renew 30 days before expiry
+- **HSTS Enabled**: HTTP Strict Transport Security for enhanced security
+- **HTTP Redirect**: All HTTP traffic automatically redirects to HTTPS
+
+### SSL Certificate Status
+You can check the SSL certificate status using:
+```bash
+ssh dokku-admin "dokku letsencrypt:list"
+```
+
 ## Deployment Verification
 
 The deployment process includes multiple verification steps:
 
 1. **Dokku Status Check**: Verifies the app is running on Dokku
-2. **HTTP Health Check**: Tests the application endpoint
+2. **HTTPS Health Check**: Tests the application endpoint over SSL
 3. **Rollback on Failure**: Automatically reverts to previous version if checks fail
 
 ## Troubleshooting
