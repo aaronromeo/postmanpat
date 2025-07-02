@@ -33,6 +33,11 @@ else
     echo "✅ Domain $DOMAIN already configured"
 fi
 
+# Configure buildpack (Go buildpack for this application)
+echo "🔧 Configuring buildpack"
+ssh dokku-admin "dokku buildpacks:clear $APP_NAME" || echo "⚠️  No existing buildpacks to clear"
+ssh dokku-admin "dokku buildpacks:set $APP_NAME https://github.com/heroku/heroku-buildpack-go.git"
+
 # Configure ports
 echo "🔌 Configuring ports"
 ssh dokku-admin "dokku ports:set $APP_NAME http:80:3000"
