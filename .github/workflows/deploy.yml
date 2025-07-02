@@ -44,6 +44,7 @@ jobs:
         DIGITALOCEAN_BUCKET_SECRET_KEY: ${{ secrets.DIGITALOCEAN_BUCKET_SECRET_KEY }}
         UPTRACE_DSN: ${{ secrets.UPTRACE_DSN }}
         ENABLE_LETSENCRYPT: ${{ vars.ENABLE_LETSENCRYPT || 'false' }}
+        LETSENCRYPT_EMAIL: ${{ vars.LETSENCRYPT_EMAIL || 'letsencrypt@aaronromeo.com' }}
       run: |
         chmod +x ./scripts/setup-dokku-app.sh
         ./scripts/setup-dokku-app.sh

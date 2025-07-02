@@ -51,6 +51,7 @@ Configure the following secrets in your GitHub repository settings:
 
 ### Optional Variables
 - `ENABLE_LETSENCRYPT`: Set to `true` to enable Let's Encrypt SSL (default: `false`, **currently enabled**)
+- `LETSENCRYPT_EMAIL`: Email address for Let's Encrypt certificate notifications (default: `letsencrypt@aaronromeo.com`)
 
 ## Local Development
 

@@ -72,8 +72,32 @@ fi
 
 # Configure Let's Encrypt (optional)
 if [ "$ENABLE_LETSENCRYPT" = "true" ]; then
-    echo "🔒 Enabling Let's Encrypt SSL"
-    ssh dokku-admin "dokku letsencrypt:enable $APP_NAME" || echo "⚠️  Let's Encrypt setup failed, continuing without SSL"
+    echo "🔒 Setting up Let's Encrypt SSL"
+
+    # Set Let's Encrypt email if provided
+    if [ -n "$LETSENCRYPT_EMAIL" ]; then
+        echo "📧 Setting Let's Encrypt email: $LETSENCRYPT_EMAIL"
+        ssh dokku-admin "dokku letsencrypt:set $APP_NAME email $LETSENCRYPT_EMAIL"
+    else
+        echo "⚠️  No LETSENCRYPT_EMAIL provided, using default"
+    fi
+
+    # Enable Let's Encrypt
+    echo "🔒 Enabling Let's Encrypt SSL certificate"
+    if ssh dokku-admin "dokku letsencrypt:enable $APP_NAME"; then
+        echo "✅ Let's Encrypt SSL certificate enabled successfully"
+
+        # Verify SSL certificate status
+        echo "📋 SSL Certificate Status:"
+        ssh dokku-admin "dokku letsencrypt:list"
+    else
+        echo "❌ Let's Encrypt setup failed"
+        echo "🔍 Checking app status for troubleshooting:"
+        ssh dokku-admin "dokku ps:report $APP_NAME"
+        echo "🔍 Checking domain configuration:"
+        ssh dokku-admin "dokku domains:report $APP_NAME"
+        echo "⚠️  Continuing without SSL - manual intervention may be required"
+    fi
 fi
 
 echo "✅ Dokku app setup complete"
