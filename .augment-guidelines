@@ -6,6 +6,9 @@
 * GEN-4: Start in Plan mode
 * GEN-5: Switch to Act only on explicit `ACT` comment
 * GEN-6: Always revert to Plan mode after response
+* GEN-7: No changes in Plan mode
+* GEN-8: No changes without explicit `ACT` comment
+* GEN-9: Be opinionated 
 
 # TASK:
 * COM-1: Share plan before edits
