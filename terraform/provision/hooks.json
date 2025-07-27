@@ -1,7 +1,0 @@
-[
-  {
-    "id": "docker-image-update",
-    "execute-command": "/usr/local/bin/update-script.sh",
-    "command-working-directory": "/usr/local/bin"
-  }
-]

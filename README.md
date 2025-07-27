@@ -2,6 +2,40 @@
 
 PostmanPat is a Go-based email processing and archival system that connects to IMAP email servers to automatically manage email messages. It provides automated email archival, cleanup, and a web interface for monitoring mailbox operations.
 
+## Quick Start
+
+### Local Development
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd postmanpat
+   ```
+
+2. **Set up environment**
+   ```bash
+   cp .env.sample .env
+   # Edit .env with your configuration
+   ```
+
+3. **Start with Docker Compose**
+   ```bash
+   docker-compose up
+   ```
+
+4. **Access the application**
+   - Web interface: http://localhost:3000
+
+### Production Deployment
+
+The application automatically deploys to `http://postmanpat.overachieverlabs.com` when code is pushed to the `main` branch.
+
+**Setup Requirements:**
+- Configure GitHub secrets and variables (see [GITHUB_CONFIGURATION.md](GITHUB_CONFIGURATION.md))
+- Ensure SSH access to the Dokku server is properly configured
+
+For detailed deployment information, see [DEPLOYMENT.md](DEPLOYMENT.md).
+
 ## Features
 
 - **IMAP Email Processing**: Connects to any IMAP server to list and process mailboxes
@@ -189,6 +223,63 @@ Deploys complete infrastructure including:
 - Domain configuration
 - Automated provisioning
 
+### Deploying Applications to Dokku
+
+1. Create a new application:
+   ```bash
+   ssh dokku-admin "dokku apps:create postmanpat"
+   ```
+
+2. Set up your local Git repository:
+   ```bash
+   # In your application directory
+   git remote add dokku root@overachieverlabs.com:postmanpat
+   ```
+
+3. Deploy your application:
+   ```bash
+   git push dokku main
+   ```
+
+4. Set up SSL with Let's Encrypt:
+   ```bash
+   ssh dokku-admin "dokku letsencrypt:enable postmanpat"
+   ```
+
+5. Access your application at:
+   - http://postmanpat.overachieverlabs.com
+   - https://postmanpat.overachieverlabs.com (after enabling Let's Encrypt)
+
+### Common Dokku Commands
+
+```bash
+# List all applications
+ssh dokku-admin "dokku apps:list"
+
+# Check application status
+ssh dokku-admin "dokku ps:report postmanpat"
+
+# View application logs
+ssh dokku-admin "dokku logs postmanpat -t"
+
+# Set environment variables
+ssh dokku-admin "dokku config:set postmanpat KEY=VALUE"
+
+# List environment variables
+ssh dokku-admin "dokku config postmanpat"
+
+# Restart an application
+ssh dokku-admin "dokku ps:restart postmanpat"
+
+# Create a PostgreSQL database (if needed)
+ssh dokku-admin "dokku postgres:create postmanpat-db"
+
+# Link a database to an application (if needed)
+ssh dokku-admin "dokku postgres:link postmanpat-db postmanpat"
+```
+
+For more information, see the [Dokku documentation](https://dokku.com/docs/).
+
 ## Sample Workflow
 
 1. **Initial Setup**:
@@ -224,19 +315,52 @@ postmanpat/
 │   │   └── mailbox/         # Email processing logic
 │   ├── utils/               # Storage and utility functions
 │   ├── base/                # Common types and constants
+│   ├── commands/            # CLI command implementations
+│   ├── repositories/        # Data access layer
+│   ├── services/            # Business logic services
+│   ├── testutil/            # Test utilities and helpers
 │   └── mock/                # Test mocks and helpers
 ├── handlers/                # HTTP request handlers
 ├── views/                   # HTML templates
+│   ├── layouts/             # Layout templates
+│   ├── mailboxes/           # Mailbox-specific views
+│   └── partials/            # Reusable template components
 ├── public/                  # Static web assets
-├── terraform/               # Infrastructure as code
-└── workingfiles/            # Runtime configuration and data
+│   └── assets/              # Compiled CSS/JS assets
+├── assets/                  # Source assets (CSS, JS)
+├── scripts/                 # Deployment and utility scripts
+├── examples/                # Usage examples and documentation
+├── workingfiles/            # Runtime configuration and data
+├── .github/workflows/       # GitHub Actions CI/CD
+├── .devcontainer/           # Development container configuration
+├── docker-compose.yml       # Local development setup
+├── Dockerfile.ws            # Web server container
+├── Dockerfile.cron          # Cron job container
+├── Procfile                 # Dokku process definitions
+├── Makefile                 # Build and development commands
+└── README.md                # This file
 ```
 
-## ToDo List
+## Environment Variables
 
-- [ ] Change to use ufave cli
-- [X] Multi app droplet (https://danielwachtel.com/devops/deploying-multiple-dockerized-apps-digitalocean-docker-compose-contexts)
-- [ ] Replace docker compose with https://microk8s.io/
-- [ ] Add comprehensive CLI command tests
-- [ ] Add HTTP handler tests
-- [ ] Improve S3 storage integration tests
+See `.env.sample` for required environment variables. Key variables include:
+
+- **IMAP_URL**: IMAP server URL and port
+- **IMAP_USER**: IMAP username
+- **IMAP_PASS**: IMAP password
+- **DIGITALOCEAN_BUCKET_ACCESS_KEY**: DigitalOcean Spaces access key
+- **DIGITALOCEAN_BUCKET_SECRET_KEY**: DigitalOcean Spaces secret key
+- **UPTRACE_DSN**: Uptrace observability endpoint (optional)
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests for new functionality
+5. Run the test suite: `make test`
+6. Submit a pull request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
