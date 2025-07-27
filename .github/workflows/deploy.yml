@@ -1,35 +1,32 @@
 name: Deploy to Dokku
 
 on:
-  push:
-    branches: [ main ]
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types:
+      - completed
   workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Only run if the CI workflow completed successfully
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     steps:
-    - name: Wait for CI to complete
-      uses: fountainhead/action-wait-for-check@v1.2.0
-      id: wait-for-ci
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        checkName: CI / build
-        ref: ${{ github.sha }}
-        timeoutSeconds: 1800
-        intervalSeconds: 30
-
     - name: Show deployment info
       run: |
-        echo "🔗 Deployment triggered by push to main branch"
-        echo "Commit SHA: ${{ github.sha }}"
-        echo "Branch: ${{ github.ref_name }}"
-        echo "CI Check Result: ${{ steps.wait-for-ci.outputs.conclusion }}"
+        echo "🔗 Deployment triggered by CI workflow completion"
+        echo "CI Run ID: ${{ github.event.workflow_run.id }}"
+        echo "CI Conclusion: ${{ github.event.workflow_run.conclusion }}"
+        echo "CI Head SHA: ${{ github.event.workflow_run.head_sha }}"
+        echo "CI Head Branch: ${{ github.event.workflow_run.head_branch }}"
 
     - name: Checkout code
       uses: actions/checkout@v4
       with:
+        ref: ${{ github.event.workflow_run.head_sha }}
         fetch-depth: 0
 
     - name: Validate GitHub Secrets
