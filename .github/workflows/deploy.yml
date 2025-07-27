@@ -6,58 +6,26 @@ on:
   workflow_dispatch:
 
 jobs:
-  wait-for-ci:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Wait for CI workflow to complete
-      run: |
-        echo "⏳ Waiting for CI workflow to complete..."
-
-        # Wait for CI workflow to complete successfully
-        timeout=1800  # 30 minutes timeout
-        interval=30   # Check every 30 seconds
-        elapsed=0
-
-        while [ $elapsed -lt $timeout ]; do
-          # Get the status of CI workflow runs for this commit
-          ci_status=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/runs?head_sha=${{ github.sha }}&workflow_id=ci.yml" \
-            | jq -r '.workflow_runs[0].conclusion // "null"')
-
-          echo "CI Status: $ci_status (elapsed: ${elapsed}s)"
-
-          if [ "$ci_status" = "success" ]; then
-            echo "✅ CI workflow completed successfully"
-            break
-          elif [ "$ci_status" = "failure" ] || [ "$ci_status" = "cancelled" ]; then
-            echo "❌ CI workflow failed or was cancelled"
-            exit 1
-          elif [ "$ci_status" = "null" ] || [ "$ci_status" = "in_progress" ]; then
-            echo "⏳ CI workflow still running, waiting..."
-            sleep $interval
-            elapsed=$((elapsed + interval))
-          else
-            echo "⚠️ Unknown CI status: $ci_status"
-            sleep $interval
-            elapsed=$((elapsed + interval))
-          fi
-        done
-
-        if [ $elapsed -ge $timeout ]; then
-          echo "❌ Timeout waiting for CI workflow to complete"
-          exit 1
-        fi
-
   deploy:
     runs-on: ubuntu-latest
-    needs: wait-for-ci
 
     steps:
+    - name: Wait for CI to complete
+      uses: fountainhead/action-wait-for-check@v1.2.0
+      id: wait-for-ci
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        checkName: CI / build
+        ref: ${{ github.sha }}
+        timeoutSeconds: 1800
+        intervalSeconds: 30
+
     - name: Show deployment info
       run: |
         echo "🔗 Deployment triggered by push to main branch"
         echo "Commit SHA: ${{ github.sha }}"
         echo "Branch: ${{ github.ref_name }}"
+        echo "CI Check Result: ${{ steps.wait-for-ci.outputs.conclusion }}"
 
     - name: Checkout code
       uses: actions/checkout@v4
