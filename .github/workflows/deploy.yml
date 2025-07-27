@@ -146,14 +146,21 @@ jobs:
       run: |
         echo "🔗 Testing SSH connection..."
 
-        # Test with verbose output for debugging
+        # Test SSH connection using dokku-admin alias
         if ssh -o ConnectTimeout=10 dokku-admin "echo 'SSH connection successful'"; then
-          echo "✅ SSH connection successful"
+          echo "✅ SSH connection via dokku-admin successful"
         else
-          echo "❌ SSH connection failed"
+          echo "❌ SSH connection via dokku-admin failed"
           echo "🔍 Attempting connection with verbose output for debugging..."
           ssh -vvv -o ConnectTimeout=10 dokku-admin "echo 'SSH connection test'" 2>&1 | head -30
-          echo ""
+          exit 1
+        fi
+
+        # Test SSH connection using overachieverlabs.com (for Git operations)
+        if ssh -o ConnectTimeout=10 overachieverlabs.com "echo 'SSH connection for Git successful'"; then
+          echo "✅ SSH connection via overachieverlabs.com successful"
+        else
+          echo "❌ SSH connection via overachieverlabs.com failed"
           echo "💡 Troubleshooting tips:"
           echo "1. Verify your SSH public key is added to root@overachieverlabs.com:~/.ssh/authorized_keys"
           echo "2. Ensure the DOKKU_SSH_PRIVATE_KEY secret matches the public key on the server"

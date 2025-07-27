@@ -11,6 +11,16 @@ DOKKU_HOST="dokku-admin"
 
 echo "🚀 Starting deployment to Dokku"
 
+# Verify Dokku app exists before proceeding
+echo "🔍 Verifying Dokku app exists..."
+if ! ssh $DOKKU_HOST "dokku apps:exists $APP_NAME" 2>/dev/null; then
+    echo "❌ Dokku app '$APP_NAME' does not exist"
+    echo "Please ensure the setup script has been run successfully"
+    exit 1
+else
+    echo "✅ Dokku app '$APP_NAME' exists"
+fi
+
 # Add Dokku remote if it doesn't exist
 if ! git remote get-url $REMOTE_NAME 2>/dev/null; then
     echo "📡 Adding Dokku remote"
@@ -28,6 +38,19 @@ echo "Current app running status: $CURRENT_RELEASE"
 # Get current branch name
 CURRENT_BRANCH=$(git branch --show-current)
 echo "📋 Current branch: $CURRENT_BRANCH"
+
+# Test Git remote connectivity
+echo "🔗 Testing Git remote connectivity..."
+if git ls-remote $REMOTE_NAME HEAD >/dev/null 2>&1; then
+    echo "✅ Git remote is accessible"
+else
+    echo "❌ Cannot access Git remote"
+    echo "🔍 Debugging information:"
+    echo "Remote URL: $(git remote get-url $REMOTE_NAME)"
+    echo "Testing SSH connection to Dokku host..."
+    ssh -o ConnectTimeout=10 $DOKKU_HOST "echo 'SSH connection test successful'" || echo "SSH connection failed"
+    exit 1
+fi
 
 # Deploy to Dokku
 echo "🔄 Deploying to Dokku..."
