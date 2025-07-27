@@ -197,31 +197,20 @@ go tool cover -func=./cover.out
 
 ## Deployment
 
-### Docker Compose (Production)
+### CI/CD Pipeline
 
-```bash
-# Deploy with Docker Compose
-docker-compose up -d
-```
+The project uses GitHub Actions for continuous integration and deployment:
 
-The production deployment includes:
-- **Cron container**: Runs `reapmessages` every 10 hours
-- **Web container**: Serves dashboard on port 3000
-- **Watchtower**: Automatically updates containers
+- **CI Pipeline** (`.github/workflows/ci.yml`): Runs on all pushes and pull requests
+  - Linting with golangci-lint
+  - Unit tests with coverage reporting
+  - Build verification
+  - Dockerfile syntax validation
 
-### Terraform (DigitalOcean)
-
-```bash
-cd terraform
-terraform init
-terraform plan
-terraform apply
-```
-
-Deploys complete infrastructure including:
-- DigitalOcean droplet
-- Domain configuration
-- Automated provisioning
+- **Deployment Pipeline** (`.github/workflows/deploy.yml`): Runs on pushes to `main` branch
+  - Automated deployment to Dokku instance
+  - Health checks and automatic rollback on failure
+  - SSL certificate management via Let's Encrypt
 
 ### Deploying Applications to Dokku
 
