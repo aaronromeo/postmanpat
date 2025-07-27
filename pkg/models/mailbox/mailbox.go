@@ -18,13 +18,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-type Mailbox interface {
-	Reap() error
-	ExportMessages() error
-	DeleteMessages() error
-	Serialize() (base.SerializedMailbox, error)
-}
-
 type MailboxImpl struct {
 	base.SerializedMailbox
 
@@ -44,7 +37,15 @@ type OutputFileName struct {
 	Extension      string
 }
 
-func NewMailbox(opts ...MailboxOption) (*MailboxImpl, error) {
+// NewMailbox creates a new Mailbox interface implementation.
+// This function returns the interface type for better abstraction and testability.
+func NewMailbox(opts ...MailboxOption) (Mailbox, error) {
+	return NewMailboxImpl(opts...)
+}
+
+// NewMailboxImpl creates a new MailboxImpl concrete type.
+// Use this when you specifically need the concrete implementation.
+func NewMailboxImpl(opts ...MailboxOption) (*MailboxImpl, error) {
 	var mb MailboxImpl
 	for _, opt := range opts {
 		err := opt(&mb)
