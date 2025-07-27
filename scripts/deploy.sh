@@ -46,9 +46,20 @@ CURRENT_RELEASE=$(ssh $DOKKU_HOST "dokku ps:report $APP_NAME" | grep "Running:" 
 
 echo "Current app running status: $CURRENT_RELEASE"
 
-# Get current branch name
-CURRENT_BRANCH=$(git branch --show-current)
-echo "📋 Current branch: $CURRENT_BRANCH"
+# Get current branch name with fallback for detached HEAD
+CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
+
+# If we're in detached HEAD state (common in CI), use HEAD
+if [ -z "$CURRENT_BRANCH" ]; then
+    echo "📋 Detached HEAD detected, using HEAD for deployment"
+    CURRENT_BRANCH="HEAD"
+
+    # Show what commit we're deploying
+    CURRENT_COMMIT=$(git rev-parse HEAD 2>/dev/null | cut -c1-8)
+    echo "📋 Deploying commit: $CURRENT_COMMIT"
+else
+    echo "📋 Current branch: $CURRENT_BRANCH"
+fi
 
 # Verify SSH key exists and has correct permissions
 echo "🔐 Verifying SSH key setup..."
@@ -136,9 +147,14 @@ deploy_exit_code=$?
 if [ $deploy_exit_code -eq 0 ]; then
     echo "✅ Git push successful"
 else
-    echo "❌ Git push failed"
-    echo "Deploy output:"
+    echo "❌ Git push failed (exit code: $deploy_exit_code)"
+    echo "🔍 Deploy output:"
     echo "$deploy_output"
+    echo ""
+    echo "🔍 Debug information:"
+    echo "Branch being pushed: $CURRENT_BRANCH"
+    echo "Remote name: $REMOTE_NAME"
+    echo "Remote URL: $(git remote get-url $REMOTE_NAME 2>/dev/null || echo 'Unknown')"
 
     # Check if it's a deploy lock issue
     if echo "$deploy_output" | grep -q "deploy lock in place"; then
