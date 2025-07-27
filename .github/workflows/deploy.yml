@@ -211,8 +211,8 @@ jobs:
           sleep 10
           if [ $i -eq 10 ]; then
             echo "❌ Health check failed after 10 attempts"
-            echo "Rolling back deployment..."
-            ssh dokku-admin "dokku ps:rollback postmanpat"
+            echo "Restarting app to attempt recovery..."
+            ssh dokku-admin "dokku ps:restart postmanpat"
             exit 1
           fi
         done

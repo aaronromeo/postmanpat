@@ -103,7 +103,7 @@ fi
 
 # Try to list the Git repository
 echo "🔍 Testing Git repository structure..."
-if ssh -i ~/.ssh/dokku_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 root@overachieverlabs.com "ls -la /home/dokku/$APP_NAME"; then
+if ssh -i ~/.ssh/dokku_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 root@overachieverlabs.com "ls -la /home/dokku/$APP_NAME 1>/dev/null"; then
     echo "✅ Dokku app directory exists"
 else
     echo "❌ Dokku app directory not found"

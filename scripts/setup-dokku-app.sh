@@ -40,7 +40,9 @@ ssh dokku-admin "dokku buildpacks:set $APP_NAME https://github.com/heroku/heroku
 
 # Configure ports
 echo "🔌 Configuring ports"
+ssh dokku-admin "dokku config:set $APP_NAME PORT=3000"
 ssh dokku-admin "dokku ports:set $APP_NAME http:80:3000"
+ssh dokku-admin "dokku ports:set $APP_NAME https:443:3000"
 
 # Set environment variables from GitHub secrets
 echo "🔐 Setting environment variables"
@@ -69,6 +71,10 @@ fi
 if [ -n "$UPTRACE_DSN" ]; then
     ssh dokku-admin "dokku config:set --no-restart $APP_NAME UPTRACE_DSN='$UPTRACE_DSN'"
 fi
+
+# Set the PORT environment variable to ensure correct port detection
+echo "🔧 Setting PORT environment variable..."
+ssh dokku-admin "dokku config:set --no-restart $APP_NAME PORT=3000"
 
 # Configure Let's Encrypt (optional)
 if [ "$ENABLE_LETSENCRYPT" = "true" ]; then

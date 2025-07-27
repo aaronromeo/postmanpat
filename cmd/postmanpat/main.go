@@ -298,7 +298,11 @@ func webserver(ctx context.Context, fileMgr utils.FileManager) func(c *cli.Conte
 		// Handle not founds
 		app.Use(handlers.NotFound)
 
-		// Start the server on port 3000
-		return app.Listen(":3000")
+		// Start the server on the configured port (default 3000)
+		port := os.Getenv("PORT")
+		if port == "" {
+			port = "3000"
+		}
+		return app.Listen(":" + port)
 	}
 }
