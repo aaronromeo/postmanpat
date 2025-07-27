@@ -84,7 +84,7 @@ jobs:
 
         # Add SSH config
         cat >> ~/.ssh/config << EOF
-        Host dokku-admin
+        Host dokku-admin overachieverlabs.com
           HostName overachieverlabs.com
           User root
           IdentityFile ~/.ssh/dokku_key

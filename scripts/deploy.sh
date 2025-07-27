@@ -14,7 +14,7 @@ echo "🚀 Starting deployment to Dokku"
 # Add Dokku remote if it doesn't exist
 if ! git remote get-url $REMOTE_NAME 2>/dev/null; then
     echo "📡 Adding Dokku remote"
-    git remote add $REMOTE_NAME dokku@overachieverlabs.com:$APP_NAME
+    git remote add $REMOTE_NAME root@overachieverlabs.com:$APP_NAME
 else
     echo "✅ Dokku remote already exists"
 fi
