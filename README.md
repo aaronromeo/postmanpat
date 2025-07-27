@@ -30,6 +30,10 @@ A Go-based email processing application with web interface and cron job capabili
 
 The application automatically deploys to `http://postmanpat.overachieverlabs.com` when code is pushed to the `main` branch.
 
+**Setup Requirements:**
+- Configure GitHub secrets and variables (see [GITHUB_CONFIGURATION.md](GITHUB_CONFIGURATION.md))
+- Ensure SSH access to the Dokku server is properly configured
+
 For detailed deployment information, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Architecture

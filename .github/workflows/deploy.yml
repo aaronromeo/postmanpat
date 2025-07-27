@@ -15,13 +15,73 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Validate GitHub Secrets
+      run: |
+        echo "🔍 Validating GitHub Secrets..."
+
+        # Check if DOKKU_SSH_PRIVATE_KEY is set
+        if [ -z "${{ secrets.DOKKU_SSH_PRIVATE_KEY }}" ]; then
+          echo "❌ DOKKU_SSH_PRIVATE_KEY secret is not set"
+          echo "Please add your SSH private key to GitHub repository secrets"
+          exit 1
+        fi
+        echo "✅ DOKKU_SSH_PRIVATE_KEY secret is present"
+
+        # Check other required secrets
+        MISSING_SECRETS=""
+
+        if [ -z "${{ secrets.IMAP_URL }}" ]; then
+          MISSING_SECRETS="$MISSING_SECRETS IMAP_URL"
+        fi
+
+        if [ -z "${{ secrets.IMAP_USER }}" ]; then
+          MISSING_SECRETS="$MISSING_SECRETS IMAP_USER"
+        fi
+
+        if [ -z "${{ secrets.IMAP_PASS }}" ]; then
+          MISSING_SECRETS="$MISSING_SECRETS IMAP_PASS"
+        fi
+
+        if [ -z "${{ secrets.DIGITALOCEAN_BUCKET_ACCESS_KEY }}" ]; then
+          MISSING_SECRETS="$MISSING_SECRETS DIGITALOCEAN_BUCKET_ACCESS_KEY"
+        fi
+
+        if [ -z "${{ secrets.DIGITALOCEAN_BUCKET_SECRET_KEY }}" ]; then
+          MISSING_SECRETS="$MISSING_SECRETS DIGITALOCEAN_BUCKET_SECRET_KEY"
+        fi
+
+        if [ -z "${{ secrets.UPTRACE_DSN }}" ]; then
+          MISSING_SECRETS="$MISSING_SECRETS UPTRACE_DSN"
+        fi
+
+        if [ -n "$MISSING_SECRETS" ]; then
+          echo "⚠️  Missing optional secrets:$MISSING_SECRETS"
+          echo "These are not required for deployment but may be needed for app functionality"
+        else
+          echo "✅ All application secrets are present"
+        fi
+
+    - name: Validate GitHub Variables
+      run: |
+        echo "🔍 Validating GitHub Variables..."
+
+        echo "ENABLE_LETSENCRYPT: ${{ vars.ENABLE_LETSENCRYPT || 'not set (will default to false)' }}"
+        echo "LETSENCRYPT_EMAIL: ${{ vars.LETSENCRYPT_EMAIL || 'not set (will default to letsencrypt@aaronromeo.com)' }}"
+
+        echo "✅ GitHub Variables validation complete"
+
     - name: Setup SSH
       run: |
+        echo "🔧 Setting up SSH configuration..."
         mkdir -p ~/.ssh
+
+        # Write SSH private key
         echo "${{ secrets.DOKKU_SSH_PRIVATE_KEY }}" > ~/.ssh/dokku_key
         chmod 600 ~/.ssh/dokku_key
+
+        # Add known hosts
         ssh-keyscan -H overachieverlabs.com >> ~/.ssh/known_hosts
-        
+
         # Add SSH config
         cat >> ~/.ssh/config << EOF
         Host dokku-admin
@@ -29,11 +89,65 @@ jobs:
           User root
           IdentityFile ~/.ssh/dokku_key
           IdentitiesOnly yes
+          StrictHostKeyChecking yes
         EOF
+
+        echo "✅ SSH configuration complete"
+
+    - name: Validate SSH Key Format
+      run: |
+        echo "🔍 Validating SSH key format..."
+
+        # Check if key file exists and has content
+        if [ ! -s ~/.ssh/dokku_key ]; then
+          echo "❌ SSH key file is empty or doesn't exist"
+          exit 1
+        fi
+
+        # Validate SSH key format
+        if ssh-keygen -l -f ~/.ssh/dokku_key; then
+          echo "✅ SSH key format is valid"
+        else
+          echo "❌ SSH key format is invalid"
+          echo "Please ensure your DOKKU_SSH_PRIVATE_KEY secret contains a valid SSH private key"
+          echo "The key should start with '-----BEGIN OPENSSH PRIVATE KEY-----' or similar"
+          exit 1
+        fi
+
+    - name: Debug SSH Setup
+      run: |
+        echo "🔍 SSH Setup Debug Information..."
+        echo "SSH directory contents:"
+        ls -la ~/.ssh/
+
+        echo "SSH key fingerprint:"
+        ssh-keygen -l -f ~/.ssh/dokku_key
+
+        echo "SSH config:"
+        cat ~/.ssh/config
+
+        echo "Known hosts:"
+        cat ~/.ssh/known_hosts | grep overachieverlabs.com || echo "No known hosts entry found"
 
     - name: Test SSH connection
       run: |
-        ssh dokku-admin "echo 'SSH connection successful'"
+        echo "🔗 Testing SSH connection..."
+
+        # Test with verbose output for debugging
+        if ssh -o ConnectTimeout=10 dokku-admin "echo 'SSH connection successful'"; then
+          echo "✅ SSH connection successful"
+        else
+          echo "❌ SSH connection failed"
+          echo "🔍 Attempting connection with verbose output for debugging..."
+          ssh -vvv -o ConnectTimeout=10 dokku-admin "echo 'SSH connection test'" 2>&1 | head -30
+          echo ""
+          echo "💡 Troubleshooting tips:"
+          echo "1. Verify your SSH public key is added to root@overachieverlabs.com:~/.ssh/authorized_keys"
+          echo "2. Ensure the DOKKU_SSH_PRIVATE_KEY secret matches the public key on the server"
+          echo "3. Check that the SSH key format is correct (OpenSSH format recommended)"
+          echo "4. Verify the server is accessible and SSH service is running"
+          exit 1
+        fi
 
     - name: Setup Dokku app (if needed)
       env:
