@@ -39,6 +39,33 @@ echo "Current app running status: $CURRENT_RELEASE"
 CURRENT_BRANCH=$(git branch --show-current)
 echo "📋 Current branch: $CURRENT_BRANCH"
 
+# Verify SSH key exists and has correct permissions
+echo "🔐 Verifying SSH key setup..."
+if [ ! -f ~/.ssh/dokku_key ]; then
+    echo "❌ SSH key ~/.ssh/dokku_key not found"
+    exit 1
+fi
+
+key_perms=$(stat -c '%a' ~/.ssh/dokku_key 2>/dev/null || echo "unknown")
+if [ "$key_perms" != "600" ]; then
+    echo "⚠️ SSH key permissions are $key_perms, should be 600. Fixing..."
+    chmod 600 ~/.ssh/dokku_key
+fi
+echo "✅ SSH key verified (permissions: $(stat -c '%a' ~/.ssh/dokku_key))"
+
+# Verify known_hosts entry
+echo "🔍 Verifying known_hosts entry..."
+if ! grep -q "overachieverlabs.com" ~/.ssh/known_hosts 2>/dev/null; then
+    echo "⚠️ overachieverlabs.com not in known_hosts, adding..."
+    ssh-keyscan -H overachieverlabs.com >> ~/.ssh/known_hosts
+else
+    echo "✅ overachieverlabs.com found in known_hosts"
+fi
+
+# Configure Git to use SSH properly
+echo "🔧 Configuring Git SSH settings..."
+export GIT_SSH_COMMAND="ssh -i ~/.ssh/dokku_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+
 # Test Git remote connectivity
 echo "🔗 Testing Git remote connectivity..."
 if git ls-remote $REMOTE_NAME HEAD >/dev/null 2>&1; then
@@ -47,17 +74,24 @@ else
     echo "❌ Cannot access Git remote"
     echo "🔍 Debugging information:"
     echo "Remote URL: $(git remote get-url $REMOTE_NAME)"
+    echo "GIT_SSH_COMMAND: $GIT_SSH_COMMAND"
     echo "Testing SSH connection to Dokku host..."
     ssh -o ConnectTimeout=10 $DOKKU_HOST "echo 'SSH connection test successful'" || echo "SSH connection failed"
+    echo "Testing direct SSH to Git remote host..."
+    ssh -i ~/.ssh/dokku_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 root@overachieverlabs.com "echo 'Direct SSH to Git host successful'" || echo "Direct SSH to Git host failed"
     exit 1
 fi
 
 # Deploy to Dokku
 echo "🔄 Deploying to Dokku..."
-if git push --force $REMOTE_NAME $CURRENT_BRANCH:master; then
+echo "Using GIT_SSH_COMMAND: $GIT_SSH_COMMAND"
+if GIT_SSH_COMMAND="$GIT_SSH_COMMAND" git push --force $REMOTE_NAME $CURRENT_BRANCH:master; then
     echo "✅ Git push successful"
 else
     echo "❌ Git push failed"
+    echo "🔍 Additional debugging:"
+    echo "Checking if SSH key exists: $(ls -la ~/.ssh/dokku_key 2>/dev/null || echo 'SSH key not found')"
+    echo "SSH key permissions: $(stat -c '%a' ~/.ssh/dokku_key 2>/dev/null || echo 'Cannot check permissions')"
     exit 1
 fi
 
