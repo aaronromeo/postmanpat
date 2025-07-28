@@ -112,7 +112,7 @@ fi
 
 # Test Git ls-remote with detailed debugging
 echo "🔍 Testing Git ls-remote with debugging..."
-if GIT_SSH_COMMAND="ssh -i ~/.ssh/dokku_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -v" git ls-remote $REMOTE_NAME HEAD 2>&1; then
+if GIT_SSH_COMMAND="ssh -i ~/.ssh/dokku_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -v" git ls-remote $REMOTE_NAME HEAD 1>/dev/null 2>&1; then
     echo "✅ Git remote is accessible"
 else
     echo "❌ Git ls-remote failed"
