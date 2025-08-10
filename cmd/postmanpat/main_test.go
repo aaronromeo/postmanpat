@@ -526,7 +526,8 @@ func TestReapMessagesTableDriven(t *testing.T) {
 				}
 
 				// Marshal the test data to JSON
-				testDataJSON, _ := json.MarshalIndent(testMailboxData, "", "  ")
+				testDataJSON, err := json.MarshalIndent(testMailboxData, "", "  ")
+				assert.NoError(t, err)
 
 				// Setup mock to return the test data
 				mockFileManager.ReadFileFunc = func(filename string) ([]byte, error) {
@@ -546,7 +547,8 @@ func TestReapMessagesTableDriven(t *testing.T) {
 
 				// Empty mailbox data
 				testMailboxData := map[string]base.SerializedMailbox{}
-				testDataJSON, _ := json.MarshalIndent(testMailboxData, "", "  ")
+				testDataJSON, err := json.MarshalIndent(testMailboxData, "", "  ")
+				assert.NoError(t, err)
 
 				mockFileManager.ReadFileFunc = func(filename string) ([]byte, error) {
 					if filename == base.MailboxListFile {
@@ -606,7 +608,8 @@ func TestReapMessagesTableDriven(t *testing.T) {
 				}
 
 				// Marshal the test data to JSON
-				testDataJSON, _ := json.MarshalIndent(testMailboxData, "", "  ")
+				testDataJSON, err := json.MarshalIndent(testMailboxData, "", "  ")
+				assert.NoError(t, err)
 
 				// Setup mock to return the test data
 				mockFileManager.ReadFileFunc = func(filename string) ([]byte, error) {
