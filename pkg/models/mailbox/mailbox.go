@@ -149,10 +149,12 @@ func (mb *MailboxImpl) ProcessMailbox(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+	case mb.Exportable: // This would be where we would have !mb.Deletable
+		return errors.New("exportable but not deletable is not implemented")
 	default:
-		fmt.Println("fmt.Prinln Skipping mailbox", mb.Name)
-		fmt.Printf("fmt.Prinln %v\n", ctx)
-		fmt.Printf("fmt.Prinln %v\n", mb.Logger)
+		// fmt.Println("fmt.Prinln Skipping mailbox", mb.Name)
+		// fmt.Printf("fmt.Prinln %v\n", ctx)
+		// fmt.Printf("fmt.Prinln %v\n", mb.Logger)
 		mb.Logger.InfoContext(ctx, "Skipping mailbox", slog.String("name", mb.Name))
 	}
 	return nil
