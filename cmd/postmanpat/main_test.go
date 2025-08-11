@@ -449,7 +449,10 @@ func TestReapMessagesWithProcessing(t *testing.T) {
 	defer ctrl.Finish()
 
 	// Set up mock expectations for IMAP client
-	mockClient := mockIsi.Client.(*mock.MockClient)
+	mockClient, ok := mockIsi.Client.(*mock.MockClient)
+	if !ok {
+		t.Fatalf("Failed to cast to mock client")
+	}
 
 	// Mock expectations for "Trash" mailbox (deletable only) - calls DeleteMessages
 	mockClient.EXPECT().Select("Trash", false).Return(&imap.MailboxStatus{Messages: 0}, nil)
