@@ -1,0 +1,19 @@
+rules:
+  - name: "Archive newsletters"
+    folders:
+      - "INBOX"
+    matchers:
+      age_days: 30
+      sender_domains:
+        - "example.com"
+      body_regex:
+        - "(?i)unsubscribe"
+    actions:
+      - type: "archive"
+      - type: "delete"
+    archive:
+      path_template: "{date}/{from_domain}"
+reporting:
+  channel: "discord"
+checkpoint:
+  path: "state/checkpoint.yaml"
