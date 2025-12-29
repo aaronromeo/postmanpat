@@ -7,10 +7,12 @@ import (
 	"strings"
 
 	"github.com/aaronromeo/postmanpat/internal/config"
+	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
 
 const configEnvVar = "POSTMANPAT_CONFIG"
+const defaultEnvFile = ".env"
 
 var cleanupCmd = &cobra.Command{
 	Use:   "cleanup",
@@ -21,7 +23,7 @@ var cleanupCmd = &cobra.Command{
 			return err
 		}
 
-		if err := config.ValidateEnv(); err != nil {
+		if err := loadEnvFile(); err != nil {
 			return err
 		}
 
@@ -31,6 +33,10 @@ var cleanupCmd = &cobra.Command{
 		}
 
 		if err := config.Validate(cfg); err != nil {
+			return err
+		}
+
+		if err := config.ValidateEnv(); err != nil {
 			return err
 		}
 
@@ -58,4 +64,14 @@ func resolveConfigPath(cmd *cobra.Command) (string, error) {
 		return "", errors.New("config path is required via --config or POSTMANPAT_CONFIG")
 	}
 	return cfgPath, nil
+}
+
+func loadEnvFile() error {
+	if _, err := os.Stat(defaultEnvFile); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	return godotenv.Load(defaultEnvFile)
 }
