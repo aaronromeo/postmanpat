@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/aaronromeo/postmanpat/internal/config"
+	"github.com/aaronromeo/postmanpat/internal/imapsearch"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
@@ -42,6 +44,40 @@ var cleanupCmd = &cobra.Command{
 
 		cfgSummary := config.Summary(cfg)
 		fmt.Fprintln(cmd.OutOrStdout(), cfgSummary)
+
+		imapEnv, err := config.IMAPEnvFromEnv()
+		if err != nil {
+			return err
+		}
+
+		ctx := cmd.Context()
+		if ctx == nil {
+			ctx = context.Background()
+		}
+
+		for _, rule := range cfg.Rules {
+			mailbox := rule.Matchers.Folders[0]
+			client := &imapsearch.Client{
+				Addr:     fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
+				Username: imapEnv.User,
+				Password: imapEnv.Pass,
+				Mailbox:  mailbox,
+			}
+
+			if err := client.Connect(); err != nil {
+				return err
+			}
+
+			uids, err := client.SearchByMatchers(ctx, rule.Matchers)
+			if closeErr := client.Close(); closeErr != nil && err == nil {
+				err = closeErr
+			}
+			if err != nil {
+				return err
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Rule %q mailbox %q matched %d messages\n", rule.Name, mailbox, len(uids))
+		}
 		return nil
 	},
 }

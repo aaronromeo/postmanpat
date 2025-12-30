@@ -1,0 +1,174 @@
+package imapsearch
+
+import (
+	"context"
+	"crypto/tls"
+	"errors"
+	"strings"
+	"time"
+
+	"github.com/aaronromeo/postmanpat/internal/config"
+	"github.com/emersion/go-imap/v2"
+	"github.com/emersion/go-imap/v2/imapclient"
+)
+
+// Client encapsulates an IMAP connection for search operations.
+type Client struct {
+	Addr     string
+	Username string
+	Password string
+	Mailbox  string
+	TLSConfig *tls.Config
+
+	client *imapclient.Client
+}
+
+// Connect establishes the IMAP connection, logs in, and selects the mailbox.
+func (c *Client) Connect() error {
+	if strings.TrimSpace(c.Addr) == "" {
+		return errors.New("IMAP address is required")
+	}
+	if strings.TrimSpace(c.Username) == "" || strings.TrimSpace(c.Password) == "" {
+		return errors.New("IMAP credentials are required")
+	}
+	if strings.TrimSpace(c.Mailbox) == "" {
+		c.Mailbox = "INBOX"
+	}
+
+	var options *imapclient.Options
+	if c.TLSConfig != nil {
+		options = &imapclient.Options{TLSConfig: c.TLSConfig}
+	}
+
+	client, err := imapclient.DialTLS(c.Addr, options)
+	if err != nil {
+		return err
+	}
+
+	if err := client.Login(c.Username, c.Password).Wait(); err != nil {
+		_ = client.Logout().Wait()
+		return err
+	}
+
+	if _, err := client.Select(c.Mailbox, nil).Wait(); err != nil {
+		_ = client.Logout().Wait()
+		return err
+	}
+
+	c.client = client
+	return nil
+}
+
+// Close logs out and clears the connection.
+func (c *Client) Close() error {
+	if c.client == nil {
+		return nil
+	}
+	err := c.client.Logout().Wait()
+	c.client = nil
+	return err
+}
+
+// SearchByMatchers returns UIDs for messages matching the provided matchers via IMAP SEARCH.
+func (c *Client) SearchByMatchers(ctx context.Context, matchers config.Matchers) ([]uint32, error) {
+	if c.client == nil {
+		return nil, errors.New("IMAP client is not connected")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	criteria := &imap.SearchCriteria{}
+
+	if matchers.AgeDays != nil && *matchers.AgeDays > 0 {
+		criteria.Before = time.Now().AddDate(0, 0, -*matchers.AgeDays)
+	}
+
+	if len(matchers.SenderSubstring) > 0 {
+		senderCriteria := make([]imap.SearchCriteria, 0, len(matchers.SenderSubstring))
+		for _, value := range matchers.SenderSubstring {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			senderCriteria = append(senderCriteria, imap.SearchCriteria{
+				Header: []imap.SearchCriteriaHeaderField{{
+					Key:   "From",
+					Value: value,
+				}},
+			})
+		}
+		if combined := combineOr(senderCriteria); combined != nil {
+			criteria.And(combined)
+		}
+	}
+
+	if len(matchers.Recipients) > 0 {
+		recipientCriteria := make([]imap.SearchCriteria, 0, len(matchers.Recipients))
+		for _, value := range matchers.Recipients {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			to := imap.SearchCriteria{
+				Header: []imap.SearchCriteriaHeaderField{{
+					Key:   "To",
+					Value: value,
+				}},
+			}
+			cc := imap.SearchCriteria{
+				Header: []imap.SearchCriteriaHeaderField{{
+					Key:   "Cc",
+					Value: value,
+				}},
+			}
+			recipientCriteria = append(recipientCriteria, imap.SearchCriteria{
+				Or: [][2]imap.SearchCriteria{{to, cc}},
+			})
+		}
+		if combined := combineOr(recipientCriteria); combined != nil {
+			criteria.And(combined)
+		}
+	}
+
+	if len(matchers.BodySubstring) > 0 {
+		bodyCriteria := make([]imap.SearchCriteria, 0, len(matchers.BodySubstring))
+		for _, value := range matchers.BodySubstring {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			bodyCriteria = append(bodyCriteria, imap.SearchCriteria{
+				Body: []string{value},
+			})
+		}
+		if combined := combineOr(bodyCriteria); combined != nil {
+			criteria.And(combined)
+		}
+	}
+
+	data, err := c.client.UIDSearch(criteria, nil).Wait()
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	uids := data.AllUIDs()
+	matches := make([]uint32, 0, len(uids))
+	for _, uid := range uids {
+		matches = append(matches, uint32(uid))
+	}
+	return matches, nil
+}
+
+func combineOr(criteria []imap.SearchCriteria) *imap.SearchCriteria {
+	if len(criteria) == 0 {
+		return nil
+	}
+	combined := criteria[0]
+	for i := 1; i < len(criteria); i++ {
+		combined = imap.SearchCriteria{
+			Or: [][2]imap.SearchCriteria{{combined, criteria[i]}},
+		}
+	}
+	return &combined
+}

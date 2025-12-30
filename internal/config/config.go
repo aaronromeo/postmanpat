@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -27,6 +28,14 @@ type Config struct {
 	Rules      []Rule     `yaml:"rules"`
 	Reporting  Reporting  `yaml:"reporting"`
 	Checkpoint Checkpoint `yaml:"checkpoint"`
+}
+
+// IMAPEnv holds the IMAP connection details from environment variables.
+type IMAPEnv struct {
+	Host string
+	Port int
+	User string
+	Pass string
 }
 
 // Rule describes a single cleanup rule.
@@ -97,6 +106,47 @@ func ValidateEnv() error {
 	}
 
 	return fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
+}
+
+// IMAPEnvFromEnv loads IMAP connection details and validates required entries.
+func IMAPEnvFromEnv() (IMAPEnv, error) {
+	missing := []string{}
+
+	host := strings.TrimSpace(os.Getenv(envIMAPHost))
+	if host == "" {
+		missing = append(missing, envIMAPHost)
+	}
+
+	portRaw := strings.TrimSpace(os.Getenv(envIMAPPort))
+	if portRaw == "" {
+		missing = append(missing, envIMAPPort)
+	}
+
+	user := strings.TrimSpace(os.Getenv(envIMAPUser))
+	if user == "" {
+		missing = append(missing, envIMAPUser)
+	}
+
+	pass := strings.TrimSpace(os.Getenv(envIMAPPass))
+	if pass == "" {
+		missing = append(missing, envIMAPPass)
+	}
+
+	if len(missing) > 0 {
+		return IMAPEnv{}, fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
+	}
+
+	port, err := strconv.Atoi(portRaw)
+	if err != nil {
+		return IMAPEnv{}, fmt.Errorf("invalid %s: %w", envIMAPPort, err)
+	}
+
+	return IMAPEnv{
+		Host: host,
+		Port: port,
+		User: user,
+		Pass: pass,
+	}, nil
 }
 
 // Summary returns a concise config summary for validation runs.
