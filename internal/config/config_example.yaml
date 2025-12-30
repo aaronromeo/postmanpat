@@ -1,13 +1,13 @@
 rules:
   - name: "Archive newsletters"
-    folders:
-      - "INBOX"
     matchers:
       age_days: 30
-      sender_domains:
+      folders:
+        - "INBOX"
+      sender_substring:
         - "example.com"
-      body_regex:
-        - "(?i)unsubscribe"
+      body_substring:
+        - "unsubscribe"
     actions:
       - type: "archive"
       - type: "delete"

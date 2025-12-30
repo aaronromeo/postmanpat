@@ -32,7 +32,6 @@ type Config struct {
 // Rule describes a single cleanup rule.
 type Rule struct {
 	Name      string            `yaml:"name"`
-	Folders   []string          `yaml:"folders"`
 	Matchers  Matchers          `yaml:"matchers"`
 	Actions   []Action          `yaml:"actions"`
 	Archive   Archive           `yaml:"archive"`
@@ -41,11 +40,11 @@ type Rule struct {
 
 // Matchers define the matching criteria for a rule.
 type Matchers struct {
-	AgeDays       *int     `yaml:"age_days"`
-	SenderDomains []string `yaml:"sender_domains"`
-	Recipients    []string `yaml:"recipients"`
-	BodyRegex     []string `yaml:"body_regex"`
-	Folders       []string `yaml:"folders"`
+	AgeDays         *int     `yaml:"age_days"`
+	SenderSubstring []string `yaml:"sender_substring"`
+	Recipients      []string `yaml:"recipients"`
+	BodySubstring   []string `yaml:"body_substring"`
+	Folders         []string `yaml:"folders"`
 }
 
 // Action defines an operation to apply when a rule matches.
@@ -139,6 +138,11 @@ func defaultIfEmpty(value, fallback string) string {
 func Validate(cfg Config) error {
 	if len(cfg.Rules) == 0 {
 		return errors.New("config must define at least one rule")
+	}
+	for i, rule := range cfg.Rules {
+		if len(rule.Matchers.Folders) == 0 {
+			return fmt.Errorf("rule %d must define matchers.folders", i+1)
+		}
 	}
 	return nil
 }

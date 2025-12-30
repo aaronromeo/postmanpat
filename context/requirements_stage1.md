@@ -61,6 +61,10 @@
 ## Reporting
 - Emit per-rule stats and error list to Slack or Discord via webhook.
 
+## Implementation Decisions
+- IMAP client: `github.com/emersion/go-imap/v2`.
+- JMAP is out of scope for stage 1.
+
 ## Open Decisions
 - Define archive path template variables and examples.
 - Define checkpoint file schema and default location.

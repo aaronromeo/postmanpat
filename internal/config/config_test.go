@@ -48,6 +48,28 @@ rules: []
 	}
 }
 
+func TestValidateMissingMatcherFolders(t *testing.T) {
+	path := writeTempFile(t, `
+rules:
+  - name: "Rule"
+    matchers: {}
+    actions: []
+    archive:
+      path_template: "archive/{date}"
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("expected config to load, got error: %v", err)
+	}
+
+	if err := Validate(cfg); err == nil {
+		t.Fatalf("expected validation error for missing matchers.folders")
+	} else if !strings.Contains(err.Error(), "matchers.folders") {
+		t.Fatalf("expected matchers.folders error, got: %v", err)
+	}
+}
+
 func TestHappyPath(t *testing.T) {
 	t.Setenv(envIMAPHost, "imap.example.com")
 	t.Setenv(envIMAPPort, "993")
@@ -63,7 +85,9 @@ func TestHappyPath(t *testing.T) {
 	path := writeTempFile(t, `
 rules:
   - name: "Rule"
-    matchers: {}
+    matchers:
+      folders:
+        - "INBOX"
     actions: []
     archive:
       path_template: "archive/{date}"
