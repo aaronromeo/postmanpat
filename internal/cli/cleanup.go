@@ -55,6 +55,11 @@ var cleanupCmd = &cobra.Command{
 			ctx = context.Background()
 		}
 
+		dryRun, err := cmd.Flags().GetBool("dry-run")
+		if err != nil {
+			return err
+		}
+
 		for _, rule := range cfg.Rules {
 			mailbox := rule.Matchers.Folders[0]
 			client := &imapsearch.Client{
@@ -67,16 +72,29 @@ var cleanupCmd = &cobra.Command{
 			if err := client.Connect(); err != nil {
 				return err
 			}
+			defer client.Close()
 
 			uids, err := client.SearchByMatchers(ctx, rule.Matchers)
-			if closeErr := client.Close(); closeErr != nil && err == nil {
-				err = closeErr
-			}
 			if err != nil {
 				return err
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Rule %q mailbox %q matched %d messages\n", rule.Name, mailbox, len(uids))
+
+			for _, action := range rule.Actions {
+				switch strings.ToLower(strings.TrimSpace(action.Type)) {
+				case "delete":
+					if dryRun {
+						fmt.Fprintf(cmd.OutOrStdout(), "Dry run: would delete %d messages for rule %q\n", len(uids), rule.Name)
+						continue
+					}
+					if err := client.DeleteUIDs(ctx, uids); err != nil {
+						return err
+					}
+				default:
+					return fmt.Errorf("unsupported action type %q for rule %q", action.Type, rule.Name)
+				}
+			}
 		}
 		return nil
 	},

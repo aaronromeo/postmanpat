@@ -14,10 +14,10 @@ import (
 
 // Client encapsulates an IMAP connection for search operations.
 type Client struct {
-	Addr     string
-	Username string
-	Password string
-	Mailbox  string
+	Addr      string
+	Username  string
+	Password  string
+	Mailbox   string
 	TLSConfig *tls.Config
 
 	client *imapclient.Client
@@ -158,6 +158,44 @@ func (c *Client) SearchByMatchers(ctx context.Context, matchers config.Matchers)
 		matches = append(matches, uint32(uid))
 	}
 	return matches, nil
+}
+
+// DeleteUIDs marks messages as deleted and expunges them.
+func (c *Client) DeleteUIDs(ctx context.Context, uids []uint32) error {
+	if c.client == nil {
+		return errors.New("IMAP client is not connected")
+	}
+	if len(uids) == 0 {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	var uidSet imap.UIDSet
+	for _, uid := range uids {
+		uidSet.AddNum(imap.UID(uid))
+	}
+
+	store := imap.StoreFlags{
+		Op:     imap.StoreFlagsAdd,
+		Silent: true,
+		Flags:  []imap.Flag{imap.FlagDeleted},
+	}
+	if err := c.client.Store(uidSet, &store, nil).Close(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	if c.client.Caps().Has(imap.CapUIDPlus) {
+		_, err := c.client.UIDExpunge(uidSet).Collect()
+		return err
+	}
+
+	_, err := c.client.Expunge().Collect()
+	return err
 }
 
 func combineOr(criteria []imap.SearchCriteria) *imap.SearchCriteria {

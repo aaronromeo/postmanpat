@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"fmt"
 	"math/big"
 	"net"
 	"strings"
@@ -18,69 +19,12 @@ import (
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapserver"
 	"github.com/emersion/go-imap/v2/imapserver/imapmemserver"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestSearchByMatchersLocalServer(t *testing.T) {
-	tlsConfig := testTLSConfig(t)
-	mem := imapmemserver.New()
-	user := imapmemserver.NewUser("user@example.com", "password")
-	mem.AddUser(user)
-
-	if err := user.Create("INBOX", nil); err != nil {
-		t.Fatalf("create mailbox: %v", err)
-	}
-
-	if _, err := user.Append("INBOX", newLiteral(t, sampleMessage(
-		"News <news@example.com>",
-		"User <user@example.com>",
-		"Hello",
-		"Please unsubscribe from these updates.",
-	)), &imap.AppendOptions{}); err != nil {
-		t.Fatalf("append message: %v", err)
-	}
-
-	if _, err := user.Append("INBOX", newLiteral(t, sampleMessage(
-		"Other <other@example.org>",
-		"User <user@example.com>",
-		"Hi",
-		"Nothing to see here.",
-	)), &imap.AppendOptions{}); err != nil {
-		t.Fatalf("append message: %v", err)
-	}
-
-	server := imapserver.New(&imapserver.Options{
-		NewSession: func(*imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
-			return mem.NewSession(), nil, nil
-		},
-		TLSConfig:    tlsConfig,
-		InsecureAuth: true,
-	})
-
-	ln, err := tls.Listen("tcp", "127.0.0.1:0", tlsConfig)
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	t.Cleanup(func() {
-		server.Close()
-		ln.Close()
-	})
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- server.Serve(ln)
-	}()
-
-	client := &Client{
-		Addr:      ln.Addr().String(),
-		Username:  "user@example.com",
-		Password:  "password",
-		Mailbox:   "INBOX",
-		TLSConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	if err := client.Connect(); err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	defer client.Close()
+	client, cleanup := setupTestServer(t, nil)
+	t.Cleanup(cleanup)
 
 	cases := []struct {
 		name     string
@@ -126,24 +70,65 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
+			t.Cleanup(cancel)
 
 			uids, err := client.SearchByMatchers(ctx, tc.matchers)
-			if err != nil {
-				t.Fatalf("search: %v", err)
-			}
-			if len(uids) != tc.want {
-				t.Fatalf("expected %d match(es), got %d", tc.want, len(uids))
-			}
+			assert.NoError(t, err, "search error")
+			assert.Equal(t, len(uids), tc.want, fmt.Sprintf("expected %d match(es), got %d", tc.want, len(uids)))
 		})
 	}
 
-	_ = server.Close()
-	_ = ln.Close()
+}
 
-	select {
-	case <-errCh:
-	default:
+func TestDeleteUIDsLocalServer(t *testing.T) {
+	cases := []struct {
+		name string
+		caps imap.CapSet
+	}{
+		{
+			name: "uidplus",
+			caps: imap.CapSet{
+				imap.CapIMAP4rev1: {},
+				imap.CapUIDPlus:   {},
+			},
+		},
+		{
+			name: "expunge",
+			caps: nil,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client, cleanup := setupTestServer(t, tc.caps)
+			t.Cleanup(cleanup)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			t.Cleanup(cancel)
+
+			target := config.Matchers{
+				Folders:         []string{"INBOX"},
+				SenderSubstring: []string{"example.com"},
+			}
+			uids, err := client.SearchByMatchers(ctx, target)
+			assert.NoError(t, err, "search error")
+			assert.Equal(t, len(uids), 1, fmt.Sprintf("expected 1 match before delete, got %d", len(uids)))
+
+			err = client.DeleteUIDs(ctx, uids)
+			assert.NoError(t, err, "delete error")
+
+			uids, err = client.SearchByMatchers(ctx, target)
+			assert.NoError(t, err, "search after delete")
+			assert.Equal(t, len(uids), 0, fmt.Sprintf("expected 0 matches after delete, got %d", len(uids)))
+
+			remaining := config.Matchers{
+				Folders:         []string{"INBOX"},
+				SenderSubstring: []string{"example.org"},
+			}
+			uids, err = client.SearchByMatchers(ctx, remaining)
+			assert.NoError(t, err, "search remaining")
+			assert.Equal(t, len(uids), 1, fmt.Sprintf("expected 1 remaining message, got %d", len(uids)))
+		})
 	}
 }
 
@@ -180,6 +165,81 @@ func sampleMessage(from, to, subject, body string) string {
 	builder.WriteString(body)
 	builder.WriteString("\r\n")
 	return builder.String()
+}
+
+func setupTestServer(t *testing.T, caps imap.CapSet) (*Client, func()) {
+	t.Helper()
+
+	tlsConfig := testTLSConfig(t)
+	mem := imapmemserver.New()
+	user := imapmemserver.NewUser("user@example.com", "password")
+	mem.AddUser(user)
+
+	if err := user.Create("INBOX", nil); err != nil {
+		t.Fatalf("create mailbox: %v", err)
+	}
+
+	if _, err := user.Append("INBOX", newLiteral(t, sampleMessage(
+		"News <news@example.com>",
+		"User <user@example.com>",
+		"Hello",
+		"Please unsubscribe from these updates.",
+	)), &imap.AppendOptions{}); err != nil {
+		t.Fatalf("append message: %v", err)
+	}
+
+	if _, err := user.Append("INBOX", newLiteral(t, sampleMessage(
+		"Other <other@example.org>",
+		"User <user@example.com>",
+		"Hi",
+		"Nothing to see here.",
+	)), &imap.AppendOptions{}); err != nil {
+		t.Fatalf("append message: %v", err)
+	}
+
+	server := imapserver.New(&imapserver.Options{
+		NewSession: func(*imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
+			return mem.NewSession(), nil, nil
+		},
+		Caps:         caps,
+		TLSConfig:    tlsConfig,
+		InsecureAuth: true,
+	})
+
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", tlsConfig)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.Serve(ln)
+	}()
+
+	client := &Client{
+		Addr:      ln.Addr().String(),
+		Username:  "user@example.com",
+		Password:  "password",
+		Mailbox:   "INBOX",
+		TLSConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	if err := client.Connect(); err != nil {
+		_ = ln.Close()
+		_ = server.Close()
+		t.Fatalf("connect: %v", err)
+	}
+
+	cleanup := func() {
+		_ = client.Close()
+		_ = server.Close()
+		_ = ln.Close()
+		select {
+		case <-errCh:
+		default:
+		}
+	}
+
+	return client, cleanup
 }
 
 func testTLSConfig(t *testing.T) *tls.Config {
