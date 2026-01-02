@@ -1,9 +1,10 @@
-package imapsearch
+package imapclient
 
 import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -158,6 +159,75 @@ func (c *Client) SearchByMatchers(ctx context.Context, matchers config.Matchers)
 		matches = append(matches, uint32(uid))
 	}
 	return matches, nil
+}
+
+// FetchSenderDomains returns unique sender domains for the provided UIDs.
+func (c *Client) FetchSenderDomains(ctx context.Context, uids []uint32) ([]string, error) {
+	if c.client == nil {
+		return nil, errors.New("IMAP client is not connected")
+	}
+	if len(uids) == 0 {
+		return []string{}, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	var uidSet imap.UIDSet
+	for _, uid := range uids {
+		uidSet.AddNum(imap.UID(uid))
+	}
+
+	fetchOptions := &imap.FetchOptions{
+		Envelope: true,
+		UID:      true,
+	}
+
+	fetchCmd := c.client.Fetch(uidSet, fetchOptions)
+	domains := map[string]struct{}{}
+	for {
+		if err := ctx.Err(); err != nil {
+			_ = fetchCmd.Close()
+			return nil, err
+		}
+
+		msg := fetchCmd.Next()
+		if msg == nil {
+			break
+		}
+
+		var envelope *imap.Envelope
+		for {
+			item := msg.Next()
+			if item == nil {
+				break
+			}
+			if data, ok := item.(imapclient.FetchItemDataEnvelope); ok {
+				envelope = data.Envelope
+			}
+		}
+		if envelope == nil {
+			continue
+		}
+		for _, addr := range envelope.From {
+			host := strings.ToLower(strings.TrimSpace(addr.Host))
+			if host == "" {
+				continue
+			}
+			domains[host] = struct{}{}
+		}
+	}
+
+	if err := fetchCmd.Close(); err != nil {
+		return nil, err
+	}
+
+	unique := make([]string, 0, len(domains))
+	for domain := range domains {
+		unique = append(unique, domain)
+	}
+	sort.Strings(unique)
+	return unique, nil
 }
 
 // DeleteUIDs marks messages as deleted and expunges them.

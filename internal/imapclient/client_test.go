@@ -1,4 +1,4 @@
-package imapsearch
+package imapclient
 
 import (
 	"bytes"

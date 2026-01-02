@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/aaronromeo/postmanpat/internal/config"
-	"github.com/aaronromeo/postmanpat/internal/imapsearch"
+	"github.com/aaronromeo/postmanpat/internal/imapclient"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
@@ -62,7 +62,7 @@ var cleanupCmd = &cobra.Command{
 
 		for _, rule := range cfg.Rules {
 			mailbox := rule.Matchers.Folders[0]
-			client := &imapsearch.Client{
+			client := &imapclient.Client{
 				Addr:     fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
 				Username: imapEnv.User,
 				Password: imapEnv.Pass,
