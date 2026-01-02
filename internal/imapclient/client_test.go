@@ -8,7 +8,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"fmt"
 	"math/big"
 	"net"
 	"strings"
@@ -23,21 +22,32 @@ import (
 )
 
 func TestSearchByMatchersLocalServer(t *testing.T) {
-	client, cleanup := setupTestServer(t, nil)
+	client, ids, cleanup := setupTestServer(t, nil)
 	t.Cleanup(cleanup)
 
 	cases := []struct {
 		name     string
 		matchers config.Matchers
-		want     int
+		wantUIDs []uint32
 	}{
+		{
+			name: "match age days",
+			matchers: func() config.Matchers {
+				age := 1
+				return config.Matchers{
+					Folders: []string{"INBOX"},
+					AgeDays: &age,
+				}
+			}(),
+			wantUIDs: []uint32{ids.newsUID},
+		},
 		{
 			name: "match sender recipient body",
 			matchers: config.Matchers{
 				Folders:       []string{"INBOX"},
 				BodySubstring: []string{"unsubscribe"},
 			},
-			want: 1,
+			wantUIDs: []uint32{ids.newsUID},
 		},
 		{
 			name: "match sender email",
@@ -45,7 +55,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 				Folders:         []string{"INBOX"},
 				SenderSubstring: []string{"example.com"},
 			},
-			want: 1,
+			wantUIDs: []uint32{ids.newsUID},
 		},
 		{
 			name: "match recipients email",
@@ -53,7 +63,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 				Folders:    []string{"INBOX"},
 				Recipients: []string{"user@example.com"},
 			},
-			want: 2,
+			wantUIDs: []uint32{ids.newsUID, ids.otherUID},
 		},
 		{
 			name: "no matches",
@@ -63,7 +73,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 				Recipients:      []string{"user@example.com"},
 				BodySubstring:   []string{"unsubscribe"},
 			},
-			want: 0,
+			wantUIDs: nil,
 		},
 	}
 
@@ -74,7 +84,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 
 			uids, err := client.SearchByMatchers(ctx, tc.matchers)
 			assert.NoError(t, err, "search error")
-			assert.Equal(t, len(uids), tc.want, fmt.Sprintf("expected %d match(es), got %d", tc.want, len(uids)))
+			assert.ElementsMatch(t, tc.wantUIDs, uids, "unexpected UID set")
 		})
 	}
 
@@ -100,7 +110,7 @@ func TestDeleteUIDsLocalServer(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			client, cleanup := setupTestServer(t, tc.caps)
+			client, ids, cleanup := setupTestServer(t, tc.caps)
 			t.Cleanup(cleanup)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -112,14 +122,14 @@ func TestDeleteUIDsLocalServer(t *testing.T) {
 			}
 			uids, err := client.SearchByMatchers(ctx, target)
 			assert.NoError(t, err, "search error")
-			assert.Equal(t, len(uids), 1, fmt.Sprintf("expected 1 match before delete, got %d", len(uids)))
+			assert.ElementsMatch(t, []uint32{ids.newsUID}, uids, "unexpected matches before delete")
 
 			err = client.DeleteUIDs(ctx, uids)
 			assert.NoError(t, err, "delete error")
 
 			uids, err = client.SearchByMatchers(ctx, target)
 			assert.NoError(t, err, "search after delete")
-			assert.Equal(t, len(uids), 0, fmt.Sprintf("expected 0 matches after delete, got %d", len(uids)))
+			assert.Empty(t, uids, "expected no matches after delete")
 
 			remaining := config.Matchers{
 				Folders:         []string{"INBOX"},
@@ -127,7 +137,7 @@ func TestDeleteUIDsLocalServer(t *testing.T) {
 			}
 			uids, err = client.SearchByMatchers(ctx, remaining)
 			assert.NoError(t, err, "search remaining")
-			assert.Equal(t, len(uids), 1, fmt.Sprintf("expected 1 remaining message, got %d", len(uids)))
+			assert.ElementsMatch(t, []uint32{ids.otherUID}, uids, "unexpected remaining matches")
 		})
 	}
 }
@@ -167,7 +177,12 @@ func sampleMessage(from, to, subject, body string) string {
 	return builder.String()
 }
 
-func setupTestServer(t *testing.T, caps imap.CapSet) (*Client, func()) {
+type testMessageIDs struct {
+	newsUID  uint32
+	otherUID uint32
+}
+
+func setupTestServer(t *testing.T, caps imap.CapSet) (*Client, testMessageIDs, func()) {
 	t.Helper()
 
 	tlsConfig := testTLSConfig(t)
@@ -179,21 +194,23 @@ func setupTestServer(t *testing.T, caps imap.CapSet) (*Client, func()) {
 		t.Fatalf("create mailbox: %v", err)
 	}
 
-	if _, err := user.Append("INBOX", newLiteral(t, sampleMessage(
+	newsAppend, err := user.Append("INBOX", newLiteral(t, sampleMessage(
 		"News <news@example.com>",
 		"User <user@example.com>",
 		"Hello",
 		"Please unsubscribe from these updates.",
-	)), &imap.AppendOptions{}); err != nil {
+	)), &imap.AppendOptions{Time: time.Now().Add(-48 * time.Hour)})
+	if err != nil {
 		t.Fatalf("append message: %v", err)
 	}
 
-	if _, err := user.Append("INBOX", newLiteral(t, sampleMessage(
+	otherAppend, err := user.Append("INBOX", newLiteral(t, sampleMessage(
 		"Other <other@example.org>",
 		"User <user@example.com>",
 		"Hi",
 		"Nothing to see here.",
-	)), &imap.AppendOptions{}); err != nil {
+	)), &imap.AppendOptions{Time: time.Now()})
+	if err != nil {
 		t.Fatalf("append message: %v", err)
 	}
 
@@ -239,7 +256,12 @@ func setupTestServer(t *testing.T, caps imap.CapSet) (*Client, func()) {
 		}
 	}
 
-	return client, cleanup
+	ids := testMessageIDs{
+		newsUID:  uint32(newsAppend.UID),
+		otherUID: uint32(otherAppend.UID),
+	}
+
+	return client, ids, cleanup
 }
 
 func testTLSConfig(t *testing.T) *tls.Config {
