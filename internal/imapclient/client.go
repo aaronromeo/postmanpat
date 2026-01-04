@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"sort"
+	"fmt"
 	"strings"
 	"time"
 
@@ -22,6 +22,13 @@ type Client struct {
 	TLSConfig *tls.Config
 
 	client *imapclient.Client
+}
+
+type MailData struct {
+	ReplyToDomains string
+	SenderDomains  string
+	Recipients     string
+	Count          int
 }
 
 // Connect establishes the IMAP connection, logs in, and selects the mailbox.
@@ -161,13 +168,13 @@ func (c *Client) SearchByMatchers(ctx context.Context, matchers config.Matchers)
 	return matches, nil
 }
 
-// FetchSenderDomains returns unique sender domains for the provided UIDs.
-func (c *Client) FetchSenderDomains(ctx context.Context, uids []uint32) ([]string, error) {
+// FetchSenderData returns unique sender domains for the provided UIDs.
+func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) (map[string]MailData, error) {
 	if c.client == nil {
 		return nil, errors.New("IMAP client is not connected")
 	}
 	if len(uids) == 0 {
-		return []string{}, nil
+		return map[string]MailData{}, nil
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -184,7 +191,7 @@ func (c *Client) FetchSenderDomains(ctx context.Context, uids []uint32) ([]strin
 	}
 
 	fetchCmd := c.client.Fetch(uidSet, fetchOptions)
-	domains := map[string]struct{}{}
+	domains := map[string]MailData{}
 	for {
 		if err := ctx.Err(); err != nil {
 			_ = fetchCmd.Close()
@@ -209,25 +216,50 @@ func (c *Client) FetchSenderDomains(ctx context.Context, uids []uint32) ([]strin
 		if envelope == nil {
 			continue
 		}
+
+		replyToHosts := []string{}
+		for _, addr := range envelope.ReplyTo {
+			host := strings.ToLower(strings.TrimSpace(addr.Host))
+			if host == "" {
+				continue
+			}
+			replyToHosts = append(replyToHosts, host)
+		}
+
+		fromHosts := []string{}
 		for _, addr := range envelope.From {
 			host := strings.ToLower(strings.TrimSpace(addr.Host))
 			if host == "" {
 				continue
 			}
-			domains[host] = struct{}{}
+			fromHosts = append(fromHosts, host)
 		}
+
+		recipients := []string{}
+		for _, addr := range envelope.To {
+			recipients = append(recipients, addr.Addr())
+		}
+
+		data := MailData{
+			ReplyToDomains: strings.Join(replyToHosts, ","),
+			SenderDomains:  strings.Join(fromHosts, ","),
+			Recipients:     strings.Join(recipients, ","),
+		}
+
+		key := fmt.Sprintf("%v", data)
+		if value, ok := domains[key]; !ok {
+			data.Count = 1
+		} else {
+			data.Count = value.Count + 1
+		}
+		domains[key] = data
 	}
 
 	if err := fetchCmd.Close(); err != nil {
 		return nil, err
 	}
 
-	unique := make([]string, 0, len(domains))
-	for domain := range domains {
-		unique = append(unique, domain)
-	}
-	sort.Strings(unique)
-	return unique, nil
+	return domains, nil
 }
 
 // DeleteUIDs marks messages as deleted and expunges them.
