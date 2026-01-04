@@ -43,7 +43,6 @@ type Rule struct {
 	Name      string            `yaml:"name"`
 	Matchers  Matchers          `yaml:"matchers"`
 	Actions   []Action          `yaml:"actions"`
-	Archive   Archive           `yaml:"archive"`
 	Variables map[string]string `yaml:"variables"`
 }
 
@@ -56,15 +55,17 @@ type Matchers struct {
 	Folders         []string `yaml:"folders"`
 }
 
+type ActionName string
+
+const (
+	DELETE  ActionName = "delete"
+	UNKNOWN ActionName = ""
+)
+
 // Action defines an operation to apply when a rule matches.
 type Action struct {
-	Type   string            `yaml:"type"`
+	Type   ActionName        `yaml:"type"`
 	Params map[string]string `yaml:"params"`
-}
-
-// Archive controls archival behavior for a rule.
-type Archive struct {
-	PathTemplate string `yaml:"path_template"`
 }
 
 // Reporting configures the reporting output.

@@ -82,8 +82,8 @@ var cleanupCmd = &cobra.Command{
 			fmt.Fprintf(cmd.OutOrStdout(), "Rule %q mailbox %q matched %d messages\n", rule.Name, mailbox, len(uids))
 
 			for _, action := range rule.Actions {
-				switch strings.ToLower(strings.TrimSpace(action.Type)) {
-				case "delete":
+				switch action.Type {
+				case config.DELETE:
 					if dryRun {
 						fmt.Fprintf(cmd.OutOrStdout(), "Dry run: would delete %d messages for rule %q\n", len(uids), rule.Name)
 						continue
