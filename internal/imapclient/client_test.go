@@ -22,7 +22,7 @@ import (
 )
 
 func TestSearchByMatchersLocalServer(t *testing.T) {
-	client, ids, cleanup := setupTestServer(t, nil)
+	client, ids, cleanup := setupTestServer(t, nil, nil)
 	t.Cleanup(cleanup)
 
 	cases := []struct {
@@ -110,7 +110,7 @@ func TestDeleteUIDsLocalServer(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			client, ids, cleanup := setupTestServer(t, tc.caps)
+			client, ids, cleanup := setupTestServer(t, tc.caps, nil)
 			t.Cleanup(cleanup)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -138,6 +138,94 @@ func TestDeleteUIDsLocalServer(t *testing.T) {
 			uids, err = client.SearchByMatchers(ctx, remaining)
 			assert.NoError(t, err, "search remaining")
 			assert.ElementsMatch(t, []uint32{ids.otherUID}, uids, "unexpected remaining matches")
+		})
+	}
+}
+
+func TestMoveUIDsLocalServer(t *testing.T) {
+	cases := []struct {
+		name            string
+		caps            imap.CapSet
+		destination     string
+		extraMailboxes  []string
+		expectError     bool
+		expectInArchive bool
+	}{
+		{
+			name:        "move-capability",
+			destination: "Archive",
+			extraMailboxes: []string{
+				"Archive",
+			},
+			caps: imap.CapSet{
+				imap.CapIMAP4rev1: {},
+				imap.CapMove:      {},
+			},
+			expectInArchive: true,
+		},
+		{
+			name:        "move-fallback",
+			destination: "Archive",
+			extraMailboxes: []string{
+				"Archive",
+			},
+			caps:            nil,
+			expectInArchive: true,
+		},
+		{
+			name:        "missing-destination",
+			destination: "DoesNotExist",
+			caps:        nil,
+			expectError: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client, ids, cleanup := setupTestServer(t, tc.caps, tc.extraMailboxes)
+			t.Cleanup(cleanup)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			t.Cleanup(cancel)
+
+			err := client.MoveUIDs(ctx, []uint32{ids.newsUID}, tc.destination)
+			if tc.expectError {
+				assert.Error(t, err, "expected move error")
+				return
+			}
+			assert.NoError(t, err, "move error")
+
+			inboxMatchers := config.Matchers{
+				Folders:         []string{"INBOX"},
+				SenderSubstring: []string{"example.com"},
+			}
+			uids, err := client.SearchByMatchers(ctx, inboxMatchers)
+			assert.NoError(t, err, "search inbox after move")
+			assert.Empty(t, uids, "expected no matches in INBOX after move")
+
+			if tc.expectInArchive {
+				archiveClient := &Client{
+					Addr:      client.Addr,
+					Username:  client.Username,
+					Password:  client.Password,
+					Mailbox:   tc.destination,
+					TLSConfig: client.TLSConfig,
+				}
+				err = archiveClient.Connect()
+				assert.NoError(t, err, "connect archive client")
+				if err == nil {
+					t.Cleanup(func() {
+						_ = archiveClient.Close()
+					})
+					archiveMatchers := config.Matchers{
+						Folders:         []string{tc.destination},
+						SenderSubstring: []string{"example.com"},
+					}
+					uids, err = archiveClient.SearchByMatchers(ctx, archiveMatchers)
+					assert.NoError(t, err, "search archive after move")
+					assert.Len(t, uids, 1, "expected moved message in destination")
+				}
+			}
 		})
 	}
 }
@@ -182,7 +270,7 @@ type testMessageIDs struct {
 	otherUID uint32
 }
 
-func setupTestServer(t *testing.T, caps imap.CapSet) (*Client, testMessageIDs, func()) {
+func setupTestServer(t *testing.T, caps imap.CapSet, extraMailboxes []string) (*Client, testMessageIDs, func()) {
 	t.Helper()
 
 	tlsConfig := testTLSConfig(t)
@@ -192,6 +280,14 @@ func setupTestServer(t *testing.T, caps imap.CapSet) (*Client, testMessageIDs, f
 
 	if err := user.Create("INBOX", nil); err != nil {
 		t.Fatalf("create mailbox: %v", err)
+	}
+	for _, mailbox := range extraMailboxes {
+		if strings.TrimSpace(mailbox) == "" {
+			continue
+		}
+		if err := user.Create(mailbox, nil); err != nil {
+			t.Fatalf("create mailbox %q: %v", mailbox, err)
+		}
 	}
 
 	newsAppend, err := user.Append("INBOX", newLiteral(t, sampleMessage(

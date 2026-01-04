@@ -91,6 +91,17 @@ var cleanupCmd = &cobra.Command{
 					if err := client.DeleteUIDs(ctx, uids); err != nil {
 						return err
 					}
+				case config.MOVE:
+					if strings.TrimSpace(action.Destination) == "" {
+						return fmt.Errorf("Action move missing destination: %s", rule.Name)
+					}
+					if dryRun {
+						fmt.Fprintf(cmd.OutOrStdout(), "Dry run: would delete %d messages for rule %q\n", len(uids), rule.Name)
+						continue
+					}
+					if err := client.MoveUIDs(ctx, uids, strings.TrimSpace(action.Destination)); err != nil {
+						return err
+					}
 				default:
 					return fmt.Errorf("unsupported action type %q for rule %q", action.Type, rule.Name)
 				}

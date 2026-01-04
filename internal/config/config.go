@@ -59,13 +59,14 @@ type ActionName string
 
 const (
 	DELETE  ActionName = "delete"
+	MOVE    ActionName = "move"
 	UNKNOWN ActionName = ""
 )
 
 // Action defines an operation to apply when a rule matches.
 type Action struct {
-	Type   ActionName        `yaml:"type"`
-	Params map[string]string `yaml:"params"`
+	Type        ActionName `yaml:"type"`
+	Destination string     `yaml:"destination"`
 }
 
 // Reporting configures the reporting output.

@@ -262,6 +262,35 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) (map[string
 	return domains, nil
 }
 
+// MoveUIDs move messages to a different destination folder.
+func (c *Client) MoveUIDs(ctx context.Context, uids []uint32, destination string) error {
+	if c.client == nil {
+		return errors.New("IMAP client is not connected")
+	}
+	if len(uids) == 0 {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(destination) == "" {
+		return errors.New("destination mailbox is required")
+	}
+
+	var uidSet imap.UIDSet
+	for _, uid := range uids {
+		uidSet.AddNum(imap.UID(uid))
+	}
+
+	if _, err := c.client.Move(uidSet, destination).Wait(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return nil
+}
+
 // DeleteUIDs marks messages as deleted and expunges them.
 func (c *Client) DeleteUIDs(ctx context.Context, uids []uint32) error {
 	if c.client == nil {
