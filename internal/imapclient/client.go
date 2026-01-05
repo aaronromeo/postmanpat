@@ -18,7 +18,6 @@ type Client struct {
 	Addr      string
 	Username  string
 	Password  string
-	Mailbox   string
 	TLSConfig *tls.Config
 
 	client *imapclient.Client
@@ -39,10 +38,6 @@ func (c *Client) Connect() error {
 	if strings.TrimSpace(c.Username) == "" || strings.TrimSpace(c.Password) == "" {
 		return errors.New("IMAP credentials are required")
 	}
-	if strings.TrimSpace(c.Mailbox) == "" {
-		c.Mailbox = "INBOX"
-	}
-
 	var options *imapclient.Options
 	if c.TLSConfig != nil {
 		options = &imapclient.Options{TLSConfig: c.TLSConfig}
@@ -54,11 +49,6 @@ func (c *Client) Connect() error {
 	}
 
 	if err := client.Login(c.Username, c.Password).Wait(); err != nil {
-		_ = client.Logout().Wait()
-		return err
-	}
-
-	if _, err := client.Select(c.Mailbox, nil).Wait(); err != nil {
 		_ = client.Logout().Wait()
 		return err
 	}
@@ -78,93 +68,50 @@ func (c *Client) Close() error {
 }
 
 // SearchByMatchers returns UIDs for messages matching the provided matchers via IMAP SEARCH.
-func (c *Client) SearchByMatchers(ctx context.Context, matchers config.Matchers) ([]uint32, error) {
+// Results are grouped by mailbox to avoid UID collisions across folders.
+func (c *Client) SearchByMatchers(ctx context.Context, matchers config.Matchers) (map[string][]uint32, error) {
 	if c.client == nil {
 		return nil, errors.New("IMAP client is not connected")
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-
-	criteria := &imap.SearchCriteria{}
-
-	if matchers.AgeDays != nil && *matchers.AgeDays > 0 {
-		criteria.Before = time.Now().AddDate(0, 0, -*matchers.AgeDays)
+	if len(matchers.Folders) == 0 {
+		return nil, errors.New("matcher Folders is required")
 	}
 
-	if len(matchers.SenderSubstring) > 0 {
-		senderCriteria := make([]imap.SearchCriteria, 0, len(matchers.SenderSubstring))
-		for _, value := range matchers.SenderSubstring {
-			if strings.TrimSpace(value) == "" {
-				continue
-			}
-			senderCriteria = append(senderCriteria, imap.SearchCriteria{
-				Header: []imap.SearchCriteriaHeaderField{{
-					Key:   "From",
-					Value: value,
-				}},
-			})
+	matches := make(map[string][]uint32)
+	for _, folder := range matchers.Folders {
+		folder = strings.TrimSpace(folder)
+		if folder == "" {
+			return nil, errors.New("matcher Folder is required")
 		}
-		if combined := combineOr(senderCriteria); combined != nil {
-			criteria.And(combined)
+
+		if _, err := c.client.Select(folder, nil).Wait(); err != nil {
+			return nil, err
 		}
+
+		criteria := buildSearchCriteria(matchers)
+
+		data, err := c.client.UIDSearch(criteria, nil).Wait()
+		if err != nil {
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		uids := data.AllUIDs()
+		if len(uids) == 0 {
+			continue
+		}
+		mailboxUIDs := make([]uint32, 0, len(uids))
+		for _, uid := range uids {
+			mailboxUIDs = append(mailboxUIDs, uint32(uid))
+		}
+		matches[folder] = mailboxUIDs
 	}
 
-	if len(matchers.Recipients) > 0 {
-		recipientCriteria := make([]imap.SearchCriteria, 0, len(matchers.Recipients))
-		for _, value := range matchers.Recipients {
-			if strings.TrimSpace(value) == "" {
-				continue
-			}
-			to := imap.SearchCriteria{
-				Header: []imap.SearchCriteriaHeaderField{{
-					Key:   "To",
-					Value: value,
-				}},
-			}
-			cc := imap.SearchCriteria{
-				Header: []imap.SearchCriteriaHeaderField{{
-					Key:   "Cc",
-					Value: value,
-				}},
-			}
-			recipientCriteria = append(recipientCriteria, imap.SearchCriteria{
-				Or: [][2]imap.SearchCriteria{{to, cc}},
-			})
-		}
-		if combined := combineOr(recipientCriteria); combined != nil {
-			criteria.And(combined)
-		}
-	}
-
-	if len(matchers.BodySubstring) > 0 {
-		bodyCriteria := make([]imap.SearchCriteria, 0, len(matchers.BodySubstring))
-		for _, value := range matchers.BodySubstring {
-			if strings.TrimSpace(value) == "" {
-				continue
-			}
-			bodyCriteria = append(bodyCriteria, imap.SearchCriteria{
-				Body: []string{value},
-			})
-		}
-		if combined := combineOr(bodyCriteria); combined != nil {
-			criteria.And(combined)
-		}
-	}
-
-	data, err := c.client.UIDSearch(criteria, nil).Wait()
-	if err != nil {
-		return nil, err
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	uids := data.AllUIDs()
-	matches := make([]uint32, 0, len(uids))
-	for _, uid := range uids {
-		matches = append(matches, uint32(uid))
-	}
 	return matches, nil
 }
 
@@ -262,6 +209,38 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) (map[string
 	return domains, nil
 }
 
+// FetchSenderDataByMailbox returns sender data per mailbox for the provided UIDs.
+func (c *Client) FetchSenderDataByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32) (map[string]map[string]MailData, error) {
+	if c.client == nil {
+		return nil, errors.New("IMAP client is not connected")
+	}
+	if len(uidsByMailbox) == 0 {
+		return map[string]map[string]MailData{}, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	results := make(map[string]map[string]MailData)
+	for mailbox, uids := range uidsByMailbox {
+		mailbox = strings.TrimSpace(mailbox)
+		if mailbox == "" {
+			return nil, errors.New("mailbox is required")
+		}
+		if _, err := c.client.Select(mailbox, nil).Wait(); err != nil {
+			return nil, err
+		}
+
+		data, err := c.FetchSenderData(ctx, uids)
+		if err != nil {
+			return nil, err
+		}
+		results[mailbox] = data
+	}
+
+	return results, nil
+}
+
 // MoveUIDs move messages to a different destination folder.
 func (c *Client) MoveUIDs(ctx context.Context, uids []uint32, destination string) error {
 	if c.client == nil {
@@ -287,6 +266,36 @@ func (c *Client) MoveUIDs(ctx context.Context, uids []uint32, destination string
 	}
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	return nil
+}
+
+// MoveByMailbox moves messages for each mailbox to a destination folder.
+func (c *Client) MoveByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32, destination string) error {
+	if c.client == nil {
+		return errors.New("IMAP client is not connected")
+	}
+	if len(uidsByMailbox) == 0 {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(destination) == "" {
+		return errors.New("destination mailbox is required")
+	}
+
+	for mailbox, uids := range uidsByMailbox {
+		mailbox = strings.TrimSpace(mailbox)
+		if mailbox == "" {
+			return errors.New("mailbox is required")
+		}
+		if _, err := c.client.Select(mailbox, nil).Wait(); err != nil {
+			return err
+		}
+		if err := c.MoveUIDs(ctx, uids, destination); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -329,15 +338,128 @@ func (c *Client) DeleteUIDs(ctx context.Context, uids []uint32) error {
 	return err
 }
 
-func combineOr(criteria []imap.SearchCriteria) *imap.SearchCriteria {
+// DeleteByMailbox marks messages as deleted and expunges them per mailbox.
+func (c *Client) DeleteByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32) error {
+	if c.client == nil {
+		return errors.New("IMAP client is not connected")
+	}
+	if len(uidsByMailbox) == 0 {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	for mailbox, uids := range uidsByMailbox {
+		mailbox = strings.TrimSpace(mailbox)
+		if mailbox == "" {
+			return errors.New("mailbox is required")
+		}
+		if _, err := c.client.Select(mailbox, nil).Wait(); err != nil {
+			return err
+		}
+		if err := c.DeleteUIDs(ctx, uids); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func combineAnd(criteria []imap.SearchCriteria) *imap.SearchCriteria {
 	if len(criteria) == 0 {
 		return nil
 	}
 	combined := criteria[0]
 	for i := 1; i < len(criteria); i++ {
-		combined = imap.SearchCriteria{
-			Or: [][2]imap.SearchCriteria{{combined, criteria[i]}},
-		}
+		combined.And(&criteria[i])
 	}
 	return &combined
+}
+
+func buildSearchCriteria(matchers config.Matchers) *imap.SearchCriteria {
+	criteria := &imap.SearchCriteria{}
+
+	if matchers.AgeDays != nil && *matchers.AgeDays > 0 {
+		criteria.Before = time.Now().AddDate(0, 0, -*matchers.AgeDays)
+	}
+
+	if len(matchers.SenderSubstring) > 0 {
+		senderCriteria := make([]imap.SearchCriteria, 0, len(matchers.SenderSubstring))
+		for _, value := range matchers.SenderSubstring {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			senderCriteria = append(senderCriteria, imap.SearchCriteria{
+				Header: []imap.SearchCriteriaHeaderField{{
+					Key:   "From",
+					Value: value,
+				}},
+			})
+		}
+		if combined := combineAnd(senderCriteria); combined != nil {
+			criteria.And(combined)
+		}
+	}
+
+	if len(matchers.Recipients) > 0 {
+		recipientCriteria := make([]imap.SearchCriteria, 0, len(matchers.Recipients))
+		for _, value := range matchers.Recipients {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			to := imap.SearchCriteria{
+				Header: []imap.SearchCriteriaHeaderField{{
+					Key:   "To",
+					Value: value,
+				}},
+			}
+			cc := imap.SearchCriteria{
+				Header: []imap.SearchCriteriaHeaderField{{
+					Key:   "Cc",
+					Value: value,
+				}},
+			}
+			recipientCriteria = append(recipientCriteria, imap.SearchCriteria{
+				Or: [][2]imap.SearchCriteria{{to, cc}},
+			})
+		}
+		if combined := combineAnd(recipientCriteria); combined != nil {
+			criteria.And(combined)
+		}
+	}
+
+	if len(matchers.BodySubstring) > 0 {
+		bodyCriteria := make([]imap.SearchCriteria, 0, len(matchers.BodySubstring))
+		for _, value := range matchers.BodySubstring {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			bodyCriteria = append(bodyCriteria, imap.SearchCriteria{
+				Body: []string{value},
+			})
+		}
+		if combined := combineAnd(bodyCriteria); combined != nil {
+			criteria.And(combined)
+		}
+	}
+
+	if len(matchers.ReplyToSubstring) > 0 {
+		replyToCriteria := make([]imap.SearchCriteria, 0, len(matchers.ReplyToSubstring))
+		for _, value := range matchers.ReplyToSubstring {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			replyToCriteria = append(replyToCriteria, imap.SearchCriteria{
+				Header: []imap.SearchCriteriaHeaderField{{
+					Key:   "Reply-To",
+					Value: value,
+				}},
+			})
+		}
+		if combined := combineAnd(replyToCriteria); combined != nil {
+			criteria.And(combined)
+		}
+	}
+
+	return criteria
 }

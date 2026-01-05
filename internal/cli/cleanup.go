@@ -60,24 +60,24 @@ var cleanupCmd = &cobra.Command{
 			return err
 		}
 
+		client := &imapclient.Client{
+			Addr:     fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
+			Username: imapEnv.User,
+			Password: imapEnv.Pass,
+		}
+
+		if err := client.Connect(); err != nil {
+			return err
+		}
+		defer client.Close()
+
 		for _, rule := range cfg.Rules {
 			mailbox := rule.Matchers.Folders[0]
-			client := &imapclient.Client{
-				Addr:     fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
-				Username: imapEnv.User,
-				Password: imapEnv.Pass,
-				Mailbox:  mailbox,
-			}
-
-			if err := client.Connect(); err != nil {
-				return err
-			}
-			defer client.Close()
-
-			uids, err := client.SearchByMatchers(ctx, rule.Matchers)
+			matched, err := client.SearchByMatchers(ctx, rule.Matchers)
 			if err != nil {
 				return err
 			}
+			uids := matched[mailbox]
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Rule %q mailbox %q matched %d messages\n", rule.Name, mailbox, len(uids))
 
@@ -88,7 +88,7 @@ var cleanupCmd = &cobra.Command{
 						fmt.Fprintf(cmd.OutOrStdout(), "Dry run: would delete %d messages for rule %q\n", len(uids), rule.Name)
 						continue
 					}
-					if err := client.DeleteUIDs(ctx, uids); err != nil {
+					if err := client.DeleteByMailbox(ctx, matched); err != nil {
 						return err
 					}
 				case config.MOVE:
@@ -99,7 +99,7 @@ var cleanupCmd = &cobra.Command{
 						fmt.Fprintf(cmd.OutOrStdout(), "Dry run: would delete %d messages for rule %q\n", len(uids), rule.Name)
 						continue
 					}
-					if err := client.MoveUIDs(ctx, uids, strings.TrimSpace(action.Destination)); err != nil {
+					if err := client.MoveByMailbox(ctx, matched, strings.TrimSpace(action.Destination)); err != nil {
 						return err
 					}
 				default:

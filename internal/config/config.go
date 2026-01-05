@@ -48,11 +48,12 @@ type Rule struct {
 
 // Matchers define the matching criteria for a rule.
 type Matchers struct {
-	AgeDays         *int     `yaml:"age_days"`
-	SenderSubstring []string `yaml:"sender_substring"`
-	Recipients      []string `yaml:"recipients"`
-	BodySubstring   []string `yaml:"body_substring"`
-	Folders         []string `yaml:"folders"`
+	AgeDays          *int     `yaml:"age_days"`
+	SenderSubstring  []string `yaml:"sender_substring"`
+	Recipients       []string `yaml:"recipients"`
+	BodySubstring    []string `yaml:"body_substring"`
+	ReplyToSubstring []string `yaml:"replyto_substring"`
+	Folders          []string `yaml:"folders"`
 }
 
 type ActionName string

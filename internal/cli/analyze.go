@@ -44,33 +44,31 @@ var analyzeCmd = &cobra.Command{
 			ctx = context.Background()
 		}
 
+		client := &imapclient.Client{
+			Addr:     fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
+			Username: imapEnv.User,
+			Password: imapEnv.Pass,
+		}
+		if err := client.Connect(); err != nil {
+			return err
+		}
+		defer client.Close()
+
 		for _, rule := range cfg.Rules {
 			mailbox := rule.Matchers.Folders[0]
-			client := &imapclient.Client{
-				Addr:     fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
-				Username: imapEnv.User,
-				Password: imapEnv.Pass,
-				Mailbox:  mailbox,
-			}
 
-			if err := client.Connect(); err != nil {
-				return err
-			}
-
-			uids, err := client.SearchByMatchers(ctx, rule.Matchers)
+			matched, err := client.SearchByMatchers(ctx, rule.Matchers)
 			if err != nil {
 				_ = client.Close()
 				return err
 			}
 
-			data, err := client.FetchSenderData(ctx, uids)
-			if closeErr := client.Close(); closeErr != nil && err == nil {
-				err = closeErr
-			}
+			dataByMailbox, err := client.FetchSenderDataByMailbox(ctx, matched)
 			if err != nil {
 				return err
 			}
 
+			data := dataByMailbox[mailbox]
 			if len(data) == 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "No sender domains found.")
 				continue
