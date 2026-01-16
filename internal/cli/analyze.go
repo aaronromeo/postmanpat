@@ -73,18 +73,64 @@ var analyzeCmd = &cobra.Command{
 				fmt.Fprintln(cmd.OutOrStdout(), "No sender domains found.")
 				continue
 			}
-			writer := csv.NewWriter(os.Stdout)
-			if err := writer.Write([]string{"SenderDomains", "ReplyToDomains", "Recipients", "Count"}); err != nil {
+			tmpFile, err := os.CreateTemp("", "postmanpat-analyze-*.csv")
+			if err != nil {
+				return err
+			}
+			defer func() {
+				_ = tmpFile.Close()
+			}()
+
+			writer := csv.NewWriter(tmpFile)
+			if err := writer.Write([]string{
+				"SenderDomains",
+				"ReplyToDomains",
+				"Recipients",
+				"ListID",
+				"ListUnsubscribe",
+				"ListUnsubscribeTargets",
+				"PrecedenceRaw",
+				"PrecedenceCategory",
+				"XMailer",
+				"UserAgent",
+				"SubjectRaw",
+				"SubjectNormalized",
+				"Count",
+			}); err != nil {
 				return err
 			}
 			for _, iota := range data {
-				if err := writer.Write([]string{iota.SenderDomains, iota.ReplyToDomains, iota.Recipients, strconv.Itoa(iota.Count)}); err != nil {
+				if err := writer.Write([]string{
+					iota.SenderDomains,
+					iota.ReplyToDomains,
+					iota.Recipients,
+					iota.ListID,
+					strconv.FormatBool(iota.ListUnsubscribe),
+					iota.ListUnsubscribeTargets,
+					iota.PrecedenceRaw,
+					iota.PrecedenceCategory,
+					iota.XMailer,
+					iota.UserAgent,
+					iota.SubjectRaw,
+					iota.SubjectNormalized,
+					strconv.Itoa(iota.Count),
+				}); err != nil {
 					return err
 				}
 			}
 
 			// Write any buffered data to the underlying writer (standard output).
 			writer.Flush()
+			if err := writer.Error(); err != nil {
+				return err
+			}
+			if err := tmpFile.Sync(); err != nil {
+				return err
+			}
+			if err := tmpFile.Close(); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), tmpFile.Name())
 		}
 
 		return nil

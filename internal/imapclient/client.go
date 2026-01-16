@@ -1,16 +1,21 @@
 package imapclient
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"errors"
-	"fmt"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/aaronromeo/postmanpat/internal/config"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/emersion/go-message"
+	"github.com/emersion/go-message/mail"
+	"github.com/emersion/go-message/textproto"
 )
 
 // Client encapsulates an IMAP connection for search operations.
@@ -24,10 +29,19 @@ type Client struct {
 }
 
 type MailData struct {
-	ReplyToDomains string
-	SenderDomains  string
-	Recipients     string
-	Count          int
+	ReplyToDomains         string
+	SenderDomains          string
+	Recipients             string
+	ListID                 string
+	ListUnsubscribe        bool
+	ListUnsubscribeTargets string
+	PrecedenceRaw          string
+	PrecedenceCategory     string
+	XMailer                string
+	UserAgent              string
+	SubjectRaw             string
+	SubjectNormalized      string
+	Count                  int
 }
 
 // Connect establishes the IMAP connection, logs in, and selects the mailbox.
@@ -115,13 +129,13 @@ func (c *Client) SearchByMatchers(ctx context.Context, matchers config.Matchers)
 	return matches, nil
 }
 
-// FetchSenderData returns unique sender domains for the provided UIDs.
-func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) (map[string]MailData, error) {
+// FetchSenderData returns sender data for the provided UIDs.
+func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData, error) {
 	if c.client == nil {
 		return nil, errors.New("IMAP client is not connected")
 	}
 	if len(uids) == 0 {
-		return map[string]MailData{}, nil
+		return []MailData{}, nil
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -132,13 +146,18 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) (map[string
 		uidSet.AddNum(imap.UID(uid))
 	}
 
+	bodySection := &imap.FetchItemBodySection{
+		Specifier:    imap.PartSpecifierHeader,
+		HeaderFields: []string{"List-ID", "List-Unsubscribe", "Precedence", "X-Mailer", "User-Agent"},
+	}
 	fetchOptions := &imap.FetchOptions{
-		Envelope: true,
-		UID:      true,
+		Envelope:    true,
+		UID:         true,
+		BodySection: []*imap.FetchItemBodySection{bodySection},
 	}
 
 	fetchCmd := c.client.Fetch(uidSet, fetchOptions)
-	domains := map[string]MailData{}
+	rows := make([]MailData, 0, len(uids))
 	for {
 		if err := ctx.Err(); err != nil {
 			_ = fetchCmd.Close()
@@ -151,6 +170,7 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) (map[string
 		}
 
 		var envelope *imap.Envelope
+		var header *mail.Header
 		for {
 			item := msg.Next()
 			if item == nil {
@@ -158,6 +178,13 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) (map[string
 			}
 			if data, ok := item.(imapclient.FetchItemDataEnvelope); ok {
 				envelope = data.Envelope
+				continue
+			}
+			if data, ok := item.(imapclient.FetchItemDataBodySection); ok && data.MatchCommand(bodySection) {
+				parsedHeader, err := readHeader(data.Literal)
+				if err == nil {
+					header = parsedHeader
+				}
 			}
 		}
 		if envelope == nil {
@@ -188,40 +215,46 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) (map[string
 		}
 
 		data := MailData{
-			ReplyToDomains: strings.Join(replyToHosts, ","),
-			SenderDomains:  strings.Join(fromHosts, ","),
-			Recipients:     strings.Join(recipients, ","),
+			ReplyToDomains:    strings.Join(replyToHosts, ","),
+			SenderDomains:     strings.Join(fromHosts, ","),
+			Recipients:        strings.Join(recipients, ","),
+			ListID:            headerText(header, "List-ID"),
+			PrecedenceRaw:     headerText(header, "Precedence"),
+			XMailer:           headerText(header, "X-Mailer"),
+			UserAgent:         headerText(header, "User-Agent"),
+			SubjectRaw:        strings.TrimSpace(envelope.Subject),
+			SubjectNormalized: normalizeSubject(envelope.Subject),
+			Count:             1,
 		}
 
-		key := fmt.Sprintf("%v", data)
-		if value, ok := domains[key]; !ok {
-			data.Count = 1
-		} else {
-			data.Count = value.Count + 1
-		}
-		domains[key] = data
+		listUnsubscribeTargets := parseListUnsubscribeTargets(header)
+		data.ListUnsubscribe = len(listUnsubscribeTargets) > 0
+		data.ListUnsubscribeTargets = strings.Join(listUnsubscribeTargets, ",")
+		data.PrecedenceCategory = normalizePrecedence(data.PrecedenceRaw)
+
+		rows = append(rows, data)
 	}
 
 	if err := fetchCmd.Close(); err != nil {
 		return nil, err
 	}
 
-	return domains, nil
+	return rows, nil
 }
 
 // FetchSenderDataByMailbox returns sender data per mailbox for the provided UIDs.
-func (c *Client) FetchSenderDataByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32) (map[string]map[string]MailData, error) {
+func (c *Client) FetchSenderDataByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32) (map[string][]MailData, error) {
 	if c.client == nil {
 		return nil, errors.New("IMAP client is not connected")
 	}
 	if len(uidsByMailbox) == 0 {
-		return map[string]map[string]MailData{}, nil
+		return map[string][]MailData{}, nil
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	results := make(map[string]map[string]MailData)
+	results := make(map[string][]MailData)
 	for mailbox, uids := range uidsByMailbox {
 		mailbox = strings.TrimSpace(mailbox)
 		if mailbox == "" {
@@ -239,6 +272,104 @@ func (c *Client) FetchSenderDataByMailbox(ctx context.Context, uidsByMailbox map
 	}
 
 	return results, nil
+}
+
+func readHeader(literal imap.LiteralReader) (*mail.Header, error) {
+	if literal == nil {
+		return nil, errors.New("missing header literal")
+	}
+	tpHeader, err := textproto.ReadHeader(bufio.NewReader(literal))
+	if err != nil {
+		return nil, err
+	}
+	msgHeader := message.Header{Header: tpHeader}
+	header := mail.Header{Header: msgHeader}
+	return &header, nil
+}
+
+func headerText(header *mail.Header, key string) string {
+	if header == nil {
+		return ""
+	}
+	value, err := header.Text(key)
+	if err != nil {
+		return strings.TrimSpace(header.Get(key))
+	}
+	return strings.TrimSpace(value)
+}
+
+func parseListUnsubscribeTargets(header *mail.Header) []string {
+	if header == nil {
+		return nil
+	}
+	fields := header.FieldsByKey("List-Unsubscribe")
+	if fields.Len() == 0 {
+		return nil
+	}
+
+	targets := make(map[string]struct{})
+	for fields.Next() {
+		value, err := fields.Text()
+		if err != nil {
+			value = fields.Value()
+		}
+		for _, token := range strings.Split(value, ",") {
+			target := strings.TrimSpace(token)
+			target = strings.TrimPrefix(target, "<")
+			target = strings.TrimSuffix(target, ">")
+			if target == "" {
+				continue
+			}
+			targets[target] = struct{}{}
+		}
+	}
+
+	sorted := make([]string, 0, len(targets))
+	for target := range targets {
+		sorted = append(sorted, target)
+	}
+	sort.Strings(sorted)
+	return sorted
+}
+
+func normalizePrecedence(raw string) string {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	switch normalized {
+	case "bulk", "list":
+		return normalized
+	default:
+		return ""
+	}
+}
+
+var (
+	subjectDatePatterns = []*regexp.Regexp{
+		regexp.MustCompile(`\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b`),
+		regexp.MustCompile(`\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b`),
+		regexp.MustCompile(`(?i)\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{1,2}(?:,\s*\d{2,4})?\b`),
+	}
+	subjectCounterPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`\(\s*\d+\s*\)`),
+		regexp.MustCompile(`#\d+`),
+	}
+	subjectNumberPattern = regexp.MustCompile(`\d+`)
+)
+
+func normalizeSubject(subject string) string {
+	normalized := strings.TrimSpace(subject)
+	if normalized == "" {
+		return ""
+	}
+	normalized = strings.ToLower(normalized)
+	for _, pattern := range subjectDatePatterns {
+		normalized = pattern.ReplaceAllString(normalized, "")
+	}
+	for _, pattern := range subjectCounterPatterns {
+		normalized = pattern.ReplaceAllString(normalized, "")
+	}
+	normalized = subjectNumberPattern.ReplaceAllString(normalized, "{{n}}")
+	normalized = strings.Join(strings.Fields(normalized), " ")
+	return normalized
 }
 
 // MoveUIDs move messages to a different destination folder.
