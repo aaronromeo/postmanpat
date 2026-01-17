@@ -2,9 +2,11 @@ package imapclient
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
+	"io"
 	"regexp"
 	"sort"
 	"strings"
@@ -29,9 +31,10 @@ type Client struct {
 }
 
 type MailData struct {
-	ReplyToDomains         string
-	SenderDomains          string
-	Recipients             string
+	ReplyToDomains         []string
+	SenderDomains          []string
+	Recipients             []string
+	RecipientTags          []string
 	ListID                 string
 	ListUnsubscribe        bool
 	ListUnsubscribeTargets string
@@ -41,7 +44,6 @@ type MailData struct {
 	UserAgent              string
 	SubjectRaw             string
 	SubjectNormalized      string
-	Count                  int
 }
 
 // Connect establishes the IMAP connection, logs in, and selects the mailbox.
@@ -180,11 +182,18 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 				envelope = data.Envelope
 				continue
 			}
-			if data, ok := item.(imapclient.FetchItemDataBodySection); ok && data.MatchCommand(bodySection) {
-				parsedHeader, err := readHeader(data.Literal)
-				if err == nil {
-					header = parsedHeader
+			if data, ok := item.(imapclient.FetchItemDataBodySection); ok {
+				if data.Literal == nil {
+					continue
 				}
+				if data.MatchCommand(bodySection) {
+					parsedHeader, err := readHeader(data.Literal)
+					if err == nil {
+						header = parsedHeader
+					}
+					continue
+				}
+				_, _ = io.Copy(io.Discard, data.Literal)
 			}
 		}
 		if envelope == nil {
@@ -210,21 +219,23 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 		}
 
 		recipients := []string{}
+		recipientTags := []string{}
 		for _, addr := range envelope.To {
 			recipients = append(recipients, addr.Addr())
+			recipientTags = append(recipientTags, recipientTag(addr.Addr()))
 		}
 
 		data := MailData{
-			ReplyToDomains:    strings.Join(replyToHosts, ","),
-			SenderDomains:     strings.Join(fromHosts, ","),
-			Recipients:        strings.Join(recipients, ","),
+			ReplyToDomains:    replyToHosts,
+			SenderDomains:     fromHosts,
+			Recipients:        recipients,
+			RecipientTags:     recipientTags,
 			ListID:            headerText(header, "List-ID"),
 			PrecedenceRaw:     headerText(header, "Precedence"),
 			XMailer:           headerText(header, "X-Mailer"),
 			UserAgent:         headerText(header, "User-Agent"),
 			SubjectRaw:        strings.TrimSpace(envelope.Subject),
 			SubjectNormalized: normalizeSubject(envelope.Subject),
-			Count:             1,
 		}
 
 		listUnsubscribeTargets := parseListUnsubscribeTargets(header)
@@ -278,7 +289,11 @@ func readHeader(literal imap.LiteralReader) (*mail.Header, error) {
 	if literal == nil {
 		return nil, errors.New("missing header literal")
 	}
-	tpHeader, err := textproto.ReadHeader(bufio.NewReader(literal))
+	raw, err := io.ReadAll(literal)
+	if err != nil {
+		return nil, err
+	}
+	tpHeader, err := textproto.ReadHeader(bufio.NewReader(bytes.NewReader(raw)))
 	if err != nil {
 		return nil, err
 	}
@@ -346,13 +361,15 @@ var (
 	subjectDatePatterns = []*regexp.Regexp{
 		regexp.MustCompile(`\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b`),
 		regexp.MustCompile(`\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b`),
-		regexp.MustCompile(`(?i)\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{1,2}(?:,\s*\d{2,4})?\b`),
 	}
 	subjectCounterPatterns = []*regexp.Regexp{
 		regexp.MustCompile(`\(\s*\d+\s*\)`),
 		regexp.MustCompile(`#\d+`),
 	}
+	subjectMonthPattern  = regexp.MustCompile(`\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b`)
 	subjectNumberPattern = regexp.MustCompile(`\d+`)
+
+	recipientTagPattern = regexp.MustCompile(`[^a-z0-9]`)
 )
 
 func normalizeSubject(subject string) string {
@@ -364,12 +381,17 @@ func normalizeSubject(subject string) string {
 	for _, pattern := range subjectDatePatterns {
 		normalized = pattern.ReplaceAllString(normalized, "")
 	}
+	normalized = subjectMonthPattern.ReplaceAllString(normalized, "{{mm}}")
 	for _, pattern := range subjectCounterPatterns {
 		normalized = pattern.ReplaceAllString(normalized, "")
 	}
 	normalized = subjectNumberPattern.ReplaceAllString(normalized, "{{n}}")
 	normalized = strings.Join(strings.Fields(normalized), " ")
 	return normalized
+}
+
+func recipientTag(recipient string) string {
+	return recipientTagPattern.ReplaceAllString(strings.ToLower(recipient), "_")
 }
 
 // MoveUIDs move messages to a different destination folder.
