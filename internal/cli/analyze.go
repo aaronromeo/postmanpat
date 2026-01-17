@@ -177,11 +177,12 @@ type analyzeLens struct {
 }
 
 type analyzeCluster struct {
-	ClusterID string                 `json:"cluster_id"`
-	Count     int                    `json:"count"`
-	Keys      map[string]any         `json:"keys"`
-	Signals   analyzeClusterSignals  `json:"signals"`
-	Examples  analyzeClusterExamples `json:"examples"`
+	ClusterID  string                 `json:"cluster_id"`
+	Count      int                    `json:"count"`
+	LatestDate time.Time              `json:"latest_date"`
+	Keys       map[string]any         `json:"keys"`
+	Signals    analyzeClusterSignals  `json:"signals"`
+	Examples   analyzeClusterExamples `json:"examples"`
 }
 
 type analyzeClusterSignals struct {
@@ -216,6 +217,7 @@ type clusterAccumulator struct {
 	hasListID      bool
 	hasUnsubscribe bool
 	precedence     map[string]int
+	latestDate     time.Time
 	examples       analyzeClusterExamples
 	exampleSets    map[string]map[string]struct{}
 }
@@ -477,6 +479,9 @@ func accumulateCluster(acc *clusterAccumulator, item imapclient.MailData, hasLis
 	if !item.ListUnsubscribe {
 		acc.hasUnsubscribe = false
 	}
+	if !item.MessageDate.IsZero() && (acc.latestDate.IsZero() || item.MessageDate.After(acc.latestDate)) {
+		acc.latestDate = item.MessageDate
+	}
 
 	precedence := normalizePrecedenceCategory(item.PrecedenceCategory)
 	acc.precedence[precedence]++
@@ -559,9 +564,10 @@ func finalizeClusters(clusters map[string]*clusterAccumulator, options analyzeOp
 			continue
 		}
 		all = append(all, analyzeCluster{
-			ClusterID: clusterID,
-			Count:     acc.count,
-			Keys:      acc.keys,
+			ClusterID:  clusterID,
+			Count:      acc.count,
+			LatestDate: acc.latestDate,
+			Keys:       acc.keys,
 			Signals: analyzeClusterSignals{
 				HasListID:            acc.hasListID,
 				HasListUnsubscribe:   acc.hasUnsubscribe,

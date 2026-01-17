@@ -26,6 +26,7 @@ func TestBuildAnalyzeReportJSON(t *testing.T) {
 			UserAgent:              "Agent",
 			SubjectRaw:             "Hello 2024",
 			SubjectNormalized:      "hello {{n}}",
+			MessageDate:            time.Date(2024, 1, 10, 12, 0, 0, 0, time.UTC),
 		},
 	}
 
@@ -108,6 +109,17 @@ func TestBuildAnalyzeReportJSON(t *testing.T) {
 	}
 	if listLens["clusters"] == nil {
 		t.Fatal("list_lens.clusters is missing")
+	}
+	clusters, ok := listLens["clusters"].([]any)
+	if !ok || len(clusters) == 0 {
+		t.Fatal("list_lens.clusters is empty or invalid")
+	}
+	cluster, ok := clusters[0].(map[string]any)
+	if !ok {
+		t.Fatal("list_lens cluster is not an object")
+	}
+	if cluster["latest_date"] != "2024-01-10T12:00:00Z" {
+		t.Fatalf("unexpected latest_date: %v", cluster["latest_date"])
 	}
 	if indexes["sender_lens"] == nil {
 		t.Fatal("indexes.sender_lens is missing")

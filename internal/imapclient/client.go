@@ -44,6 +44,7 @@ type MailData struct {
 	UserAgent              string
 	SubjectRaw             string
 	SubjectNormalized      string
+	MessageDate            time.Time
 }
 
 // Connect establishes the IMAP connection, logs in, and selects the mailbox.
@@ -236,6 +237,7 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 			UserAgent:         headerText(header, "User-Agent"),
 			SubjectRaw:        strings.TrimSpace(envelope.Subject),
 			SubjectNormalized: normalizeSubject(envelope.Subject),
+			MessageDate:       envelope.Date,
 		}
 
 		listUnsubscribeTargets := parseListUnsubscribeTargets(header)
