@@ -614,5 +614,23 @@ func buildSearchCriteria(matchers config.Matchers) *imap.SearchCriteria {
 		}
 	}
 
+	if len(matchers.ListIDSubstring) > 0 {
+		listIDCriteria := make([]imap.SearchCriteria, 0, len(matchers.ListIDSubstring))
+		for _, value := range matchers.ListIDSubstring {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			listIDCriteria = append(listIDCriteria, imap.SearchCriteria{
+				Header: []imap.SearchCriteriaHeaderField{{
+					Key:   "List-ID",
+					Value: value,
+				}},
+			})
+		}
+		if combined := combineAnd(listIDCriteria); combined != nil {
+			criteria.And(combined)
+		}
+	}
+
 	return criteria
 }

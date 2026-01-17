@@ -53,6 +53,7 @@ type Matchers struct {
 	Recipients       []string `yaml:"recipients"`
 	BodySubstring    []string `yaml:"body_substring"`
 	ReplyToSubstring []string `yaml:"replyto_substring"`
+	ListIDSubstring  []string `yaml:"list_id_substring"`
 	Folders          []string `yaml:"folders"`
 }
 

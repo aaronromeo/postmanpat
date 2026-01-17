@@ -338,23 +338,6 @@ func (lr *literalReader) Size() int64 {
 	return lr.size
 }
 
-func sampleMessage(from, to, subject, body string) string {
-	builder := &strings.Builder{}
-	builder.WriteString("From: ")
-	builder.WriteString(from)
-	builder.WriteString("\r\n")
-	builder.WriteString("To: ")
-	builder.WriteString(to)
-	builder.WriteString("\r\n")
-	builder.WriteString("Subject: ")
-	builder.WriteString(subject)
-	builder.WriteString("\r\n")
-	builder.WriteString("\r\n")
-	builder.WriteString(body)
-	builder.WriteString("\r\n")
-	return builder.String()
-}
-
 func sampleMessageWithReplyTo(from, to, replyTo, subject, body string) string {
 	builder := &strings.Builder{}
 	builder.WriteString("From: ")
@@ -540,5 +523,39 @@ func testTLSConfig(t *testing.T) *tls.Config {
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		NextProtos:   []string{"imap"},
+	}
+}
+
+func TestBuildSearchCriteriaListIDSubstring(t *testing.T) {
+	matchers := config.Matchers{
+		ListIDSubstring: []string{"list.example.com"},
+	}
+
+	criteria := buildSearchCriteria(matchers)
+	if criteria == nil {
+		t.Fatal("expected criteria")
+	}
+	if len(criteria.Header) != 1 {
+		t.Fatalf("expected 1 header criteria, got %d", len(criteria.Header))
+	}
+	if criteria.Header[0].Key != "List-ID" {
+		t.Fatalf("expected List-ID header key, got %q", criteria.Header[0].Key)
+	}
+	if criteria.Header[0].Value != "list.example.com" {
+		t.Fatalf("expected List-ID header value, got %q", criteria.Header[0].Value)
+	}
+}
+
+func TestBuildSearchCriteriaListIDSubstringSkipsEmpty(t *testing.T) {
+	matchers := config.Matchers{
+		ListIDSubstring: []string{"", "   "},
+	}
+
+	criteria := buildSearchCriteria(matchers)
+	if criteria == nil {
+		t.Fatal("expected criteria")
+	}
+	if len(criteria.Header) != 0 {
+		t.Fatalf("expected no header criteria, got %d", len(criteria.Header))
 	}
 }
