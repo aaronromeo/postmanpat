@@ -67,8 +67,9 @@ const (
 
 // Action defines an operation to apply when a rule matches.
 type Action struct {
-	Type        ActionName `yaml:"type"`
-	Destination string     `yaml:"destination"`
+	Type               ActionName `yaml:"type"`
+	Destination        string     `yaml:"destination"`
+	ExpungeAfterDelete *bool      `yaml:"expunge_after_delete"`
 }
 
 // Reporting configures the reporting output.

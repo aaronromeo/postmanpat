@@ -88,7 +88,11 @@ var cleanupCmd = &cobra.Command{
 						fmt.Fprintf(cmd.OutOrStdout(), "Dry run: would delete %d messages for rule %q\n", len(uids), rule.Name)
 						continue
 					}
-					if err := client.DeleteByMailbox(ctx, matched); err != nil {
+					expungeAfterDelete := true
+					if action.ExpungeAfterDelete != nil {
+						expungeAfterDelete = *action.ExpungeAfterDelete
+					}
+					if err := client.DeleteByMailbox(ctx, matched, expungeAfterDelete); err != nil {
 						return err
 					}
 				case config.MOVE:

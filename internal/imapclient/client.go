@@ -455,8 +455,8 @@ func (c *Client) MoveByMailbox(ctx context.Context, uidsByMailbox map[string][]u
 	return nil
 }
 
-// DeleteUIDs marks messages as deleted and expunges them.
-func (c *Client) DeleteUIDs(ctx context.Context, uids []uint32) error {
+// DeleteUIDs marks messages as deleted and optionally expunges them.
+func (c *Client) DeleteUIDs(ctx context.Context, uids []uint32, expunge bool) error {
 	if c.client == nil {
 		return errors.New("IMAP client is not connected")
 	}
@@ -484,6 +484,9 @@ func (c *Client) DeleteUIDs(ctx context.Context, uids []uint32) error {
 		return err
 	}
 
+	if !expunge {
+		return nil
+	}
 	if c.client.Caps().Has(imap.CapUIDPlus) {
 		_, err := c.client.UIDExpunge(uidSet).Collect()
 		return err
@@ -493,8 +496,8 @@ func (c *Client) DeleteUIDs(ctx context.Context, uids []uint32) error {
 	return err
 }
 
-// DeleteByMailbox marks messages as deleted and expunges them per mailbox.
-func (c *Client) DeleteByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32) error {
+// DeleteByMailbox marks messages as deleted and optionally expunges them per mailbox.
+func (c *Client) DeleteByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32, expunge bool) error {
 	if c.client == nil {
 		return errors.New("IMAP client is not connected")
 	}
@@ -513,7 +516,7 @@ func (c *Client) DeleteByMailbox(ctx context.Context, uidsByMailbox map[string][
 		if _, err := c.client.Select(mailbox, nil).Wait(); err != nil {
 			return err
 		}
-		if err := c.DeleteUIDs(ctx, uids); err != nil {
+		if err := c.DeleteUIDs(ctx, uids, expunge); err != nil {
 			return err
 		}
 	}

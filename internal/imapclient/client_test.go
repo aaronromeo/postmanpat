@@ -148,7 +148,7 @@ func TestDeleteUIDsLocalServer(t *testing.T) {
 			assert.NoError(t, err, "search error")
 			assert.ElementsMatch(t, []uint32{ids.newsUID}, matched["INBOX"], "unexpected matches before delete")
 
-			err = client.DeleteByMailbox(ctx, matched)
+			err = client.DeleteByMailbox(ctx, matched, true)
 			assert.NoError(t, err, "delete error")
 
 			matched, err = client.SearchByMatchers(ctx, target)
@@ -299,7 +299,7 @@ func TestClientReuseAcrossOperations(t *testing.T) {
 	assert.NoError(t, err, "search initial sender")
 	assert.ElementsMatch(t, []uint32{ids.newsUID}, matched["INBOX"], "unexpected initial sender matches")
 
-	err = client.DeleteUIDs(ctx, matched["INBOX"])
+	err = client.DeleteUIDs(ctx, matched["INBOX"], true)
 	assert.NoError(t, err, "delete sender matches")
 
 	matched, err = client.SearchByMatchers(ctx, config.Matchers{
