@@ -559,3 +559,23 @@ func TestBuildSearchCriteriaListIDSubstringSkipsEmpty(t *testing.T) {
 		t.Fatalf("expected no header criteria, got %d", len(criteria.Header))
 	}
 }
+
+func TestBuildSearchCriteriaExcludesDeleted(t *testing.T) {
+	criteria := buildSearchCriteria(config.Matchers{})
+	if criteria == nil {
+		t.Fatal("expected criteria")
+	}
+	if len(criteria.NotFlag) == 0 {
+		t.Fatal("expected NotFlag to include \\Deleted")
+	}
+	found := false
+	for _, flag := range criteria.NotFlag {
+		if flag == imap.FlagDeleted {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected NotFlag to include \\Deleted")
+	}
+}

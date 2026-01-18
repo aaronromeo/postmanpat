@@ -533,6 +533,7 @@ func combineAnd(criteria []imap.SearchCriteria) *imap.SearchCriteria {
 
 func buildSearchCriteria(matchers config.Matchers) *imap.SearchCriteria {
 	criteria := &imap.SearchCriteria{}
+	criteria.NotFlag = append(criteria.NotFlag, imap.FlagDeleted)
 
 	if matchers.AgeDays != nil && *matchers.AgeDays > 0 {
 		criteria.Before = time.Now().AddDate(0, 0, -*matchers.AgeDays)
