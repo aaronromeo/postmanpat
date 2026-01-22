@@ -1,6 +1,6 @@
 rules:
   - name: "Archive newsletters"
-    matchers:
+    server:
       age_days: 30
       folders:
         - "INBOX"

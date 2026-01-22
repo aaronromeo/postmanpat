@@ -41,6 +41,12 @@
 - Checkpoint: per-folder last UID in a separate local file; allow reset/ignore.
 - Reporting: per-rule stats and errors via Slack or Discord webhook.
 
+## IMAP Callback / Watcher (Realtime)
+- Goal: IMAP "callback" equivalent using a long-lived IMAP session with IDLE to trigger rule processing on new inbox mail.
+- Scope: single mailbox (INBOX) only for the watcher; no multi-mailbox support needed initially.
+- Transport: use IDLE only (no polling fallback) for initial implementation.
+- Reliability: handle reconnects with backoff and resume from last UID to avoid missing messages.
+
 ## Deployment (DigitalOcean)
 - Target deployment is a Docker container on DigitalOcean.
 - Decide on hosting form factor (App Platform vs. Droplet) and document environment configuration.

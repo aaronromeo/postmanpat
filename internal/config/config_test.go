@@ -48,11 +48,11 @@ rules: []
 	}
 }
 
-func TestValidateMissingMatcherFolders(t *testing.T) {
+func TestValidateMissingServerFolders(t *testing.T) {
 	path := writeTempFile(t, `
 rules:
   - name: "Rule"
-    matchers: {}
+    server: {}
     actions: []
     archive:
       path_template: "archive/{date}"
@@ -64,9 +64,9 @@ rules:
 	}
 
 	if err := Validate(cfg); err == nil {
-		t.Fatalf("expected validation error for missing matchers.folders")
-	} else if !strings.Contains(err.Error(), "matchers.folders") {
-		t.Fatalf("expected matchers.folders error, got: %v", err)
+		t.Fatalf("expected validation error for missing server.folders")
+	} else if !strings.Contains(err.Error(), "server.folders") {
+		t.Fatalf("expected server.folders error, got: %v", err)
 	}
 }
 
@@ -85,7 +85,7 @@ func TestHappyPath(t *testing.T) {
 	path := writeTempFile(t, `
 rules:
   - name: "Rule"
-    matchers:
+    server:
       folders:
         - "INBOX"
     actions: []

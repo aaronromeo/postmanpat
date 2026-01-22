@@ -46,7 +46,27 @@ PostmanPat is a Go-based email processing and archival system that connects to I
     -h, --help   help for postmanpat
 
     Use "postmanpat [command] --help" for more information about a command.
-   ```
+    ```
+
+### Rule Matchers
+
+Rules now separate server-side and client-side matchers:
+
+```yaml
+rules:
+  - name: "Example"
+    server:
+      age_days: 0
+      folders: ["INBOX"]
+      sender_substring:
+        - "example.com"
+    client:
+      subject_regex:
+        - "(?i)welcome"
+```
+
+- `server` matchers are used for IMAP SEARCH (substring/age/folder).
+- `client` matchers are reserved for post-fetch regex filtering (used by `watch`).
    An example of how to run the cleanup
    `$ bin/postmanpat cleanup --config internal/config/config_onetime_cleanup.yaml`
 

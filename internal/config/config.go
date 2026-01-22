@@ -41,13 +41,37 @@ type IMAPEnv struct {
 // Rule describes a single cleanup rule.
 type Rule struct {
 	Name      string            `yaml:"name"`
-	Matchers  Matchers          `yaml:"matchers"`
 	Actions   []Action          `yaml:"actions"`
 	Variables map[string]string `yaml:"variables"`
+	Server    *ServerMatchers   `yaml:"server"`
+	Client    *ClientMatchers   `yaml:"client"`
 }
 
-// Matchers define the matching criteria for a rule.
-type Matchers struct {
+type ClientMatchers struct {
+	SubjectRegex      []string `yaml:"subject_regex"`
+	BodyRegex         []string `yaml:"body_regex"`
+	SenderRegex       []string `yaml:"sender_regex"`
+	RecipientsRegex   []string `yaml:"recipients_regex"`
+	ReplyToRegex      []string `yaml:"replyto_regex"`
+	ListIDRegex       []string `yaml:"list_id_regex"`
+	RecipientTagRegex []string `yaml:"recipient_tag_regex"`
+}
+
+func (m *ClientMatchers) IsEmpty() bool {
+	if m == nil {
+		return true
+	}
+	return len(m.SubjectRegex) == 0 &&
+		len(m.BodyRegex) == 0 &&
+		len(m.SenderRegex) == 0 &&
+		len(m.RecipientsRegex) == 0 &&
+		len(m.ReplyToRegex) == 0 &&
+		len(m.ListIDRegex) == 0 &&
+		len(m.RecipientTagRegex) == 0
+}
+
+// ServerMatchers define the matching criteria for a rule.
+type ServerMatchers struct {
 	AgeDays          *int     `yaml:"age_days"`
 	SenderSubstring  []string `yaml:"sender_substring"`
 	Recipients       []string `yaml:"recipients"`
@@ -195,8 +219,11 @@ func Validate(cfg Config) error {
 		return errors.New("config must define at least one rule")
 	}
 	for i, rule := range cfg.Rules {
-		if len(rule.Matchers.Folders) == 0 {
-			return fmt.Errorf("rule %d must define matchers.folders", i+1)
+		if rule.Server == nil && rule.Client == nil {
+			return fmt.Errorf("rule %d must define server or client", i+1)
+		}
+		if rule.Server != nil && len(rule.Server.Folders) == 0 {
+			return fmt.Errorf("rule %d must define server.folders", i+1)
 		}
 	}
 	return nil

@@ -38,6 +38,15 @@ var cleanupCmd = &cobra.Command{
 			return err
 		}
 
+		for _, rule := range cfg.Rules {
+			if rule.Client != nil {
+				return fmt.Errorf("rule %q defines client matchers, which are not supported by cleanup", rule.Name)
+			}
+			if rule.Server == nil {
+				return fmt.Errorf("rule %q must define server matchers for cleanup", rule.Name)
+			}
+		}
+
 		if err := config.ValidateEnv(); err != nil {
 			return err
 		}
@@ -72,8 +81,8 @@ var cleanupCmd = &cobra.Command{
 		defer client.Close()
 
 		for _, rule := range cfg.Rules {
-			mailbox := rule.Matchers.Folders[0]
-			matched, err := client.SearchByMatchers(ctx, rule.Matchers)
+			mailbox := rule.Server.Folders[0]
+			matched, err := client.SearchByServerMatchers(ctx, *rule.Server)
 			if err != nil {
 				return err
 			}

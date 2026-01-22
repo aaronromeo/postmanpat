@@ -27,12 +27,12 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 
 	cases := []struct {
 		name     string
-		matchers config.Matchers
+		matchers config.ServerMatchers
 		wantUIDs []uint32
 	}{
 		{
 			name: "match body substrings require all",
-			matchers: config.Matchers{
+			matchers: config.ServerMatchers{
 				Folders:       []string{"INBOX"},
 				BodySubstring: []string{"unsubscribe", "updates"},
 			},
@@ -40,7 +40,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 		},
 		{
 			name: "body substrings fail when missing",
-			matchers: config.Matchers{
+			matchers: config.ServerMatchers{
 				Folders:       []string{"INBOX"},
 				BodySubstring: []string{"unsubscribe", "missing"},
 			},
@@ -48,7 +48,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 		},
 		{
 			name: "match reply-to domain",
-			matchers: config.Matchers{
+			matchers: config.ServerMatchers{
 				Folders:          []string{"INBOX"},
 				ReplyToSubstring: []string{"example.com"},
 			},
@@ -56,9 +56,9 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 		},
 		{
 			name: "match age days",
-			matchers: func() config.Matchers {
+			matchers: func() config.ServerMatchers {
 				age := 1
-				return config.Matchers{
+				return config.ServerMatchers{
 					Folders: []string{"INBOX"},
 					AgeDays: &age,
 				}
@@ -67,7 +67,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 		},
 		{
 			name: "match sender recipient body",
-			matchers: config.Matchers{
+			matchers: config.ServerMatchers{
 				Folders:       []string{"INBOX"},
 				BodySubstring: []string{"unsubscribe"},
 			},
@@ -75,7 +75,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 		},
 		{
 			name: "match sender email",
-			matchers: config.Matchers{
+			matchers: config.ServerMatchers{
 				Folders:         []string{"INBOX"},
 				SenderSubstring: []string{"example.com"},
 			},
@@ -83,7 +83,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 		},
 		{
 			name: "match recipients email",
-			matchers: config.Matchers{
+			matchers: config.ServerMatchers{
 				Folders:    []string{"INBOX"},
 				Recipients: []string{"user@example.com"},
 			},
@@ -91,7 +91,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 		},
 		{
 			name: "no matches",
-			matchers: config.Matchers{
+			matchers: config.ServerMatchers{
 				Folders:         []string{"INBOX"},
 				SenderSubstring: []string{"nope"},
 				Recipients:      []string{"user@example.com"},
@@ -106,7 +106,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			t.Cleanup(cancel)
 
-			matched, err := client.SearchByMatchers(ctx, tc.matchers)
+			matched, err := client.SearchByServerMatchers(ctx, tc.matchers)
 			assert.NoError(t, err, "search error")
 			assert.ElementsMatch(t, tc.wantUIDs, matched["INBOX"], "unexpected UID set")
 		})
@@ -140,26 +140,26 @@ func TestDeleteUIDsLocalServer(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			t.Cleanup(cancel)
 
-			target := config.Matchers{
+			target := config.ServerMatchers{
 				Folders:         []string{"INBOX"},
 				SenderSubstring: []string{"example.com"},
 			}
-			matched, err := client.SearchByMatchers(ctx, target)
+			matched, err := client.SearchByServerMatchers(ctx, target)
 			assert.NoError(t, err, "search error")
 			assert.ElementsMatch(t, []uint32{ids.newsUID}, matched["INBOX"], "unexpected matches before delete")
 
 			err = client.DeleteByMailbox(ctx, matched, true)
 			assert.NoError(t, err, "delete error")
 
-			matched, err = client.SearchByMatchers(ctx, target)
+			matched, err = client.SearchByServerMatchers(ctx, target)
 			assert.NoError(t, err, "search after delete")
 			assert.Empty(t, matched["INBOX"], "expected no matches after delete")
 
-			remaining := config.Matchers{
+			remaining := config.ServerMatchers{
 				Folders:         []string{"INBOX"},
 				SenderSubstring: []string{"example.org"},
 			}
-			matched, err = client.SearchByMatchers(ctx, remaining)
+			matched, err = client.SearchByServerMatchers(ctx, remaining)
 			assert.NoError(t, err, "search remaining")
 			assert.ElementsMatch(t, []uint32{ids.otherUID}, matched["INBOX"], "unexpected remaining matches")
 		})
@@ -212,7 +212,7 @@ func TestMoveByMailboxLocalServer(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			t.Cleanup(cancel)
 
-			_, err := client.SearchByMatchers(ctx, config.Matchers{
+			_, err := client.SearchByServerMatchers(ctx, config.ServerMatchers{
 				Folders: []string{"INBOX"},
 			})
 			assert.NoError(t, err, "select inbox before move")
@@ -224,11 +224,11 @@ func TestMoveByMailboxLocalServer(t *testing.T) {
 			}
 			assert.NoError(t, err, "move error")
 
-			inboxMatchers := config.Matchers{
+			inboxMatchers := config.ServerMatchers{
 				Folders:         []string{"INBOX"},
 				SenderSubstring: []string{"example.com"},
 			}
-			matched, err := client.SearchByMatchers(ctx, inboxMatchers)
+			matched, err := client.SearchByServerMatchers(ctx, inboxMatchers)
 			assert.NoError(t, err, "search inbox after move")
 			assert.Empty(t, matched["INBOX"], "expected no matches in INBOX after move")
 
@@ -245,11 +245,11 @@ func TestMoveByMailboxLocalServer(t *testing.T) {
 					t.Cleanup(func() {
 						_ = archiveClient.Close()
 					})
-					archiveMatchers := config.Matchers{
+					archiveMatchers := config.ServerMatchers{
 						Folders:         []string{tc.destination},
 						SenderSubstring: []string{"example.com"},
 					}
-					matched, err = archiveClient.SearchByMatchers(ctx, archiveMatchers)
+					matched, err = archiveClient.SearchByServerMatchers(ctx, archiveMatchers)
 					assert.NoError(t, err, "search archive after move")
 					assert.Len(t, matched[tc.destination], 1, "expected moved message in destination")
 				}
@@ -275,11 +275,11 @@ func TestSearchByMatchersMultipleFolders(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
 
-	matchers := config.Matchers{
+	matchers := config.ServerMatchers{
 		Folders:         []string{"INBOX", "Archive"},
 		SenderSubstring: []string{"example."},
 	}
-	matched, err := client.SearchByMatchers(ctx, matchers)
+	matched, err := client.SearchByServerMatchers(ctx, matchers)
 	assert.NoError(t, err, "search error")
 	assert.ElementsMatch(t, []uint32{ids.newsUID, ids.otherUID}, matched["INBOX"], "unexpected INBOX matches")
 	assert.Len(t, matched["Archive"], 1, "expected one Archive match")
@@ -292,7 +292,7 @@ func TestClientReuseAcrossOperations(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
 
-	matched, err := client.SearchByMatchers(ctx, config.Matchers{
+	matched, err := client.SearchByServerMatchers(ctx, config.ServerMatchers{
 		Folders:         []string{"INBOX"},
 		SenderSubstring: []string{"example.com"},
 	})
@@ -302,7 +302,7 @@ func TestClientReuseAcrossOperations(t *testing.T) {
 	err = client.DeleteUIDs(ctx, matched["INBOX"], true)
 	assert.NoError(t, err, "delete sender matches")
 
-	matched, err = client.SearchByMatchers(ctx, config.Matchers{
+	matched, err = client.SearchByServerMatchers(ctx, config.ServerMatchers{
 		Folders:         []string{"INBOX"},
 		SenderSubstring: []string{"example.com"},
 	})
@@ -312,7 +312,7 @@ func TestClientReuseAcrossOperations(t *testing.T) {
 	err = client.MoveUIDs(ctx, []uint32{ids.otherUID}, "Archive")
 	assert.NoError(t, err, "move other message")
 
-	matched, err = client.SearchByMatchers(ctx, config.Matchers{
+	matched, err = client.SearchByServerMatchers(ctx, config.ServerMatchers{
 		Folders:         []string{"INBOX"},
 		SenderSubstring: []string{"example.org"},
 	})
@@ -527,7 +527,7 @@ func testTLSConfig(t *testing.T) *tls.Config {
 }
 
 func TestBuildSearchCriteriaListIDSubstring(t *testing.T) {
-	matchers := config.Matchers{
+	matchers := config.ServerMatchers{
 		ListIDSubstring: []string{"list.example.com"},
 	}
 
@@ -547,7 +547,7 @@ func TestBuildSearchCriteriaListIDSubstring(t *testing.T) {
 }
 
 func TestBuildSearchCriteriaListIDSubstringSkipsEmpty(t *testing.T) {
-	matchers := config.Matchers{
+	matchers := config.ServerMatchers{
 		ListIDSubstring: []string{"", "   "},
 	}
 
@@ -561,7 +561,7 @@ func TestBuildSearchCriteriaListIDSubstringSkipsEmpty(t *testing.T) {
 }
 
 func TestBuildSearchCriteriaExcludesDeleted(t *testing.T) {
-	criteria := buildSearchCriteria(config.Matchers{})
+	criteria := buildSearchCriteria(config.ServerMatchers{})
 	if criteria == nil {
 		t.Fatal("expected criteria")
 	}

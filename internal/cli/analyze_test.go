@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -161,5 +164,36 @@ func TestBuildTimeWindow(t *testing.T) {
 	}
 	if window.After != "" {
 		t.Fatalf("expected empty after when age_days is nil, got %q", window.After)
+	}
+}
+
+func TestAnalyzeRejectsClientMatchers(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+rules:
+  - name: "Rule"
+    server:
+      folders:
+        - "INBOX"
+    client:
+      subject_regex:
+        - "hello"
+    actions: []
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	rootCmd.SetArgs([]string{"analyze", "--config", path})
+	var output bytes.Buffer
+	rootCmd.SetOut(&output)
+	rootCmd.SetErr(&output)
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected analyze to fail with client matchers")
+	}
+	if !strings.Contains(err.Error(), "client matchers") {
+		t.Fatalf("expected client matchers error, got: %v", err)
 	}
 }

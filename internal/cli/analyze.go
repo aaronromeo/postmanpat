@@ -38,6 +38,15 @@ var analyzeCmd = &cobra.Command{
 			return err
 		}
 
+		for _, rule := range cfg.Rules {
+			if rule.Client != nil {
+				return fmt.Errorf("rule %q defines client matchers, which are not supported by analyze", rule.Name)
+			}
+			if rule.Server == nil {
+				return fmt.Errorf("rule %q must define server matchers for analyze", rule.Name)
+			}
+		}
+
 		imapEnv, err := config.IMAPEnvFromEnv()
 		if err != nil {
 			return err
@@ -77,9 +86,15 @@ var analyzeCmd = &cobra.Command{
 		}
 
 		for _, rule := range cfg.Rules {
-			mailbox := rule.Matchers.Folders[0]
+			if rule.Client != nil {
+				return fmt.Errorf("rule %q defines client matchers, which are not supported by analyze", rule.Name)
+			}
+			if rule.Server == nil {
+				return fmt.Errorf("rule %q must define server matchers for analyze", rule.Name)
+			}
+			mailbox := rule.Server.Folders[0]
 
-			matched, err := client.SearchByMatchers(ctx, rule.Matchers)
+			matched, err := client.SearchByServerMatchers(ctx, *rule.Server)
 			if err != nil {
 				_ = client.Close()
 				return err
@@ -95,7 +110,7 @@ var analyzeCmd = &cobra.Command{
 				Mailbox:   mailbox,
 				Account:   imapEnv.User,
 				Generated: time.Now().UTC(),
-				AgeDays:   rule.Matchers.AgeDays,
+				AgeDays:   rule.Server.AgeDays,
 				Options:   options,
 			})
 

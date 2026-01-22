@@ -27,6 +27,8 @@ type Client struct {
 	Password  string
 	TLSConfig *tls.Config
 
+	UnilateralDataHandler *imapclient.UnilateralDataHandler
+
 	client *imapclient.Client
 }
 
@@ -56,8 +58,11 @@ func (c *Client) Connect() error {
 		return errors.New("IMAP credentials are required")
 	}
 	var options *imapclient.Options
-	if c.TLSConfig != nil {
-		options = &imapclient.Options{TLSConfig: c.TLSConfig}
+	if c.TLSConfig != nil || c.UnilateralDataHandler != nil {
+		options = &imapclient.Options{
+			TLSConfig:             c.TLSConfig,
+			UnilateralDataHandler: c.UnilateralDataHandler,
+		}
 	}
 
 	client, err := imapclient.DialTLS(c.Addr, options)
@@ -84,9 +89,9 @@ func (c *Client) Close() error {
 	return err
 }
 
-// SearchByMatchers returns UIDs for messages matching the provided matchers via IMAP SEARCH.
+// SearchByServerMatchers returns UIDs for messages matching the provided matchers via IMAP SEARCH.
 // Results are grouped by mailbox to avoid UID collisions across folders.
-func (c *Client) SearchByMatchers(ctx context.Context, matchers config.Matchers) (map[string][]uint32, error) {
+func (c *Client) SearchByServerMatchers(ctx context.Context, matchers config.ServerMatchers) (map[string][]uint32, error) {
 	if c.client == nil {
 		return nil, errors.New("IMAP client is not connected")
 	}
@@ -285,6 +290,28 @@ func (c *Client) FetchSenderDataByMailbox(ctx context.Context, uidsByMailbox map
 	}
 
 	return results, nil
+}
+
+// SelectMailbox selects a mailbox and returns its metadata.
+func (c *Client) SelectMailbox(ctx context.Context, mailbox string) (*imap.SelectData, error) {
+	if c.client == nil {
+		return nil, errors.New("IMAP client is not connected")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(mailbox) == "" {
+		return nil, errors.New("mailbox is required")
+	}
+	return c.client.Select(mailbox, nil).Wait()
+}
+
+// Idle starts an IMAP IDLE command.
+func (c *Client) Idle() (*imapclient.IdleCommand, error) {
+	if c.client == nil {
+		return nil, errors.New("IMAP client is not connected")
+	}
+	return c.client.Idle()
 }
 
 func readHeader(literal imap.LiteralReader) (*mail.Header, error) {
@@ -534,7 +561,7 @@ func combineAnd(criteria []imap.SearchCriteria) *imap.SearchCriteria {
 	return &combined
 }
 
-func buildSearchCriteria(matchers config.Matchers) *imap.SearchCriteria {
+func buildSearchCriteria(matchers config.ServerMatchers) *imap.SearchCriteria {
 	criteria := &imap.SearchCriteria{}
 	criteria.NotFlag = append(criteria.NotFlag, imap.FlagDeleted)
 

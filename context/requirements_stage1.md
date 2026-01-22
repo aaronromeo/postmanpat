@@ -14,7 +14,7 @@
 ## Configuration (YAML)
 - Non-secret configuration only (rules, archive path templates, reporting channel, checkpoint path).
 - Secrets and credentials are provided via environment variables.
-- Rule list with matchers, actions, and archive path template.
+- Rule list with server/client matchers, actions, and archive path template.
 - Reporting configuration for Discord webhook (channel only).
 - Checkpoint file location (separate from main config).
 
@@ -27,11 +27,8 @@
 - Rules are ordered and **apply-all**.
 - Each rule includes folder selection criteria.
 - Matchers:
-  - Age
-  - Sender/domain
-  - Recipient
-  - Body regex (decoded text and decoded HTML)
-  - Folder
+  - Server (IMAP search): age, sender/domain substrings, recipients, body substrings, reply-to substrings, list-id substrings, folders
+  - Client (post-fetch): regex-capable matchers for subject/body/sender/recipient/reply-to/list-id
 - Actions:
   - Archive to Spaces
   - Move to folder
