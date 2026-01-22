@@ -46,4 +46,10 @@ PostmanPat is a Go-based email processing and archival system that connects to I
     -h, --help   help for postmanpat
 
     Use "postmanpat [command] --help" for more information about a command.
-    ```
+   ```
+   An example of how to run the cleanup
+   `$ bin/postmanpat cleanup --config internal/config/config_onetime_cleanup.yaml`
+
+   An example of how to run the analyze script
+   ``
+
