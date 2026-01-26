@@ -32,7 +32,9 @@
 - Config includes IMAP credentials, DO Spaces credentials, rules, and reporting.
 - Scope: process all IMAP folders (Gmail labels treated as folders).
 - Rules: ordered, apply-all; each rule must include folder selection criteria.
-- Matchers: age, sender/domain, recipient, body regex, and folder.
+- Matchers:
+  - Server (IMAP search): age, sender/domain substrings, recipients, body substrings, reply-to substrings, list-id substrings, folders.
+  - Client (post-fetch): regex-capable matchers (subject/body/sender/recipient/reply-to/list-id).
 - Actions: archive to Spaces, move to folder, delete; action order is defined per rule.
 - Archive format: store `.eml` plus decoded `.txt`/`.html` and attachments.
 - Archive path: rule-defined template path with variables.
