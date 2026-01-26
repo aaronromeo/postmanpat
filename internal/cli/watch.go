@@ -31,10 +31,8 @@ var watchCmd = &cobra.Command{
 		if err := config.Validate(cfg); err != nil {
 			return err
 		}
-		for _, rule := range cfg.Rules {
-			if rule.Server != nil {
-				return fmt.Errorf("rule %q defines server matchers, which are not supported by watch", rule.Name)
-			}
+		if err := validateWatchRules(cfg); err != nil {
+			return err
 		}
 
 		imapEnv, err := config.IMAPEnvFromEnv()
@@ -110,4 +108,13 @@ var watchCmd = &cobra.Command{
 func init() {
 	watchCmd.Flags().String("config", "", "Path to YAML config file (or set POSTMANPAT_CONFIG)")
 	watchCmd.Flags().Bool("verbose", false, "Enable verbose logging")
+}
+
+func validateWatchRules(cfg config.Config) error {
+	for _, rule := range cfg.Rules {
+		if rule.Server != nil {
+			return fmt.Errorf("rule %q defines server matchers, which are not supported by watch", rule.Name)
+		}
+	}
+	return nil
 }

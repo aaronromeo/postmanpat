@@ -15,11 +15,11 @@ const (
 	envIMAPPort   = "POSTMANPAT_IMAP_PORT"
 	envIMAPUser   = "POSTMANPAT_IMAP_USER"
 	envIMAPPass   = "POSTMANPAT_IMAP_PASS"
-	envDOEndpoint = "POSTMANPAT_DO_ENDPOINT"
-	envDORegion   = "POSTMANPAT_DO_REGION"
-	envDOBucket   = "POSTMANPAT_DO_BUCKET"
-	envDOKey      = "POSTMANPAT_DO_KEY"
-	envDOSecret   = "POSTMANPAT_DO_SECRET"
+	envS3Endpoint = "POSTMANPAT_S3_ENDPOINT"
+	envS3Region   = "POSTMANPAT_S3_REGION"
+	envS3Bucket   = "POSTMANPAT_S3_BUCKET"
+	envS3Key      = "POSTMANPAT_S3_KEY"
+	envS3Secret   = "POSTMANPAT_S3_SECRET"
 	envWebhookURL = "POSTMANPAT_WEBHOOK_URL"
 )
 
@@ -197,11 +197,11 @@ func requiredEnvVars() []string {
 		envIMAPPort,
 		envIMAPUser,
 		envIMAPPass,
-		envDOEndpoint,
-		envDORegion,
-		envDOBucket,
-		envDOKey,
-		envDOSecret,
+		envS3Endpoint,
+		envS3Region,
+		envS3Bucket,
+		envS3Key,
+		envS3Secret,
 		envWebhookURL,
 	}
 }

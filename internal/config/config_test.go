@@ -12,11 +12,11 @@ func TestValidateEnvMissing(t *testing.T) {
 	t.Setenv(envIMAPPort, "")
 	t.Setenv(envIMAPUser, "")
 	t.Setenv(envIMAPPass, "")
-	t.Setenv(envDOEndpoint, "")
-	t.Setenv(envDORegion, "")
-	t.Setenv(envDOBucket, "")
-	t.Setenv(envDOKey, "")
-	t.Setenv(envDOSecret, "")
+	t.Setenv(envS3Endpoint, "")
+	t.Setenv(envS3Region, "")
+	t.Setenv(envS3Bucket, "")
+	t.Setenv(envS3Key, "")
+	t.Setenv(envS3Secret, "")
 	t.Setenv(envWebhookURL, "")
 
 	if err := ValidateEnv(); err == nil {
@@ -75,11 +75,11 @@ func TestHappyPath(t *testing.T) {
 	t.Setenv(envIMAPPort, "993")
 	t.Setenv(envIMAPUser, "user@example.com")
 	t.Setenv(envIMAPPass, "password")
-	t.Setenv(envDOEndpoint, "https://nyc3.digitaloceanspaces.com")
-	t.Setenv(envDORegion, "nyc3")
-	t.Setenv(envDOBucket, "postmanpat-archive")
-	t.Setenv(envDOKey, "key")
-	t.Setenv(envDOSecret, "secret")
+	t.Setenv(envS3Endpoint, "https://nyc3.digitaloceanspaces.com")
+	t.Setenv(envS3Region, "nyc3")
+	t.Setenv(envS3Bucket, "postmanpat-archive")
+	t.Setenv(envS3Key, "key")
+	t.Setenv(envS3Secret, "secret")
 	t.Setenv(envWebhookURL, "https://example.com/webhook")
 
 	path := writeTempFile(t, `

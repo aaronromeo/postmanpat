@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aaronromeo/postmanpat/internal/config"
 )
 
 func TestWatchRejectsServerMatchers(t *testing.T) {
@@ -33,5 +35,22 @@ rules:
 	}
 	if !strings.Contains(err.Error(), "server matchers") {
 		t.Fatalf("expected server matchers error, got: %v", err)
+	}
+}
+
+func TestWatchAcceptsClientMatchers(t *testing.T) {
+	cfg := config.Config{
+		Rules: []config.Rule{
+			{
+				Name: "Rule",
+				Client: &config.ClientMatchers{
+					SubjectRegex: []string{"hello"},
+				},
+			},
+		},
+	}
+
+	if err := validateWatchRules(cfg); err != nil {
+		t.Fatalf("expected client matchers to be accepted, got: %v", err)
 	}
 }

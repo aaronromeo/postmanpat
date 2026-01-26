@@ -1,0 +1,32 @@
+services:
+  postmanpat:
+    build: .
+    environment:
+      POSTMANPAT_CONFIG: /config/config_cleanup.yaml
+      POSTMANPAT_IMAP_HOST: ${POSTMANPAT_IMAP_HOST}
+      POSTMANPAT_IMAP_PORT: ${POSTMANPAT_IMAP_PORT}
+      POSTMANPAT_IMAP_USER: ${POSTMANPAT_IMAP_USER}
+      POSTMANPAT_IMAP_PASS: ${POSTMANPAT_IMAP_PASS}
+      POSTMANPAT_S3_ENDPOINT: ${POSTMANPAT_S3_ENDPOINT}
+      POSTMANPAT_S3_REGION: ${POSTMANPAT_S3_REGION}
+      POSTMANPAT_S3_BUCKET: ${POSTMANPAT_S3_BUCKET}
+      POSTMANPAT_S3_KEY: ${POSTMANPAT_S3_KEY}
+      POSTMANPAT_S3_SECRET: ${POSTMANPAT_S3_SECRET}
+      POSTMANPAT_WEBHOOK_URL: ${POSTMANPAT_WEBHOOK_URL}
+    volumes:
+      - ./config:/config:ro
+    restart: unless-stopped
+
+  postmanpat-watch:
+    build: .
+    command: ["postmanpat", "watch"]
+    environment:
+      POSTMANPAT_IMAP_HOST: ${POSTMANPAT_IMAP_HOST}
+      POSTMANPAT_IMAP_PORT: ${POSTMANPAT_IMAP_PORT}
+      POSTMANPAT_IMAP_USER: ${POSTMANPAT_IMAP_USER}
+      POSTMANPAT_IMAP_PASS: ${POSTMANPAT_IMAP_PASS}
+      POSTMANPAT_WEBHOOK_URL: ${POSTMANPAT_WEBHOOK_URL}
+      POSTMANPAT_CONFIG: /config/config_watch.yaml
+    volumes:
+      - ./config:/config:ro
+    restart: unless-stopped

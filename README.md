@@ -13,7 +13,7 @@ PostmanPat is a Go-based email processing and archival system that connects to I
    ```
 
 2. **Set up environment**
-   Edit .env with your configuration. The env vars `POSTMANPAT_IMAP_HOST`, `POSTMANPAT_IMAP_PORT`, `POSTMANPAT_IMAP_USER`, `POSTMANPAT_IMAP_PASS`, `POSTMANPAT_DO_ENDPOINT`, `POSTMANPAT_DO_REGION`, `POSTMANPAT_DO_BUCKET`, `POSTMANPAT_DO_KEY`, `POSTMANPAT_DO_SECRET`, `POSTMANPAT_WEBHOOK_URL` are required.
+   Edit .env with your configuration. The env vars `POSTMANPAT_IMAP_HOST`, `POSTMANPAT_IMAP_PORT`, `POSTMANPAT_IMAP_USER`, `POSTMANPAT_IMAP_PASS`, `POSTMANPAT_S3_ENDPOINT`, `POSTMANPAT_S3_REGION`, `POSTMANPAT_S3_BUCKET`, `POSTMANPAT_S3_KEY`, `POSTMANPAT_S3_SECRET`, `POSTMANPAT_WEBHOOK_URL` are required.
 
    ```bash
    cp .env.sample .env
@@ -73,3 +73,29 @@ rules:
    An example of how to run the analyze script
    ``
 
+### Docker (Cleanup Cron)
+
+This setup runs `postmanpat cleanup` every 15 minutes inside the container using cron.
+
+1. **Create a config file**
+   - Place your cleanup config at `./config/config.yaml` (mounted to `/config/config.yaml` in the container).
+
+2. **Set required environment variables**
+   - Required IMAP and reporting/Spaces env vars:
+     - `POSTMANPAT_IMAP_HOST`
+     - `POSTMANPAT_IMAP_PORT`
+     - `POSTMANPAT_IMAP_USER`
+     - `POSTMANPAT_IMAP_PASS`
+     - `POSTMANPAT_S3_ENDPOINT`
+     - `POSTMANPAT_S3_REGION`
+     - `POSTMANPAT_S3_BUCKET`
+     - `POSTMANPAT_S3_KEY`
+     - `POSTMANPAT_S3_SECRET`
+     - `POSTMANPAT_WEBHOOK_URL`
+   - The container also expects:
+     - `POSTMANPAT_CONFIG` (set by compose to `/config/config.yaml`)
+
+3. **Run with docker-compose**
+   ```bash
+   docker compose up --build
+   ```
