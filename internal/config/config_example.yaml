@@ -1,7 +1,8 @@
 rules:
   - name: "Archive newsletters"
     server:
-      age_days: 30
+      age_window:
+        max: "30d"
       folders:
         - "INBOX"
       sender_substring:

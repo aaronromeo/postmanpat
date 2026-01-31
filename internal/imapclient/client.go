@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"regexp"
 	"sort"
@@ -113,7 +114,10 @@ func (c *Client) SearchByServerMatchers(ctx context.Context, matchers config.Ser
 			return nil, err
 		}
 
-		criteria := buildSearchCriteria(matchers)
+		criteria, err := buildSearchCriteria(matchers)
+		if err != nil {
+			return nil, err
+		}
 
 		data, err := c.client.UIDSearch(criteria, nil).Wait()
 		if err != nil {
@@ -561,12 +565,25 @@ func combineAnd(criteria []imap.SearchCriteria) *imap.SearchCriteria {
 	return &combined
 }
 
-func buildSearchCriteria(matchers config.ServerMatchers) *imap.SearchCriteria {
+func buildSearchCriteria(matchers config.ServerMatchers) (*imap.SearchCriteria, error) {
 	criteria := &imap.SearchCriteria{}
 	criteria.NotFlag = append(criteria.NotFlag, imap.FlagDeleted)
 
-	if matchers.AgeDays != nil && *matchers.AgeDays > 0 {
-		criteria.Before = time.Now().AddDate(0, 0, -*matchers.AgeDays)
+	if matchers.AgeWindow != nil && !matchers.AgeWindow.IsEmpty() {
+		if strings.TrimSpace(matchers.AgeWindow.Max) != "" {
+			dur, err := config.ParseRelativeDuration(matchers.AgeWindow.Max)
+			if err != nil {
+				return nil, fmt.Errorf("invalid age_window.max: %w", err)
+			}
+			criteria.Since = time.Now().Add(-dur)
+		}
+		if strings.TrimSpace(matchers.AgeWindow.Min) != "" {
+			dur, err := config.ParseRelativeDuration(matchers.AgeWindow.Min)
+			if err != nil {
+				return nil, fmt.Errorf("invalid age_window.min: %w", err)
+			}
+			criteria.Before = time.Now().Add(-dur)
+		}
 	}
 
 	if len(matchers.SenderSubstring) > 0 {
@@ -665,5 +682,5 @@ func buildSearchCriteria(matchers config.ServerMatchers) *imap.SearchCriteria {
 		}
 	}
 
-	return criteria
+	return criteria, nil
 }

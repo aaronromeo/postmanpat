@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -70,15 +71,76 @@ func (m *ClientMatchers) IsEmpty() bool {
 		len(m.RecipientTagRegex) == 0
 }
 
+type AgeWindow struct {
+	Min string `yaml:"min"`
+	Max string `yaml:"max"`
+}
+
+func (a *AgeWindow) IsEmpty() bool {
+	if a == nil {
+		return true
+	}
+	return strings.TrimSpace(a.Min) == "" && strings.TrimSpace(a.Max) == ""
+}
+
 // ServerMatchers define the matching criteria for a rule.
 type ServerMatchers struct {
-	AgeDays          *int     `yaml:"age_days"`
-	SenderSubstring  []string `yaml:"sender_substring"`
-	Recipients       []string `yaml:"recipients"`
-	BodySubstring    []string `yaml:"body_substring"`
-	ReplyToSubstring []string `yaml:"replyto_substring"`
-	ListIDSubstring  []string `yaml:"list_id_substring"`
-	Folders          []string `yaml:"folders"`
+	AgeWindow        *AgeWindow `yaml:"age_window"`
+	SenderSubstring  []string   `yaml:"sender_substring"`
+	Recipients       []string   `yaml:"recipients"`
+	BodySubstring    []string   `yaml:"body_substring"`
+	ReplyToSubstring []string   `yaml:"replyto_substring"`
+	ListIDSubstring  []string   `yaml:"list_id_substring"`
+	Folders          []string   `yaml:"folders"`
+}
+
+func ParseRelativeDuration(value string) (time.Duration, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return 0, nil
+	}
+	if strings.HasSuffix(trimmed, "d") {
+		daysValue := strings.TrimSuffix(trimmed, "d")
+		days, err := strconv.ParseFloat(strings.TrimSpace(daysValue), 64)
+		if err != nil {
+			return 0, err
+		}
+		if days < 0 {
+			return 0, errors.New("duration must be positive")
+		}
+		return time.Duration(days * float64(24*time.Hour)), nil
+	}
+	dur, err := time.ParseDuration(trimmed)
+	if err != nil {
+		return 0, err
+	}
+	if dur < 0 {
+		return 0, errors.New("duration must be positive")
+	}
+	return dur, nil
+}
+
+func AgeWindowBounds(now time.Time, window *AgeWindow) (string, string, error) {
+	after := now.Format(time.RFC3339)
+	before := ""
+	if window == nil {
+		return after, before, nil
+	}
+	if strings.TrimSpace(window.Max) != "" {
+		dur, err := ParseRelativeDuration(window.Max)
+		if err != nil {
+			return "", "", fmt.Errorf("invalid age_window.max: %w", err)
+		}
+		after = now.Add(-dur).Format(time.RFC3339)
+	}
+	if strings.TrimSpace(window.Min) != "" {
+		dur, err := ParseRelativeDuration(window.Min)
+		if err != nil {
+			return "", "", fmt.Errorf("invalid age_window.min: %w", err)
+		}
+		before = now.Add(-dur).Format(time.RFC3339)
+	}
+	return after, before, nil
 }
 
 type ActionName string

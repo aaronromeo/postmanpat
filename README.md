@@ -56,7 +56,9 @@ Rules now separate server-side and client-side matchers:
 rules:
   - name: "Example"
     server:
-      age_days: 0
+      age_window:
+        min: "24h" # at least 24 hours old
+        max: "7d"  # at most 7 days old
       folders: ["INBOX"]
       sender_substring:
         - "example.com"
@@ -67,11 +69,8 @@ rules:
 
 - `server` matchers are used for IMAP SEARCH (substring/age/folder).
 - `client` matchers are reserved for post-fetch regex filtering (used by `watch`).
-   An example of how to run the cleanup
-   `$ bin/postmanpat cleanup --config internal/config/config_onetime_cleanup.yaml`
-
-   An example of how to run the analyze script
-   ``
+- `age_window` uses IMAP INTERNALDATE, not the message `Date:` header.
+- `age_window` defines a bounded range: `min` is the minimum age (older than), `max` is the maximum age (newer than).
 
 ### Docker (Cleanup Cron)
 
