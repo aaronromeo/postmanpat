@@ -110,7 +110,9 @@ var watchCmd = &cobra.Command{
 						for _, message := range data {
 							for _, rule := range cfg.Rules {
 								ok, err := matchers.MatchesClient(rule.Client, matchers.ClientMessage{
-									ListID: message.ListID,
+									ListID:         message.ListID,
+									SenderDomains:  message.SenderDomains,
+									ReplyToDomains: message.ReplyToDomains,
 								})
 								if err != nil {
 									return err

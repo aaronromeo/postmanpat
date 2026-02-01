@@ -39,3 +39,41 @@ func TestMatchesClientListIDRegexNoMatch(t *testing.T) {
 		t.Fatal("expected list_id_regex to not match ListID")
 	}
 }
+
+func TestMatchesClientSenderAndReplyToRegex(t *testing.T) {
+	matchers := &config.ClientMatchers{
+		SenderRegex:  []string{`ghost\.io`},
+		ReplyToRegex: []string{`404media\.co`},
+	}
+	data := ClientMessage{
+		SenderDomains:  []string{"news.ghost.io"},
+		ReplyToDomains: []string{"404media.co"},
+	}
+
+	ok, err := MatchesClient(matchers, data)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected sender_regex and replyto_regex to both match")
+	}
+}
+
+func TestMatchesClientSenderAndReplyToRegexRequiresBoth(t *testing.T) {
+	matchers := &config.ClientMatchers{
+		SenderRegex:  []string{`ghost\.io`},
+		ReplyToRegex: []string{`404media\.co`},
+	}
+	data := ClientMessage{
+		SenderDomains:  []string{"news.ghost.io"},
+		ReplyToDomains: []string{"example.com"},
+	}
+
+	ok, err := MatchesClient(matchers, data)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if ok {
+		t.Fatal("expected sender_regex and replyto_regex to require both matches")
+	}
+}
