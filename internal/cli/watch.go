@@ -6,6 +6,7 @@ import (
 
 	"github.com/aaronromeo/postmanpat/internal/config"
 	"github.com/aaronromeo/postmanpat/internal/imapclient"
+	"github.com/aaronromeo/postmanpat/internal/matchers"
 	imapclientv2 "github.com/emersion/go-imap/v2/imapclient"
 	"github.com/spf13/cobra"
 )
@@ -75,6 +76,10 @@ var watchCmd = &cobra.Command{
 		}
 
 		lastCount := selection.NumMessages
+		lastUID := uint32(0)
+		if selection.UIDNext > 0 {
+			lastUID = uint32(selection.UIDNext - 1)
+		}
 		fmt.Fprintf(cmd.OutOrStdout(), "watching INBOX (messages=%d)\n", lastCount)
 
 		for {
@@ -93,6 +98,30 @@ var watchCmd = &cobra.Command{
 				}
 				if newCount > lastCount {
 					fmt.Fprintf(cmd.OutOrStdout(), "new mail detected (messages=%d)\n", newCount)
+					uids, err := client.SearchUIDsNewerThan(ctx, lastUID)
+					if err != nil {
+						return err
+					}
+					if len(uids) > 0 {
+						data, err := client.FetchSenderData(ctx, uids)
+						if err != nil {
+							return err
+						}
+						for _, message := range data {
+							for _, rule := range cfg.Rules {
+								ok, err := matchers.MatchesClient(rule.Client, matchers.ClientMessage{
+									ListID: message.ListID,
+								})
+								if err != nil {
+									return err
+								}
+								if ok {
+									fmt.Fprintf(cmd.OutOrStdout(), "rule %q matched list_id=%q\n", rule.Name, message.ListID)
+								}
+							}
+						}
+						lastUID = maxUID(lastUID, uids)
+					}
 				}
 				lastCount = newCount
 				fmt.Fprintln(cmd.OutOrStdout(), "ready for next update")
@@ -117,4 +146,14 @@ func validateWatchRules(cfg config.Config) error {
 		}
 	}
 	return nil
+}
+
+func maxUID(current uint32, uids []uint32) uint32 {
+	max := current
+	for _, uid := range uids {
+		if uid > max {
+			max = uid
+		}
+	}
+	return max
 }
