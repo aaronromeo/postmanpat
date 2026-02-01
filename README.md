@@ -72,6 +72,13 @@ rules:
 - `age_window` uses IMAP INTERNALDATE, not the message `Date:` header.
 - `age_window` defines a bounded range: `min` is the minimum age (older than), `max` is the maximum age (newer than).
 
+### Reporting and Checkpoint
+
+These config blocks are not required for client matchers (watch) today, but they remain part of the config format.
+
+- `reporting.channel` identifies the reporting target (for example, `discord` or `slack`). It is reserved for future reporting output; the webhook URL is still provided via `POSTMANPAT_WEBHOOK_URL`.
+- `checkpoint.path` is intended to store per-folder UID progress for long-running cleanup jobs. It is not currently used by `watch` or `cleanup`, but it is kept in the config for upcoming checkpointing support.
+
 ### Docker (Cleanup Cron)
 
 This setup runs `postmanpat cleanup` every 15 minutes inside the container using cron.
