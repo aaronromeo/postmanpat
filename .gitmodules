@@ -1,0 +1,3 @@
+[submodule "announcements"]
+	path = announcements
+	url = git@github.com:aaronromeo/announcements.git

@@ -74,19 +74,22 @@ rules:
 
 ### Reporting and Checkpoint
 
-These config blocks are not required for client matchers (watch) today, but they remain part of the config format.
-
-- `reporting.channel` identifies the reporting target (for example, `discord` or `slack`). It is reserved for future reporting output; the webhook URL is still provided via `POSTMANPAT_WEBHOOK_URL`.
+- Reporting is enabled when `POSTMANPAT_WEBHOOK_URL` is set. No YAML config is needed for reporting.
 - `checkpoint.path` is intended to store per-folder UID progress for long-running cleanup jobs. It is not currently used by `watch` or `cleanup`, but it is kept in the config for upcoming checkpointing support.
 
 ### Docker (Cleanup Cron)
 
 This setup runs `postmanpat cleanup` every 15 minutes inside the container using cron.
 
-1. **Create a config file**
+1. **Initialize submodules**
+   ```bash
+   git submodule update --init --recursive
+   ```
+
+2. **Create a config file**
    - Place your cleanup config at `./config/config.yaml` (mounted to `/config/config.yaml` in the container).
 
-2. **Set required environment variables**
+3. **Set required environment variables**
    - Required IMAP and reporting/Spaces env vars:
      - `POSTMANPAT_IMAP_HOST`
      - `POSTMANPAT_IMAP_PORT`
@@ -101,7 +104,7 @@ This setup runs `postmanpat cleanup` every 15 minutes inside the container using
    - The container also expects:
      - `POSTMANPAT_CONFIG` (set by compose to `/config/config.yaml`)
 
-3. **Run with docker-compose**
+4. **Run with docker-compose**
    ```bash
    docker compose up --build
    ```

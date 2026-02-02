@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aaronromeo/postmanpat/internal/config"
 	"github.com/aaronromeo/postmanpat/internal/imapclient"
@@ -15,6 +17,7 @@ import (
 
 const configEnvVar = "POSTMANPAT_CONFIG"
 const defaultEnvFile = ".env"
+const webhookAnnouncePath = "/announcements"
 
 var cleanupCmd = &cobra.Command{
 	Use:   "cleanup",
@@ -89,6 +92,11 @@ var cleanupCmd = &cobra.Command{
 			uids := matched[mailbox]
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Rule %q mailbox %q matched %d messages\n", rule.Name, mailbox, len(uids))
+			if len(uids) > 0 {
+				if err := postAnnouncement(rule.Name, mailbox, len(uids)); err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "reporting failed for rule %q mailbox %q: %v\n", rule.Name, mailbox, err)
+				}
+			}
 
 			for _, action := range rule.Actions {
 				switch action.Type {
@@ -152,4 +160,32 @@ func loadEnvFile() error {
 		return err
 	}
 	return godotenv.Load(defaultEnvFile)
+}
+
+func postAnnouncement(ruleName, mailbox string, count int) error {
+	if !config.ReportingEnabled() {
+		return nil
+	}
+	baseURL := strings.TrimSpace(os.Getenv("POSTMANPAT_WEBHOOK_URL"))
+	if baseURL == "" {
+		return nil
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+	message := fmt.Sprintf("Rule %q mailbox %q matched %d messages\n", ruleName, mailbox, count)
+	payload := fmt.Sprintf("{\"message\": %q}", message)
+	req, err := http.NewRequest("POST", baseURL+webhookAnnouncePath, strings.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("reporting webhook returned status %s", resp.Status)
+	}
+	return nil
 }

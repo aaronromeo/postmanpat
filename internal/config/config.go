@@ -27,7 +27,6 @@ const (
 // Config holds non-secret configuration loaded from YAML.
 type Config struct {
 	Rules      []Rule     `yaml:"rules"`
-	Reporting  Reporting  `yaml:"reporting"`
 	Checkpoint Checkpoint `yaml:"checkpoint"`
 }
 
@@ -158,11 +157,6 @@ type Action struct {
 	ExpungeAfterDelete *bool      `yaml:"expunge_after_delete"`
 }
 
-// Reporting configures the reporting output.
-type Reporting struct {
-	Channel string `yaml:"channel"`
-}
-
 // Checkpoint configures checkpoint storage.
 type Checkpoint struct {
 	Path string `yaml:"path"`
@@ -242,15 +236,24 @@ func IMAPEnvFromEnv() (IMAPEnv, error) {
 
 // Summary returns a concise config summary for validation runs.
 func Summary(cfg Config) string {
+	reportingStatus := "disabled"
+	if ReportingEnabled() {
+		reportingStatus = "enabled"
+	}
 	return fmt.Sprintf(
 		"Config summary\n"+
 			"- rules: %d\n"+
-			"- reporting channel: %s\n"+
+			"- reporting webhook: %s\n"+
 			"- checkpoint path: %s",
 		len(cfg.Rules),
-		defaultIfEmpty(cfg.Reporting.Channel, "(not set)"),
+		reportingStatus,
 		defaultIfEmpty(cfg.Checkpoint.Path, "(not set)"),
 	)
+}
+
+// ReportingEnabled returns true when a webhook URL is configured via env var.
+func ReportingEnabled() bool {
+	return strings.TrimSpace(os.Getenv(envWebhookURL)) != ""
 }
 
 func requiredEnvVars() []string {

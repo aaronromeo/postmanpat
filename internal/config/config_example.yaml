@@ -14,7 +14,5 @@ rules:
       - type: "delete"
     archive:
       path_template: "{date}/{from_domain}"
-reporting:
-  channel: "discord"
 checkpoint:
   path: "state/checkpoint.yaml"

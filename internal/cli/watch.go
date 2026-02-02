@@ -3,6 +3,10 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"os"
+	"strings"
+	"time"
 
 	"github.com/aaronromeo/postmanpat/internal/config"
 	"github.com/aaronromeo/postmanpat/internal/imapclient"
@@ -108,6 +112,7 @@ var watchCmd = &cobra.Command{
 							return err
 						}
 						for _, message := range data {
+							matchedAny := false
 							for _, rule := range cfg.Rules {
 								ok, err := matchers.MatchesClient(rule.Client, matchers.ClientMessage{
 									ListID:         message.ListID,
@@ -118,7 +123,17 @@ var watchCmd = &cobra.Command{
 									return err
 								}
 								if ok {
+									matchedAny = true
 									fmt.Fprintf(cmd.OutOrStdout(), "rule %q matched list_id=%q\n", rule.Name, message.ListID)
+									if err := postWatchAnnouncement(rule.Name); err != nil {
+										fmt.Fprintf(cmd.ErrOrStderr(), "reporting failed for rule %q: %v\n", rule.Name, err)
+									}
+								}
+							}
+							if !matchedAny {
+								fmt.Fprintln(cmd.OutOrStdout(), "no rule matched")
+								if err := postWatchAnnouncement(""); err != nil {
+									fmt.Fprintf(cmd.ErrOrStderr(), "reporting failed for no-match: %v\n", err)
 								}
 							}
 						}
@@ -158,4 +173,35 @@ func maxUID(current uint32, uids []uint32) uint32 {
 		}
 	}
 	return max
+}
+
+func postWatchAnnouncement(ruleName string) error {
+	if !config.ReportingEnabled() {
+		return nil
+	}
+	baseURL := strings.TrimSpace(os.Getenv("POSTMANPAT_WEBHOOK_URL"))
+	if baseURL == "" {
+		return nil
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+	message := "no rule matched"
+	if strings.TrimSpace(ruleName) != "" {
+		message = fmt.Sprintf("rule %q matched", ruleName)
+	}
+	payload := fmt.Sprintf("{\"message\": %q}", message)
+	req, err := http.NewRequest("POST", baseURL+"/announcements", strings.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("reporting webhook returned status %s", resp.Status)
+	}
+	return nil
 }
