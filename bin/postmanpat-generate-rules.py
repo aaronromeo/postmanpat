@@ -213,9 +213,10 @@ def build_watch_rule_sender(cluster: Dict[str, Any], name: str) -> Optional[Dict
     }
     reply_defaults = cluster.get("examples", {}).get("reply_to_domains", []) or []
     reply_defaults = [escape_regex(str(value)) for value in reply_defaults]
-    reply_values = prompt_optional_list("replyto_regex", reply_defaults)
-    if reply_values is not None:
-        rule["client"]["replyto_regex"] = reply_values
+    if reply_defaults:
+        reply_values = prompt_optional_list("replyto_regex", reply_defaults)
+        if reply_values is not None:
+            rule["client"]["replyto_regex"] = reply_values
     recipients_defaults = cluster.get("examples", {}).get("recipients", []) or []
     recipients_defaults = [escape_regex(str(value)) for value in recipients_defaults]
     recipients_values = prompt_optional_list(
@@ -243,9 +244,10 @@ def build_cleanup_rule_sender(cluster: Dict[str, Any], name: str, default_folder
         "actions": [prompt_rule_action()],
     }
     reply_defaults = cluster.get("examples", {}).get("reply_to_domains", []) or []
-    reply_values = prompt_optional_list("replyto_substring", [str(value) for value in reply_defaults])
-    if reply_values is not None:
-        rule["server"]["replyto_substring"] = reply_values
+    if reply_defaults:
+        reply_values = prompt_optional_list("replyto_substring", [str(value) for value in reply_defaults])
+        if reply_values is not None:
+            rule["server"]["replyto_substring"] = reply_values
     recipients_defaults = cluster.get("examples", {}).get("recipients", []) or []
     recipients_values = prompt_optional_list("recipients", [str(value) for value in recipients_defaults])
     if recipients_values is not None:
