@@ -108,3 +108,8 @@ This setup runs `postmanpat cleanup` every 15 minutes inside the container using
    ```bash
    docker compose up --build
    ```
+
+5. **One-off cleanup run**
+   ```bash
+   docker compose run --rm postmanpat postmanpat cleanup --config /config/config_cleanup.yaml
+   ```

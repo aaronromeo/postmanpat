@@ -40,6 +40,9 @@ var watchCmd = &cobra.Command{
 			return err
 		}
 
+		reloadTicker := time.NewTicker(5 * time.Minute)
+		defer reloadTicker.Stop()
+
 		imapEnv, err := config.IMAPEnvFromEnv()
 		if err != nil {
 			return err
@@ -146,6 +149,22 @@ var watchCmd = &cobra.Command{
 				_ = idleCmd.Close()
 				_ = idleCmd.Wait()
 				return ctx.Err()
+			case <-reloadTicker.C:
+				updated, err := config.Load(cfgPath)
+				if err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "watch config reload failed: %v\n", err)
+					continue
+				}
+				if err := config.Validate(updated); err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "watch config reload failed: %v\n", err)
+					continue
+				}
+				if err := validateWatchRules(updated); err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "watch config reload failed: %v\n", err)
+					continue
+				}
+				cfg = updated
+				fmt.Fprintln(cmd.OutOrStdout(), "watch config reloaded")
 			}
 		}
 	},
