@@ -267,7 +267,6 @@ func requiredEnvVars() []string {
 		envS3Bucket,
 		envS3Key,
 		envS3Secret,
-		envWebhookURL,
 	}
 }
 
