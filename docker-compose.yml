@@ -1,0 +1,61 @@
+services:
+  announcements:
+    build:
+      context: ./announcements
+      dockerfile: Dockerfile
+    container_name: announcements
+    restart: unless-stopped
+    environment:
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+      - PORT=8091
+    expose:
+      - "8091"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8091/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - pi-services
+
+  postmanpat:
+    build: .
+    environment:
+      POSTMANPAT_CONFIG: /config/config_cleanup.yaml
+      POSTMANPAT_IMAP_HOST: ${POSTMANPAT_IMAP_HOST}
+      POSTMANPAT_IMAP_PORT: ${POSTMANPAT_IMAP_PORT}
+      POSTMANPAT_IMAP_USER: ${POSTMANPAT_IMAP_USER}
+      POSTMANPAT_IMAP_PASS: ${POSTMANPAT_IMAP_PASS}
+      POSTMANPAT_S3_ENDPOINT: ${POSTMANPAT_S3_ENDPOINT}
+      POSTMANPAT_S3_REGION: ${POSTMANPAT_S3_REGION}
+      POSTMANPAT_S3_BUCKET: ${POSTMANPAT_S3_BUCKET}
+      POSTMANPAT_S3_KEY: ${POSTMANPAT_S3_KEY}
+      POSTMANPAT_S3_SECRET: ${POSTMANPAT_S3_SECRET}
+      POSTMANPAT_WEBHOOK_URL: ${POSTMANPAT_WEBHOOK_URL}
+    volumes:
+      - ./config:/config:ro
+    restart: unless-stopped
+    networks:
+      - pi-services
+
+  postmanpat-watch:
+    build: .
+    command: ["postmanpat", "watch"]
+    environment:
+      POSTMANPAT_IMAP_HOST: ${POSTMANPAT_IMAP_HOST}
+      POSTMANPAT_IMAP_PORT: ${POSTMANPAT_IMAP_PORT}
+      POSTMANPAT_IMAP_USER: ${POSTMANPAT_IMAP_USER}
+      POSTMANPAT_IMAP_PASS: ${POSTMANPAT_IMAP_PASS}
+      POSTMANPAT_WEBHOOK_URL: ${POSTMANPAT_WEBHOOK_URL}
+      POSTMANPAT_CONFIG: /config/config_watch.yaml
+    volumes:
+      - ./config:/config:ro
+    restart: unless-stopped
+    networks:
+      - pi-services
+
+networks:
+  pi-services:
+    driver: bridge
+    internal: true

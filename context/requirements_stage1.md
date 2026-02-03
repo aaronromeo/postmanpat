@@ -14,24 +14,21 @@
 ## Configuration (YAML)
 - Non-secret configuration only (rules, archive path templates, reporting channel, checkpoint path).
 - Secrets and credentials are provided via environment variables.
-- Rule list with matchers, actions, and archive path template.
+- Rule list with server/client matchers, actions, and archive path template.
 - Reporting configuration for Discord webhook (channel only).
 - Checkpoint file location (separate from main config).
 
 ## Required Environment Variables
 - IMAP: `POSTMANPAT_IMAP_HOST`, `POSTMANPAT_IMAP_PORT`, `POSTMANPAT_IMAP_USER`, `POSTMANPAT_IMAP_PASS`
-- DigitalOcean Spaces: `POSTMANPAT_DO_ENDPOINT`, `POSTMANPAT_DO_REGION`, `POSTMANPAT_DO_BUCKET`, `POSTMANPAT_DO_KEY`, `POSTMANPAT_DO_SECRET`
+- S3-compatible storage: `POSTMANPAT_S3_ENDPOINT`, `POSTMANPAT_S3_REGION`, `POSTMANPAT_S3_BUCKET`, `POSTMANPAT_S3_KEY`, `POSTMANPAT_S3_SECRET`
 - Reporting: `POSTMANPAT_WEBHOOK_URL` (Discord)
 
 ## Rules and Actions
 - Rules are ordered and **apply-all**.
 - Each rule includes folder selection criteria.
 - Matchers:
-  - Age
-  - Sender/domain
-  - Recipient
-  - Body regex (decoded text and decoded HTML)
-  - Folder
+  - Server (IMAP search): age, sender/domain substrings, recipients, body substrings, reply-to substrings, list-id substrings, folders
+  - Client (post-fetch): regex-capable matchers for subject/body/sender/recipient/reply-to/list-id
 - Actions:
   - Archive to Spaces
   - Move to folder

@@ -23,4 +23,5 @@ func Execute() {
 func init() {
 	rootCmd.AddCommand(cleanupCmd)
 	rootCmd.AddCommand(analyzeCmd)
+	rootCmd.AddCommand(watchCmd)
 }

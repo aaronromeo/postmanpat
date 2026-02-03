@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -15,18 +16,17 @@ const (
 	envIMAPPort   = "POSTMANPAT_IMAP_PORT"
 	envIMAPUser   = "POSTMANPAT_IMAP_USER"
 	envIMAPPass   = "POSTMANPAT_IMAP_PASS"
-	envDOEndpoint = "POSTMANPAT_DO_ENDPOINT"
-	envDORegion   = "POSTMANPAT_DO_REGION"
-	envDOBucket   = "POSTMANPAT_DO_BUCKET"
-	envDOKey      = "POSTMANPAT_DO_KEY"
-	envDOSecret   = "POSTMANPAT_DO_SECRET"
+	envS3Endpoint = "POSTMANPAT_S3_ENDPOINT"
+	envS3Region   = "POSTMANPAT_S3_REGION"
+	envS3Bucket   = "POSTMANPAT_S3_BUCKET"
+	envS3Key      = "POSTMANPAT_S3_KEY"
+	envS3Secret   = "POSTMANPAT_S3_SECRET"
 	envWebhookURL = "POSTMANPAT_WEBHOOK_URL"
 )
 
 // Config holds non-secret configuration loaded from YAML.
 type Config struct {
 	Rules      []Rule     `yaml:"rules"`
-	Reporting  Reporting  `yaml:"reporting"`
 	Checkpoint Checkpoint `yaml:"checkpoint"`
 }
 
@@ -41,20 +41,105 @@ type IMAPEnv struct {
 // Rule describes a single cleanup rule.
 type Rule struct {
 	Name      string            `yaml:"name"`
-	Matchers  Matchers          `yaml:"matchers"`
 	Actions   []Action          `yaml:"actions"`
 	Variables map[string]string `yaml:"variables"`
+	Server    *ServerMatchers   `yaml:"server"`
+	Client    *ClientMatchers   `yaml:"client"`
 }
 
-// Matchers define the matching criteria for a rule.
-type Matchers struct {
-	AgeDays          *int     `yaml:"age_days"`
-	SenderSubstring  []string `yaml:"sender_substring"`
-	Recipients       []string `yaml:"recipients"`
-	BodySubstring    []string `yaml:"body_substring"`
-	ReplyToSubstring []string `yaml:"replyto_substring"`
-	ListIDSubstring  []string `yaml:"list_id_substring"`
-	Folders          []string `yaml:"folders"`
+type ClientMatchers struct {
+	SubjectRegex      []string `yaml:"subject_regex"`
+	BodyRegex         []string `yaml:"body_regex"`
+	SenderRegex       []string `yaml:"sender_regex"`
+	RecipientsRegex   []string `yaml:"recipients_regex"`
+	ReplyToRegex      []string `yaml:"replyto_regex"`
+	ListIDRegex       []string `yaml:"list_id_regex"`
+	RecipientTagRegex []string `yaml:"recipient_tag_regex"`
+}
+
+func (m *ClientMatchers) IsEmpty() bool {
+	if m == nil {
+		return true
+	}
+	return len(m.SubjectRegex) == 0 &&
+		len(m.BodyRegex) == 0 &&
+		len(m.SenderRegex) == 0 &&
+		len(m.RecipientsRegex) == 0 &&
+		len(m.ReplyToRegex) == 0 &&
+		len(m.ListIDRegex) == 0 &&
+		len(m.RecipientTagRegex) == 0
+}
+
+type AgeWindow struct {
+	Min string `yaml:"min"`
+	Max string `yaml:"max"`
+}
+
+func (a *AgeWindow) IsEmpty() bool {
+	if a == nil {
+		return true
+	}
+	return strings.TrimSpace(a.Min) == "" && strings.TrimSpace(a.Max) == ""
+}
+
+// ServerMatchers define the matching criteria for a rule.
+type ServerMatchers struct {
+	AgeWindow        *AgeWindow `yaml:"age_window"`
+	SenderSubstring  []string   `yaml:"sender_substring"`
+	Recipients       []string   `yaml:"recipients"`
+	BodySubstring    []string   `yaml:"body_substring"`
+	ReplyToSubstring []string   `yaml:"replyto_substring"`
+	ListIDSubstring  []string   `yaml:"list_id_substring"`
+	Folders          []string   `yaml:"folders"`
+}
+
+func ParseRelativeDuration(value string) (time.Duration, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return 0, nil
+	}
+	if strings.HasSuffix(trimmed, "d") {
+		daysValue := strings.TrimSuffix(trimmed, "d")
+		days, err := strconv.ParseFloat(strings.TrimSpace(daysValue), 64)
+		if err != nil {
+			return 0, err
+		}
+		if days < 0 {
+			return 0, errors.New("duration must be positive")
+		}
+		return time.Duration(days * float64(24*time.Hour)), nil
+	}
+	dur, err := time.ParseDuration(trimmed)
+	if err != nil {
+		return 0, err
+	}
+	if dur < 0 {
+		return 0, errors.New("duration must be positive")
+	}
+	return dur, nil
+}
+
+func AgeWindowBounds(now time.Time, window *AgeWindow) (string, string, error) {
+	after := now.Format(time.RFC3339)
+	before := ""
+	if window == nil {
+		return after, before, nil
+	}
+	if strings.TrimSpace(window.Max) != "" {
+		dur, err := ParseRelativeDuration(window.Max)
+		if err != nil {
+			return "", "", fmt.Errorf("invalid age_window.max: %w", err)
+		}
+		after = now.Add(-dur).Format(time.RFC3339)
+	}
+	if strings.TrimSpace(window.Min) != "" {
+		dur, err := ParseRelativeDuration(window.Min)
+		if err != nil {
+			return "", "", fmt.Errorf("invalid age_window.min: %w", err)
+		}
+		before = now.Add(-dur).Format(time.RFC3339)
+	}
+	return after, before, nil
 }
 
 type ActionName string
@@ -70,11 +155,6 @@ type Action struct {
 	Type               ActionName `yaml:"type"`
 	Destination        string     `yaml:"destination"`
 	ExpungeAfterDelete *bool      `yaml:"expunge_after_delete"`
-}
-
-// Reporting configures the reporting output.
-type Reporting struct {
-	Channel string `yaml:"channel"`
 }
 
 // Checkpoint configures checkpoint storage.
@@ -156,15 +236,24 @@ func IMAPEnvFromEnv() (IMAPEnv, error) {
 
 // Summary returns a concise config summary for validation runs.
 func Summary(cfg Config) string {
+	reportingStatus := "disabled"
+	if ReportingEnabled() {
+		reportingStatus = "enabled"
+	}
 	return fmt.Sprintf(
 		"Config summary\n"+
 			"- rules: %d\n"+
-			"- reporting channel: %s\n"+
+			"- reporting webhook: %s\n"+
 			"- checkpoint path: %s",
 		len(cfg.Rules),
-		defaultIfEmpty(cfg.Reporting.Channel, "(not set)"),
+		reportingStatus,
 		defaultIfEmpty(cfg.Checkpoint.Path, "(not set)"),
 	)
+}
+
+// ReportingEnabled returns true when a webhook URL is configured via env var.
+func ReportingEnabled() bool {
+	return strings.TrimSpace(os.Getenv(envWebhookURL)) != ""
 }
 
 func requiredEnvVars() []string {
@@ -173,12 +262,11 @@ func requiredEnvVars() []string {
 		envIMAPPort,
 		envIMAPUser,
 		envIMAPPass,
-		envDOEndpoint,
-		envDORegion,
-		envDOBucket,
-		envDOKey,
-		envDOSecret,
-		envWebhookURL,
+		envS3Endpoint,
+		envS3Region,
+		envS3Bucket,
+		envS3Key,
+		envS3Secret,
 	}
 }
 
@@ -195,8 +283,11 @@ func Validate(cfg Config) error {
 		return errors.New("config must define at least one rule")
 	}
 	for i, rule := range cfg.Rules {
-		if len(rule.Matchers.Folders) == 0 {
-			return fmt.Errorf("rule %d must define matchers.folders", i+1)
+		if rule.Server == nil && rule.Client == nil {
+			return fmt.Errorf("rule %d must define server or client", i+1)
+		}
+		if rule.Server != nil && len(rule.Server.Folders) == 0 {
+			return fmt.Errorf("rule %d must define server.folders", i+1)
 		}
 	}
 	return nil

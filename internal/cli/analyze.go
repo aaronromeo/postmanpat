@@ -38,6 +38,15 @@ var analyzeCmd = &cobra.Command{
 			return err
 		}
 
+		for _, rule := range cfg.Rules {
+			if rule.Client != nil {
+				return fmt.Errorf("rule %q defines client matchers, which are not supported by analyze", rule.Name)
+			}
+			if rule.Server == nil {
+				return fmt.Errorf("rule %q must define server matchers for analyze", rule.Name)
+			}
+		}
+
 		imapEnv, err := config.IMAPEnvFromEnv()
 		if err != nil {
 			return err
@@ -77,9 +86,15 @@ var analyzeCmd = &cobra.Command{
 		}
 
 		for _, rule := range cfg.Rules {
-			mailbox := rule.Matchers.Folders[0]
+			if rule.Client != nil {
+				return fmt.Errorf("rule %q defines client matchers, which are not supported by analyze", rule.Name)
+			}
+			if rule.Server == nil {
+				return fmt.Errorf("rule %q must define server matchers for analyze", rule.Name)
+			}
+			mailbox := rule.Server.Folders[0]
 
-			matched, err := client.SearchByMatchers(ctx, rule.Matchers)
+			matched, err := client.SearchByServerMatchers(ctx, *rule.Server)
 			if err != nil {
 				_ = client.Close()
 				return err
@@ -91,13 +106,16 @@ var analyzeCmd = &cobra.Command{
 			}
 
 			data := dataByMailbox[mailbox]
-			report := buildAnalyzeReport(data, analyzeReportParams{
+			report, err := buildAnalyzeReport(data, analyzeReportParams{
 				Mailbox:   mailbox,
 				Account:   imapEnv.User,
 				Generated: time.Now().UTC(),
-				AgeDays:   rule.Matchers.AgeDays,
+				AgeWindow: rule.Server.AgeWindow,
 				Options:   options,
 			})
+			if err != nil {
+				return err
+			}
 
 			path, err := writeAnalyzeReport(report)
 			if err != nil {
@@ -122,7 +140,7 @@ type analyzeReportParams struct {
 	Mailbox   string
 	Account   string
 	Generated time.Time
-	AgeDays   *int
+	AgeWindow *config.AgeWindow
 	Options   analyzeOptions
 }
 
@@ -230,17 +248,22 @@ const (
 	ExampleKeyListUnsubscribeTargets = "list_unsubscribe_targets"
 )
 
-func buildTimeWindow(now time.Time, ageDays *int) timeWindow {
-	before := now.Format(time.RFC3339)
-	if ageDays == nil {
-		return timeWindow{After: "", Before: before}
+func buildTimeWindow(now time.Time, window *config.AgeWindow) (timeWindow, error) {
+	after, before, err := config.AgeWindowBounds(now, window)
+	if err != nil {
+		return timeWindow{}, err
 	}
-	after := now.AddDate(0, 0, -*ageDays).Format(time.RFC3339)
-	return timeWindow{After: after, Before: before}
+	if before == "" {
+		before = now.Format(time.RFC3339)
+	}
+	return timeWindow{After: after, Before: before}, nil
 }
 
-func buildAnalyzeReport(data []imapclient.MailData, params analyzeReportParams) analyzeReport {
-	window := buildTimeWindow(params.Generated, params.AgeDays)
+func buildAnalyzeReport(data []imapclient.MailData, params analyzeReportParams) (analyzeReport, error) {
+	window, err := buildTimeWindow(params.Generated, params.AgeWindow)
+	if err != nil {
+		return analyzeReport{}, err
+	}
 	// raw := make([]analyzeRawRecord, 0, len(data))
 	// for _, item := range data {
 	// 	raw = append(raw, analyzeRawRecord{
@@ -286,7 +309,7 @@ func buildAnalyzeReport(data []imapclient.MailData, params analyzeReportParams) 
 			TemplateLens:     templateLens,
 			RecipientTagLens: recipientTagLens,
 		},
-	}
+	}, nil
 }
 
 func writeAnalyzeReport(report analyzeReport) (string, error) {

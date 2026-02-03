@@ -1,17 +1,23 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/aaronromeo/postmanpat/internal/config"
 	"github.com/aaronromeo/postmanpat/internal/imapclient"
 )
 
 func TestBuildAnalyzeReportJSON(t *testing.T) {
 	now := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
-	ageDays := 2
+	ageWindow := &config.AgeWindow{
+		Min: "48h",
+	}
 	data := []imapclient.MailData{
 		{
 			SenderDomains:          []string{"example.com"},
@@ -30,17 +36,20 @@ func TestBuildAnalyzeReportJSON(t *testing.T) {
 		},
 	}
 
-	report := buildAnalyzeReport(data, analyzeReportParams{
+	report, err := buildAnalyzeReport(data, analyzeReportParams{
 		Mailbox:   "INBOX",
 		Account:   "user@example.com",
 		Generated: now,
-		AgeDays:   &ageDays,
+		AgeWindow: ageWindow,
 		Options: analyzeOptions{
 			Top:      100,
 			Examples: 20,
 			MinCount: 1,
 		},
 	})
+	if err != nil {
+		t.Fatalf("build report: %v", err)
+	}
 
 	path, err := writeAnalyzeReport(report)
 	if err != nil {
@@ -145,21 +154,87 @@ func TestBuildAnalyzeReportJSON(t *testing.T) {
 
 func TestBuildTimeWindow(t *testing.T) {
 	now := time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)
-	age := 0
 
-	window := buildTimeWindow(now, &age)
+	window, err := buildTimeWindow(now, &config.AgeWindow{Min: "0h"})
+	if err != nil {
+		t.Fatalf("build time window: %v", err)
+	}
 	if window.Before == "" {
 		t.Fatal("expected before timestamp")
 	}
 	if window.After == "" {
-		t.Fatal("expected after timestamp with age_days set")
+		t.Fatal("expected after timestamp with age_window set")
 	}
 
-	window = buildTimeWindow(now, nil)
+	window, err = buildTimeWindow(now, nil)
+	if err != nil {
+		t.Fatalf("build time window: %v", err)
+	}
 	if window.Before == "" {
 		t.Fatal("expected before timestamp")
 	}
-	if window.After != "" {
-		t.Fatalf("expected empty after when age_days is nil, got %q", window.After)
+	if window.After == "" {
+		t.Fatal("expected default after when age_window is nil")
+	}
+}
+
+func TestBuildTimeWindowMax(t *testing.T) {
+	now := time.Date(2024, 2, 1, 12, 0, 0, 0, time.UTC)
+
+	window, err := buildTimeWindow(now, &config.AgeWindow{Max: "24h"})
+	if err != nil {
+		t.Fatalf("build time window: %v", err)
+	}
+	if window.After == "" {
+		t.Fatal("expected default after when only max is set")
+	}
+	if window.Before != "2024-02-01T12:00:00Z" {
+		t.Fatalf("unexpected before value: %q", window.Before)
+	}
+}
+
+func TestBuildTimeWindowMin(t *testing.T) {
+	now := time.Date(2024, 2, 1, 12, 0, 0, 0, time.UTC)
+
+	window, err := buildTimeWindow(now, &config.AgeWindow{Min: "6h"})
+	if err != nil {
+		t.Fatalf("build time window: %v", err)
+	}
+	if window.Before == "" {
+		t.Fatal("expected before timestamp")
+	}
+	if window.After != "2024-02-01T12:00:00Z" {
+		t.Fatalf("unexpected after value: %q", window.After)
+	}
+}
+
+func TestAnalyzeRejectsClientMatchers(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+rules:
+  - name: "Rule"
+    server:
+      folders:
+        - "INBOX"
+    client:
+      subject_regex:
+        - "hello"
+    actions: []
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	rootCmd.SetArgs([]string{"analyze", "--config", path})
+	var output bytes.Buffer
+	rootCmd.SetOut(&output)
+	rootCmd.SetErr(&output)
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected analyze to fail with client matchers")
+	}
+	if !strings.Contains(err.Error(), "client matchers") {
+		t.Fatalf("expected client matchers error, got: %v", err)
 	}
 }

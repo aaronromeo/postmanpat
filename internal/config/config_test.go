@@ -12,11 +12,11 @@ func TestValidateEnvMissing(t *testing.T) {
 	t.Setenv(envIMAPPort, "")
 	t.Setenv(envIMAPUser, "")
 	t.Setenv(envIMAPPass, "")
-	t.Setenv(envDOEndpoint, "")
-	t.Setenv(envDORegion, "")
-	t.Setenv(envDOBucket, "")
-	t.Setenv(envDOKey, "")
-	t.Setenv(envDOSecret, "")
+	t.Setenv(envS3Endpoint, "")
+	t.Setenv(envS3Region, "")
+	t.Setenv(envS3Bucket, "")
+	t.Setenv(envS3Key, "")
+	t.Setenv(envS3Secret, "")
 	t.Setenv(envWebhookURL, "")
 
 	if err := ValidateEnv(); err == nil {
@@ -48,11 +48,11 @@ rules: []
 	}
 }
 
-func TestValidateMissingMatcherFolders(t *testing.T) {
+func TestValidateMissingServerFolders(t *testing.T) {
 	path := writeTempFile(t, `
 rules:
   - name: "Rule"
-    matchers: {}
+    server: {}
     actions: []
     archive:
       path_template: "archive/{date}"
@@ -64,9 +64,9 @@ rules:
 	}
 
 	if err := Validate(cfg); err == nil {
-		t.Fatalf("expected validation error for missing matchers.folders")
-	} else if !strings.Contains(err.Error(), "matchers.folders") {
-		t.Fatalf("expected matchers.folders error, got: %v", err)
+		t.Fatalf("expected validation error for missing server.folders")
+	} else if !strings.Contains(err.Error(), "server.folders") {
+		t.Fatalf("expected server.folders error, got: %v", err)
 	}
 }
 
@@ -75,17 +75,17 @@ func TestHappyPath(t *testing.T) {
 	t.Setenv(envIMAPPort, "993")
 	t.Setenv(envIMAPUser, "user@example.com")
 	t.Setenv(envIMAPPass, "password")
-	t.Setenv(envDOEndpoint, "https://nyc3.digitaloceanspaces.com")
-	t.Setenv(envDORegion, "nyc3")
-	t.Setenv(envDOBucket, "postmanpat-archive")
-	t.Setenv(envDOKey, "key")
-	t.Setenv(envDOSecret, "secret")
+	t.Setenv(envS3Endpoint, "https://nyc3.digitaloceanspaces.com")
+	t.Setenv(envS3Region, "nyc3")
+	t.Setenv(envS3Bucket, "postmanpat-archive")
+	t.Setenv(envS3Key, "key")
+	t.Setenv(envS3Secret, "secret")
 	t.Setenv(envWebhookURL, "https://example.com/webhook")
 
 	path := writeTempFile(t, `
 rules:
   - name: "Rule"
-    matchers:
+    server:
       folders:
         - "INBOX"
     actions: []

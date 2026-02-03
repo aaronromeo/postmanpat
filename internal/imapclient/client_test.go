@@ -10,11 +10,14 @@ import (
 	"crypto/x509/pkix"
 	"math/big"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/aaronromeo/postmanpat/internal/config"
+	"github.com/aaronromeo/postmanpat/internal/matchers"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapserver"
 	"github.com/emersion/go-imap/v2/imapserver/imapmemserver"
@@ -27,12 +30,12 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 
 	cases := []struct {
 		name     string
-		matchers config.Matchers
+		matchers config.ServerMatchers
 		wantUIDs []uint32
 	}{
 		{
 			name: "match body substrings require all",
-			matchers: config.Matchers{
+			matchers: config.ServerMatchers{
 				Folders:       []string{"INBOX"},
 				BodySubstring: []string{"unsubscribe", "updates"},
 			},
@@ -40,7 +43,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 		},
 		{
 			name: "body substrings fail when missing",
-			matchers: config.Matchers{
+			matchers: config.ServerMatchers{
 				Folders:       []string{"INBOX"},
 				BodySubstring: []string{"unsubscribe", "missing"},
 			},
@@ -48,26 +51,35 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 		},
 		{
 			name: "match reply-to domain",
-			matchers: config.Matchers{
+			matchers: config.ServerMatchers{
 				Folders:          []string{"INBOX"},
 				ReplyToSubstring: []string{"example.com"},
 			},
 			wantUIDs: []uint32{ids.newsUID},
 		},
 		{
-			name: "match age days",
-			matchers: func() config.Matchers {
-				age := 1
-				return config.Matchers{
-					Folders: []string{"INBOX"},
-					AgeDays: &age,
-				}
-			}(),
+			name: "match age window max",
+			matchers: config.ServerMatchers{
+				Folders: []string{"INBOX"},
+				AgeWindow: &config.AgeWindow{
+					Max: "1d",
+				},
+			},
+			wantUIDs: []uint32{ids.otherUID},
+		},
+		{
+			name: "match age window min",
+			matchers: config.ServerMatchers{
+				Folders: []string{"INBOX"},
+				AgeWindow: &config.AgeWindow{
+					Min: "1d",
+				},
+			},
 			wantUIDs: []uint32{ids.newsUID},
 		},
 		{
 			name: "match sender recipient body",
-			matchers: config.Matchers{
+			matchers: config.ServerMatchers{
 				Folders:       []string{"INBOX"},
 				BodySubstring: []string{"unsubscribe"},
 			},
@@ -75,7 +87,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 		},
 		{
 			name: "match sender email",
-			matchers: config.Matchers{
+			matchers: config.ServerMatchers{
 				Folders:         []string{"INBOX"},
 				SenderSubstring: []string{"example.com"},
 			},
@@ -83,7 +95,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 		},
 		{
 			name: "match recipients email",
-			matchers: config.Matchers{
+			matchers: config.ServerMatchers{
 				Folders:    []string{"INBOX"},
 				Recipients: []string{"user@example.com"},
 			},
@@ -91,7 +103,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 		},
 		{
 			name: "no matches",
-			matchers: config.Matchers{
+			matchers: config.ServerMatchers{
 				Folders:         []string{"INBOX"},
 				SenderSubstring: []string{"nope"},
 				Recipients:      []string{"user@example.com"},
@@ -106,7 +118,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			t.Cleanup(cancel)
 
-			matched, err := client.SearchByMatchers(ctx, tc.matchers)
+			matched, err := client.SearchByServerMatchers(ctx, tc.matchers)
 			assert.NoError(t, err, "search error")
 			assert.ElementsMatch(t, tc.wantUIDs, matched["INBOX"], "unexpected UID set")
 		})
@@ -140,26 +152,26 @@ func TestDeleteUIDsLocalServer(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			t.Cleanup(cancel)
 
-			target := config.Matchers{
+			target := config.ServerMatchers{
 				Folders:         []string{"INBOX"},
 				SenderSubstring: []string{"example.com"},
 			}
-			matched, err := client.SearchByMatchers(ctx, target)
+			matched, err := client.SearchByServerMatchers(ctx, target)
 			assert.NoError(t, err, "search error")
 			assert.ElementsMatch(t, []uint32{ids.newsUID}, matched["INBOX"], "unexpected matches before delete")
 
 			err = client.DeleteByMailbox(ctx, matched, true)
 			assert.NoError(t, err, "delete error")
 
-			matched, err = client.SearchByMatchers(ctx, target)
+			matched, err = client.SearchByServerMatchers(ctx, target)
 			assert.NoError(t, err, "search after delete")
 			assert.Empty(t, matched["INBOX"], "expected no matches after delete")
 
-			remaining := config.Matchers{
+			remaining := config.ServerMatchers{
 				Folders:         []string{"INBOX"},
 				SenderSubstring: []string{"example.org"},
 			}
-			matched, err = client.SearchByMatchers(ctx, remaining)
+			matched, err = client.SearchByServerMatchers(ctx, remaining)
 			assert.NoError(t, err, "search remaining")
 			assert.ElementsMatch(t, []uint32{ids.otherUID}, matched["INBOX"], "unexpected remaining matches")
 		})
@@ -212,7 +224,7 @@ func TestMoveByMailboxLocalServer(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			t.Cleanup(cancel)
 
-			_, err := client.SearchByMatchers(ctx, config.Matchers{
+			_, err := client.SearchByServerMatchers(ctx, config.ServerMatchers{
 				Folders: []string{"INBOX"},
 			})
 			assert.NoError(t, err, "select inbox before move")
@@ -224,11 +236,11 @@ func TestMoveByMailboxLocalServer(t *testing.T) {
 			}
 			assert.NoError(t, err, "move error")
 
-			inboxMatchers := config.Matchers{
+			inboxMatchers := config.ServerMatchers{
 				Folders:         []string{"INBOX"},
 				SenderSubstring: []string{"example.com"},
 			}
-			matched, err := client.SearchByMatchers(ctx, inboxMatchers)
+			matched, err := client.SearchByServerMatchers(ctx, inboxMatchers)
 			assert.NoError(t, err, "search inbox after move")
 			assert.Empty(t, matched["INBOX"], "expected no matches in INBOX after move")
 
@@ -245,11 +257,11 @@ func TestMoveByMailboxLocalServer(t *testing.T) {
 					t.Cleanup(func() {
 						_ = archiveClient.Close()
 					})
-					archiveMatchers := config.Matchers{
+					archiveMatchers := config.ServerMatchers{
 						Folders:         []string{tc.destination},
 						SenderSubstring: []string{"example.com"},
 					}
-					matched, err = archiveClient.SearchByMatchers(ctx, archiveMatchers)
+					matched, err = archiveClient.SearchByServerMatchers(ctx, archiveMatchers)
 					assert.NoError(t, err, "search archive after move")
 					assert.Len(t, matched[tc.destination], 1, "expected moved message in destination")
 				}
@@ -275,11 +287,11 @@ func TestSearchByMatchersMultipleFolders(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
 
-	matchers := config.Matchers{
+	matchers := config.ServerMatchers{
 		Folders:         []string{"INBOX", "Archive"},
 		SenderSubstring: []string{"example."},
 	}
-	matched, err := client.SearchByMatchers(ctx, matchers)
+	matched, err := client.SearchByServerMatchers(ctx, matchers)
 	assert.NoError(t, err, "search error")
 	assert.ElementsMatch(t, []uint32{ids.newsUID, ids.otherUID}, matched["INBOX"], "unexpected INBOX matches")
 	assert.Len(t, matched["Archive"], 1, "expected one Archive match")
@@ -292,7 +304,7 @@ func TestClientReuseAcrossOperations(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
 
-	matched, err := client.SearchByMatchers(ctx, config.Matchers{
+	matched, err := client.SearchByServerMatchers(ctx, config.ServerMatchers{
 		Folders:         []string{"INBOX"},
 		SenderSubstring: []string{"example.com"},
 	})
@@ -302,7 +314,7 @@ func TestClientReuseAcrossOperations(t *testing.T) {
 	err = client.DeleteUIDs(ctx, matched["INBOX"], true)
 	assert.NoError(t, err, "delete sender matches")
 
-	matched, err = client.SearchByMatchers(ctx, config.Matchers{
+	matched, err = client.SearchByServerMatchers(ctx, config.ServerMatchers{
 		Folders:         []string{"INBOX"},
 		SenderSubstring: []string{"example.com"},
 	})
@@ -312,7 +324,7 @@ func TestClientReuseAcrossOperations(t *testing.T) {
 	err = client.MoveUIDs(ctx, []uint32{ids.otherUID}, "Archive")
 	assert.NoError(t, err, "move other message")
 
-	matched, err = client.SearchByMatchers(ctx, config.Matchers{
+	matched, err = client.SearchByServerMatchers(ctx, config.ServerMatchers{
 		Folders:         []string{"INBOX"},
 		SenderSubstring: []string{"example.org"},
 	})
@@ -527,11 +539,14 @@ func testTLSConfig(t *testing.T) *tls.Config {
 }
 
 func TestBuildSearchCriteriaListIDSubstring(t *testing.T) {
-	matchers := config.Matchers{
+	matchers := config.ServerMatchers{
 		ListIDSubstring: []string{"list.example.com"},
 	}
 
-	criteria := buildSearchCriteria(matchers)
+	criteria, err := buildSearchCriteria(matchers)
+	if err != nil {
+		t.Fatalf("build criteria: %v", err)
+	}
 	if criteria == nil {
 		t.Fatal("expected criteria")
 	}
@@ -547,11 +562,14 @@ func TestBuildSearchCriteriaListIDSubstring(t *testing.T) {
 }
 
 func TestBuildSearchCriteriaListIDSubstringSkipsEmpty(t *testing.T) {
-	matchers := config.Matchers{
+	matchers := config.ServerMatchers{
 		ListIDSubstring: []string{"", "   "},
 	}
 
-	criteria := buildSearchCriteria(matchers)
+	criteria, err := buildSearchCriteria(matchers)
+	if err != nil {
+		t.Fatalf("build criteria: %v", err)
+	}
 	if criteria == nil {
 		t.Fatal("expected criteria")
 	}
@@ -561,7 +579,10 @@ func TestBuildSearchCriteriaListIDSubstringSkipsEmpty(t *testing.T) {
 }
 
 func TestBuildSearchCriteriaExcludesDeleted(t *testing.T) {
-	criteria := buildSearchCriteria(config.Matchers{})
+	criteria, err := buildSearchCriteria(config.ServerMatchers{})
+	if err != nil {
+		t.Fatalf("build criteria: %v", err)
+	}
 	if criteria == nil {
 		t.Fatal("expected criteria")
 	}
@@ -578,4 +599,304 @@ func TestBuildSearchCriteriaExcludesDeleted(t *testing.T) {
 	if !found {
 		t.Fatal("expected NotFlag to include \\Deleted")
 	}
+}
+
+func TestListIDRegexEndToEnd(t *testing.T) {
+	addr, cleanup := setupAnalyzeIMAPServer(t, []testAnalyzeMessage{
+		{
+			From:    "News <news@example.com>",
+			To:      "User <user@example.com>",
+			Subject: "ROM list",
+			ListID:  "f7443300a7bb349db1e85fa6emc list <f7443300a7bb349db1e85fa6e.1520313.list-id.mcsv.net>",
+			Body:    "unsubscribe",
+			Time:    time.Now().Add(-2 * time.Hour),
+		},
+	})
+	t.Cleanup(cleanup)
+
+	client := &Client{
+		Addr:      addr,
+		Username:  "user@example.com",
+		Password:  "password",
+		TLSConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	if err := client.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	if _, err := client.SelectMailbox(ctx, "INBOX"); err != nil {
+		t.Fatalf("select inbox: %v", err)
+	}
+
+	uids, err := client.SearchUIDsNewerThan(ctx, 0)
+	if err != nil {
+		t.Fatalf("search uids: %v", err)
+	}
+	if len(uids) != 1 {
+		t.Fatalf("expected 1 uid, got %d", len(uids))
+	}
+
+	data, err := client.FetchSenderData(ctx, uids)
+	if err != nil {
+		t.Fatalf("fetch data: %v", err)
+	}
+	if len(data) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(data))
+	}
+
+	ok, err := matchers.MatchesClient(&config.ClientMatchers{
+		ListIDRegex: []string{`<f7443300a7bb349db1e85fa6e\.1520313\.list-id\.mcsv\.net>`},
+	}, matchers.ClientMessage{ListID: data[0].ListID})
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected list_id_regex to match ListID")
+	}
+}
+
+func TestAnalyzeAgeWindowEndToEnd(t *testing.T) {
+	addr, cleanup := setupAnalyzeIMAPServer(t, []testAnalyzeMessage{
+		{
+			From:    "News <news@example.com>",
+			To:      "User <user@example.com>",
+			Subject: "Recent",
+			ListID:  "list.recent.example.com",
+			Body:    "unsubscribe",
+			Time:    time.Now().Add(-48 * time.Hour),
+		},
+		{
+			From:    "Old <old@example.com>",
+			To:      "User <user@example.com>",
+			Subject: "Old",
+			ListID:  "list.old.example.com",
+			Body:    "unsubscribe",
+			Time:    time.Now().Add(-10 * 24 * time.Hour),
+		},
+	})
+	t.Cleanup(cleanup)
+
+	host, port, err := splitHostPort(addr)
+	if err != nil {
+		t.Fatalf("split addr: %v", err)
+	}
+	t.Setenv("POSTMANPAT_IMAP_HOST", host)
+	t.Setenv("POSTMANPAT_IMAP_PORT", port)
+	t.Setenv("POSTMANPAT_IMAP_USER", "user@example.com")
+	t.Setenv("POSTMANPAT_IMAP_PASS", "password")
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+rules:
+  - name: "Rule"
+    server:
+      age_window:
+        min: "24h"
+        max: "7d"
+      folders:
+        - "INBOX"
+      body_substring:
+        - "unsubscribe"
+    actions: []
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if err := config.Validate(cfg); err != nil {
+		t.Fatalf("validate config: %v", err)
+	}
+
+	client := &Client{
+		Addr:      addr,
+		Username:  "user@example.com",
+		Password:  "password",
+		TLSConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	if err := client.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	rule := cfg.Rules[0]
+	matched, err := client.SearchByServerMatchers(ctx, *rule.Server)
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	uids := matched["INBOX"]
+	if len(uids) != 1 {
+		t.Fatalf("expected 1 matched message, got %d", len(uids))
+	}
+}
+
+type testAnalyzeMessage struct {
+	From    string
+	To      string
+	Subject string
+	ListID  string
+	Body    string
+	Time    time.Time
+}
+
+func setupAnalyzeIMAPServer(t *testing.T, messages []testAnalyzeMessage) (string, func()) {
+	t.Helper()
+
+	tlsConfig := testAnalyzeTLSConfig(t)
+	mem := imapmemserver.New()
+	user := imapmemserver.NewUser("user@example.com", "password")
+	mem.AddUser(user)
+
+	if err := user.Create("INBOX", nil); err != nil {
+		t.Fatalf("create mailbox: %v", err)
+	}
+
+	for _, msg := range messages {
+		appendTime := msg.Time
+		if appendTime.IsZero() {
+			appendTime = time.Now()
+		}
+		if _, err := user.Append("INBOX", newAnalyzeLiteral(t, sampleAnalyzeMessage(
+			msg.From,
+			msg.To,
+			msg.Subject,
+			msg.ListID,
+			msg.Body,
+		)), &imap.AppendOptions{Time: appendTime}); err != nil {
+			t.Fatalf("append message: %v", err)
+		}
+	}
+
+	server := imapserver.New(&imapserver.Options{
+		NewSession: func(*imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
+			return mem.NewSession(), nil, nil
+		},
+		TLSConfig:    tlsConfig,
+		InsecureAuth: true,
+	})
+
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", tlsConfig)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.Serve(ln)
+	}()
+
+	cleanup := func() {
+		_ = server.Close()
+		_ = ln.Close()
+		select {
+		case <-errCh:
+		default:
+		}
+	}
+
+	return ln.Addr().String(), cleanup
+}
+
+type analyzeLiteralReader struct {
+	*bytes.Reader
+	size int64
+}
+
+func newAnalyzeLiteral(t *testing.T, raw string) imap.LiteralReader {
+	t.Helper()
+	buf := []byte(raw)
+	return &analyzeLiteralReader{
+		Reader: bytes.NewReader(buf),
+		size:   int64(len(buf)),
+	}
+}
+
+func (lr *analyzeLiteralReader) Size() int64 {
+	return lr.size
+}
+
+func sampleAnalyzeMessage(from, to, subject, listID, body string) string {
+	builder := &strings.Builder{}
+	builder.WriteString("From: ")
+	builder.WriteString(from)
+	builder.WriteString("\r\n")
+	builder.WriteString("To: ")
+	builder.WriteString(to)
+	builder.WriteString("\r\n")
+	if listID != "" {
+		builder.WriteString("List-ID: ")
+		builder.WriteString(listID)
+		builder.WriteString("\r\n")
+	}
+	builder.WriteString("Subject: ")
+	builder.WriteString(subject)
+	builder.WriteString("\r\n")
+	builder.WriteString("\r\n")
+	builder.WriteString(body)
+	builder.WriteString("\r\n")
+	return builder.String()
+}
+
+func testAnalyzeTLSConfig(t *testing.T) *tls.Config {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+
+	serial, err := rand.Int(rand.Reader, big.NewInt(1<<62))
+	if err != nil {
+		t.Fatalf("generate serial: %v", err)
+	}
+
+	template := x509.Certificate{
+		SerialNumber: serial,
+		Subject: pkix.Name{
+			CommonName: "localhost",
+		},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		DNSNames:              []string{"localhost"},
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("create cert: %v", err)
+	}
+
+	cert := tls.Certificate{
+		Certificate: [][]byte{der},
+		PrivateKey:  key,
+	}
+
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		NextProtos:   []string{"imap"},
+	}
+}
+
+func splitHostPort(addr string) (string, string, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", "", err
+	}
+	return host, port, nil
 }

@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"regexp"
 	"sort"
@@ -26,6 +27,8 @@ type Client struct {
 	Username  string
 	Password  string
 	TLSConfig *tls.Config
+
+	UnilateralDataHandler *imapclient.UnilateralDataHandler
 
 	client *imapclient.Client
 }
@@ -56,8 +59,11 @@ func (c *Client) Connect() error {
 		return errors.New("IMAP credentials are required")
 	}
 	var options *imapclient.Options
-	if c.TLSConfig != nil {
-		options = &imapclient.Options{TLSConfig: c.TLSConfig}
+	if c.TLSConfig != nil || c.UnilateralDataHandler != nil {
+		options = &imapclient.Options{
+			TLSConfig:             c.TLSConfig,
+			UnilateralDataHandler: c.UnilateralDataHandler,
+		}
 	}
 
 	client, err := imapclient.DialTLS(c.Addr, options)
@@ -84,9 +90,9 @@ func (c *Client) Close() error {
 	return err
 }
 
-// SearchByMatchers returns UIDs for messages matching the provided matchers via IMAP SEARCH.
+// SearchByServerMatchers returns UIDs for messages matching the provided matchers via IMAP SEARCH.
 // Results are grouped by mailbox to avoid UID collisions across folders.
-func (c *Client) SearchByMatchers(ctx context.Context, matchers config.Matchers) (map[string][]uint32, error) {
+func (c *Client) SearchByServerMatchers(ctx context.Context, matchers config.ServerMatchers) (map[string][]uint32, error) {
 	if c.client == nil {
 		return nil, errors.New("IMAP client is not connected")
 	}
@@ -108,7 +114,10 @@ func (c *Client) SearchByMatchers(ctx context.Context, matchers config.Matchers)
 			return nil, err
 		}
 
-		criteria := buildSearchCriteria(matchers)
+		criteria, err := buildSearchCriteria(matchers)
+		if err != nil {
+			return nil, err
+		}
 
 		data, err := c.client.UIDSearch(criteria, nil).Wait()
 		if err != nil {
@@ -285,6 +294,54 @@ func (c *Client) FetchSenderDataByMailbox(ctx context.Context, uidsByMailbox map
 	}
 
 	return results, nil
+}
+
+// SearchUIDsNewerThan returns UIDs greater than the provided last UID in the selected mailbox.
+func (c *Client) SearchUIDsNewerThan(ctx context.Context, lastUID uint32) ([]uint32, error) {
+	if c.client == nil {
+		return nil, errors.New("IMAP client is not connected")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	start := imap.UID(lastUID + 1)
+	var uidSet imap.UIDSet
+	uidSet.AddRange(start, 0)
+	criteria := &imap.SearchCriteria{
+		UID: []imap.UIDSet{uidSet},
+	}
+	data, err := c.client.UIDSearch(criteria, nil).Wait()
+	if err != nil {
+		return nil, err
+	}
+	uids := data.AllUIDs()
+	out := make([]uint32, 0, len(uids))
+	for _, uid := range uids {
+		out = append(out, uint32(uid))
+	}
+	return out, nil
+}
+
+// SelectMailbox selects a mailbox and returns its metadata.
+func (c *Client) SelectMailbox(ctx context.Context, mailbox string) (*imap.SelectData, error) {
+	if c.client == nil {
+		return nil, errors.New("IMAP client is not connected")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(mailbox) == "" {
+		return nil, errors.New("mailbox is required")
+	}
+	return c.client.Select(mailbox, nil).Wait()
+}
+
+// Idle starts an IMAP IDLE command.
+func (c *Client) Idle() (*imapclient.IdleCommand, error) {
+	if c.client == nil {
+		return nil, errors.New("IMAP client is not connected")
+	}
+	return c.client.Idle()
 }
 
 func readHeader(literal imap.LiteralReader) (*mail.Header, error) {
@@ -534,12 +591,25 @@ func combineAnd(criteria []imap.SearchCriteria) *imap.SearchCriteria {
 	return &combined
 }
 
-func buildSearchCriteria(matchers config.Matchers) *imap.SearchCriteria {
+func buildSearchCriteria(matchers config.ServerMatchers) (*imap.SearchCriteria, error) {
 	criteria := &imap.SearchCriteria{}
 	criteria.NotFlag = append(criteria.NotFlag, imap.FlagDeleted)
 
-	if matchers.AgeDays != nil && *matchers.AgeDays > 0 {
-		criteria.Before = time.Now().AddDate(0, 0, -*matchers.AgeDays)
+	if matchers.AgeWindow != nil && !matchers.AgeWindow.IsEmpty() {
+		if strings.TrimSpace(matchers.AgeWindow.Max) != "" {
+			dur, err := config.ParseRelativeDuration(matchers.AgeWindow.Max)
+			if err != nil {
+				return nil, fmt.Errorf("invalid age_window.max: %w", err)
+			}
+			criteria.Since = time.Now().Add(-dur)
+		}
+		if strings.TrimSpace(matchers.AgeWindow.Min) != "" {
+			dur, err := config.ParseRelativeDuration(matchers.AgeWindow.Min)
+			if err != nil {
+				return nil, fmt.Errorf("invalid age_window.min: %w", err)
+			}
+			criteria.Before = time.Now().Add(-dur)
+		}
 	}
 
 	if len(matchers.SenderSubstring) > 0 {
@@ -638,5 +708,5 @@ func buildSearchCriteria(matchers config.Matchers) *imap.SearchCriteria {
 		}
 	}
 
-	return criteria
+	return criteria, nil
 }

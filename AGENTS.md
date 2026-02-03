@@ -32,7 +32,9 @@
 - Config includes IMAP credentials, DO Spaces credentials, rules, and reporting.
 - Scope: process all IMAP folders (Gmail labels treated as folders).
 - Rules: ordered, apply-all; each rule must include folder selection criteria.
-- Matchers: age, sender/domain, recipient, body regex, and folder.
+- Matchers:
+  - Server (IMAP search): age, sender/domain substrings, recipients, body substrings, reply-to substrings, list-id substrings, folders.
+  - Client (post-fetch): regex-capable matchers (subject/body/sender/recipient/reply-to/list-id).
 - Actions: archive to Spaces, move to folder, delete; action order is defined per rule.
 - Archive format: store `.eml` plus decoded `.txt`/`.html` and attachments.
 - Archive path: rule-defined template path with variables.
@@ -40,6 +42,12 @@
 - Dedupe: hash of raw `.eml` across folders per run.
 - Checkpoint: per-folder last UID in a separate local file; allow reset/ignore.
 - Reporting: per-rule stats and errors via Slack or Discord webhook.
+
+## IMAP Callback / Watcher (Realtime)
+- Goal: IMAP "callback" equivalent using a long-lived IMAP session with IDLE to trigger rule processing on new inbox mail.
+- Scope: single mailbox (INBOX) only for the watcher; no multi-mailbox support needed initially.
+- Transport: use IDLE only (no polling fallback) for initial implementation.
+- Reliability: handle reconnects with backoff and resume from last UID to avoid missing messages.
 
 ## Deployment (DigitalOcean)
 - Target deployment is a Docker container on DigitalOcean.
