@@ -91,7 +91,7 @@ rules:
   - name: "ROM"
     client:
       list_id_regex:
-        - "<f7443300a7bb349db1e85fa6e\\.1520313\\.list-id\\.mcsv\\.net>"
+        - '<f7443300a7bb349db1e85fa6e\.1520313\.list-id\.mcsv\.net>'
     actions: []
 `), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -186,7 +186,7 @@ rules:
   - name: "ROM"
     client:
       list_id_regex:
-        - "<f7443300a7bb349db1e85fa6e\.1520313\.list-id\.mcsv\.net>"
+        - '<f7443300a7bb349db1e85fa6e\.1520313\.list-id\.mcsv\.net>'
     actions: []
 `), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
