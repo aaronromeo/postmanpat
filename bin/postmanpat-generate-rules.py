@@ -48,6 +48,9 @@ def prompt_yes_no(message: str, default: bool = False) -> str:
 
 
 def yaml_quote(value: str) -> str:
+    if "\\" in value:
+        escaped = value.replace("'", "''")
+        return f"'{escaped}'"
     escaped = value.replace("\\", "\\\\").replace("\"", "\\\"")
     return f"\"{escaped}\""
 
