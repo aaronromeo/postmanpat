@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -20,6 +21,8 @@ import (
 )
 
 const defaultMailbox = "INBOX"
+
+var watchTLSConfigProvider func() *tls.Config
 
 var watchCmd = &cobra.Command{
 	Use:   "watch",
@@ -94,10 +97,16 @@ var watchCmd = &cobra.Command{
 			},
 		}
 
+		var tlsConfig *tls.Config
+		if watchTLSConfigProvider != nil {
+			tlsConfig = watchTLSConfigProvider()
+		}
+
 		client := &imapclient.Client{
 			Addr:                  fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
 			Username:              imapEnv.User,
 			Password:              imapEnv.Pass,
+			TLSConfig:             tlsConfig,
 			UnilateralDataHandler: handler,
 		}
 		if err := client.Connect(); err != nil {

@@ -213,7 +213,7 @@ rules:
 func setupWatchTestServer(t *testing.T, mailbox string, raw string) (string, func()) {
 	t.Helper()
 
-	tlsConfig := testWatchTLSConfig(t)
+	tlsConfig, rootCAs := testWatchTLSConfig(t)
 	mem := giimapmemserver.New()
 	user := giimapmemserver.NewUser("user@example.com", "password")
 	mem.AddUser(user)
@@ -244,9 +244,17 @@ func setupWatchTestServer(t *testing.T, mailbox string, raw string) (string, fun
 		errCh <- server.Serve(ln)
 	}()
 
+	watchTLSConfigProvider = func() *tls.Config {
+		return &tls.Config{
+			RootCAs:    rootCAs,
+			ServerName: "localhost",
+		}
+	}
+
 	cleanup := func() {
 		_ = server.Close()
 		_ = ln.Close()
+		watchTLSConfigProvider = nil
 		select {
 		case <-errCh:
 		default:
@@ -296,20 +304,52 @@ func sampleWatchTestMessage(from, to, subject, listID string) string {
 	return builder.String()
 }
 
-func testWatchTLSConfig(t *testing.T) *tls.Config {
+func testWatchTLSConfig(t *testing.T) (*tls.Config, *x509.CertPool) {
 	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	caKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("generate key: %v", err)
 	}
 
-	serial, err := rand.Int(rand.Reader, big.NewInt(1<<62))
+	caSerial, err := rand.Int(rand.Reader, big.NewInt(1<<62))
 	if err != nil {
 		t.Fatalf("generate serial: %v", err)
 	}
 
-	template := x509.Certificate{
-		SerialNumber: serial,
+	caTemplate := x509.Certificate{
+		SerialNumber: caSerial,
+		Subject: pkix.Name{
+			CommonName: "postmanpat-test-ca",
+		},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+
+	caDER, err := x509.CreateCertificate(rand.Reader, &caTemplate, &caTemplate, &caKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("create CA cert: %v", err)
+	}
+
+	caCert, err := x509.ParseCertificate(caDER)
+	if err != nil {
+		t.Fatalf("parse CA cert: %v", err)
+	}
+
+	serverKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate server key: %v", err)
+	}
+
+	serverSerial, err := rand.Int(rand.Reader, big.NewInt(1<<62))
+	if err != nil {
+		t.Fatalf("generate server serial: %v", err)
+	}
+
+	serverTemplate := x509.Certificate{
+		SerialNumber: serverSerial,
 		Subject: pkix.Name{
 			CommonName: "localhost",
 		},
@@ -322,18 +362,22 @@ func testWatchTLSConfig(t *testing.T) *tls.Config {
 		BasicConstraintsValid: true,
 	}
 
-	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	serverDER, err := x509.CreateCertificate(rand.Reader, &serverTemplate, caCert, &serverKey.PublicKey, caKey)
 	if err != nil {
-		t.Fatalf("create cert: %v", err)
+		t.Fatalf("create server cert: %v", err)
 	}
 
 	cert := tls.Certificate{
-		Certificate: [][]byte{der},
-		PrivateKey:  key,
+		Certificate: [][]byte{serverDER, caDER},
+		PrivateKey:  serverKey,
 	}
+
+	rootPool := x509.NewCertPool()
+	rootPool.AddCert(caCert)
+
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
-	}
+	}, rootPool
 }
 
 func splitHostPort(addr string) (string, string, error) {
