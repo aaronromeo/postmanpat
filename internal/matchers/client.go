@@ -12,6 +12,8 @@ type ClientMessage struct {
 	ListID         string
 	SenderDomains  []string
 	ReplyToDomains []string
+	SubjectRaw     string
+	Recipients     []string
 }
 
 // MatchesClient returns true if the message satisfies all configured client matchers.
@@ -21,6 +23,24 @@ func MatchesClient(matchers *config.ClientMatchers, data ClientMessage) (bool, e
 	}
 	if len(matchers.ListIDRegex) > 0 {
 		ok, err := matchAnyRegex(matchers.ListIDRegex, data.ListID)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+	}
+	if len(matchers.SubjectRegex) > 0 {
+		ok, err := matchAnyRegex(matchers.SubjectRegex, data.SubjectRaw)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+	}
+	if len(matchers.RecipientsRegex) > 0 {
+		ok, err := matchAnyRegexInList(matchers.RecipientsRegex, data.Recipients)
 		if err != nil {
 			return false, err
 		}
