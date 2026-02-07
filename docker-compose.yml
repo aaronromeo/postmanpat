@@ -23,6 +23,7 @@ services:
     build: .
     environment:
       POSTMANPAT_CONFIG: /config/config_cleanup.yaml
+      POSTMANPAT_CLEANUP_CONFIG: ${POSTMANPAT_CLEANUP_CONFIG}
       POSTMANPAT_IMAP_HOST: ${POSTMANPAT_IMAP_HOST}
       POSTMANPAT_IMAP_PORT: ${POSTMANPAT_IMAP_PORT}
       POSTMANPAT_IMAP_USER: ${POSTMANPAT_IMAP_USER}
@@ -34,7 +35,7 @@ services:
       POSTMANPAT_S3_SECRET: ${POSTMANPAT_S3_SECRET}
       POSTMANPAT_WEBHOOK_URL: ${POSTMANPAT_WEBHOOK_URL}
     volumes:
-      - ./config:/config:ro
+      - ${POSTMANPAT_CLEANUP_CONFIG:-./config/config_cleanup.yaml}:/config/config_cleanup.yaml:ro
     restart: unless-stopped
     networks:
       - pi-services
@@ -47,10 +48,16 @@ services:
       POSTMANPAT_IMAP_PORT: ${POSTMANPAT_IMAP_PORT}
       POSTMANPAT_IMAP_USER: ${POSTMANPAT_IMAP_USER}
       POSTMANPAT_IMAP_PASS: ${POSTMANPAT_IMAP_PASS}
+      POSTMANPAT_S3_ENDPOINT: ${POSTMANPAT_S3_ENDPOINT}
+      POSTMANPAT_S3_REGION: ${POSTMANPAT_S3_REGION}
+      POSTMANPAT_S3_BUCKET: ${POSTMANPAT_S3_BUCKET}
+      POSTMANPAT_S3_KEY: ${POSTMANPAT_S3_KEY}
+      POSTMANPAT_S3_SECRET: ${POSTMANPAT_S3_SECRET}
       POSTMANPAT_WEBHOOK_URL: ${POSTMANPAT_WEBHOOK_URL}
       POSTMANPAT_CONFIG: /config/config_watch.yaml
+      POSTMANPAT_WATCH_CONFIG: ${POSTMANPAT_WATCH_CONFIG}
     volumes:
-      - ./config:/config:ro
+      - ${POSTMANPAT_WATCH_CONFIG:-./config/config_watch.yaml}:/config/config_watch.yaml:ro
     restart: unless-stopped
     networks:
       - pi-services
@@ -58,4 +65,3 @@ services:
 networks:
   pi-services:
     driver: bridge
-    internal: true
