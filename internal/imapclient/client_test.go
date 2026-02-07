@@ -661,6 +661,59 @@ func TestListIDRegexEndToEnd(t *testing.T) {
 	}
 }
 
+func TestFetchSenderDataReplyToRequiresHeader(t *testing.T) {
+	addr, cleanup := setupAnalyzeIMAPServer(t, []testAnalyzeMessage{
+		{
+			From:    "BandsInTown <updates@bandsintown.com>",
+			To:      "User <user@example.com>",
+			Subject: "Next Week",
+			ListID:  "",
+			Body:    "unsubscribe",
+			Time:    time.Now().Add(-2 * time.Hour),
+		},
+	})
+	t.Cleanup(cleanup)
+
+	client := &Client{
+		Addr:      addr,
+		Username:  "user@example.com",
+		Password:  "password",
+		TLSConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	if err := client.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	if _, err := client.SelectMailbox(ctx, "INBOX"); err != nil {
+		t.Fatalf("select inbox: %v", err)
+	}
+
+	uids, err := client.SearchUIDsNewerThan(ctx, 0)
+	if err != nil {
+		t.Fatalf("search uids: %v", err)
+	}
+	if len(uids) != 1 {
+		t.Fatalf("expected 1 uid, got %d", len(uids))
+	}
+
+	data, err := client.FetchSenderData(ctx, uids)
+	if err != nil {
+		t.Fatalf("fetch data: %v", err)
+	}
+	if len(data) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(data))
+	}
+	if len(data[0].ReplyToDomains) != 0 {
+		t.Fatalf("expected no reply-to domains when header is missing, got %v", data[0].ReplyToDomains)
+	}
+}
+
 func TestAnalyzeAgeWindowEndToEnd(t *testing.T) {
 	addr, cleanup := setupAnalyzeIMAPServer(t, []testAnalyzeMessage{
 		{

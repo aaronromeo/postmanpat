@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	netmail "net/mail"
 	"regexp"
 	"sort"
 	"strings"
@@ -210,14 +211,7 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 			continue
 		}
 
-		replyToHosts := []string{}
-		for _, addr := range envelope.ReplyTo {
-			host := strings.ToLower(strings.TrimSpace(addr.Host))
-			if host == "" {
-				continue
-			}
-			replyToHosts = append(replyToHosts, host)
-		}
+		replyToHosts := parseReplyToDomains(header)
 
 		fromHosts := []string{}
 		for _, addr := range envelope.From {
@@ -401,6 +395,38 @@ func parseListUnsubscribeTargets(header *mail.Header) []string {
 	sorted := make([]string, 0, len(targets))
 	for target := range targets {
 		sorted = append(sorted, target)
+	}
+	sort.Strings(sorted)
+	return sorted
+}
+
+func parseReplyToDomains(header *mail.Header) []string {
+	raw := headerText(header, "Reply-To")
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	addresses, err := netmail.ParseAddressList(raw)
+	if err != nil {
+		return nil
+	}
+	hosts := make(map[string]struct{})
+	for _, addr := range addresses {
+		parts := strings.Split(addr.Address, "@")
+		if len(parts) != 2 {
+			continue
+		}
+		host := strings.ToLower(strings.TrimSpace(parts[1]))
+		if host == "" {
+			continue
+		}
+		hosts[host] = struct{}{}
+	}
+	if len(hosts) == 0 {
+		return nil
+	}
+	sorted := make([]string, 0, len(hosts))
+	for host := range hosts {
+		sorted = append(sorted, host)
 	}
 	sort.Strings(sorted)
 	return sorted
