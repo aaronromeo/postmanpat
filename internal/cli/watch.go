@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -14,6 +15,8 @@ import (
 	imapclientv2 "github.com/emersion/go-imap/v2/imapclient"
 	"github.com/spf13/cobra"
 )
+
+const defaultMailbox = "INBOX"
 
 var watchCmd = &cobra.Command{
 	Use:   "watch",
@@ -38,6 +41,15 @@ var watchCmd = &cobra.Command{
 		}
 		if err := validateWatchRules(cfg); err != nil {
 			return err
+		}
+
+		verbose, err := cmd.Flags().GetBool("verbose")
+		if err != nil {
+			return err
+		}
+		logLevel := slog.LevelInfo
+		if verbose {
+			logLevel = slog.LevelDebug
 		}
 
 		reloadTicker := time.NewTicker(5 * time.Minute)
@@ -77,94 +89,101 @@ var watchCmd = &cobra.Command{
 		}
 		defer client.Close()
 
-		selection, err := client.SelectMailbox(ctx, "INBOX")
+		selection, err := client.SelectMailbox(ctx, defaultMailbox)
 		if err != nil {
 			return err
 		}
 
-		lastCount := selection.NumMessages
-		lastUID := uint32(0)
+		state := &watchState{lastCount: selection.NumMessages}
 		if selection.UIDNext > 0 {
-			lastUID = uint32(selection.UIDNext - 1)
+			state.lastUID = uint32(selection.UIDNext - 1)
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "watching INBOX (messages=%d)\n", lastCount)
+		out := cmd.OutOrStdout()
+		logger := slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: logLevel}))
+		logger.Info("watching mailbox", "mailbox", "INBOX", "messages", state.lastCount, "last_uid", state.lastUID)
 
+		deps := watchDeps{
+			ctx:    ctx,
+			client: client,
+			rules:  cfg.Rules,
+			log:    logger,
+			announce: func(ruleName string) {
+				if err := postWatchAnnouncement(ruleName); err != nil {
+					logger.Error("reporting failed", "rule", ruleName, "error", err)
+				}
+			},
+		}
+
+		mailbox := "INBOX"
 		for {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
 			idleCmd, err := client.Idle()
 			if err != nil {
+				if isBenignIdleError(err) {
+					if err := reconnectWatch(deps, state, mailbox); err != nil {
+						return err
+					}
+					continue
+				}
 				return err
 			}
 			select {
 			case newCount := <-updateCh:
+				logger.Debug("idle update received", "messages", newCount, "last_messages", state.lastCount)
 				_ = idleCmd.Close()
 				if err := idleCmd.Wait(); err != nil {
-					return err
+					if !isBenignIdleError(err) {
+						return err
+					}
 				}
-				if newCount > lastCount {
-					fmt.Fprintf(cmd.OutOrStdout(), "new mail detected (messages=%d)\n", newCount)
-					uids, err := client.SearchUIDsNewerThan(ctx, lastUID)
+				if newCount > state.lastCount {
+					logger.Info("new mail detected", "messages", newCount)
+					uids, err := client.SearchUIDsNewerThan(ctx, state.lastUID)
 					if err != nil {
 						return err
 					}
-					if len(uids) > 0 {
-						data, err := client.FetchSenderData(ctx, uids)
-						if err != nil {
-							return err
-						}
-						for _, message := range data {
-							matchedAny := false
-							for _, rule := range cfg.Rules {
-								ok, err := matchers.MatchesClient(rule.Client, matchers.ClientMessage{
-									ListID:         message.ListID,
-									SenderDomains:  message.SenderDomains,
-									ReplyToDomains: message.ReplyToDomains,
-								})
-								if err != nil {
-									return err
-								}
-								if ok {
-									matchedAny = true
-									fmt.Fprintf(cmd.OutOrStdout(), "rule %q matched list_id=%q\n", rule.Name, message.ListID)
-									if err := postWatchAnnouncement(rule.Name); err != nil {
-										fmt.Fprintf(cmd.ErrOrStderr(), "reporting failed for rule %q: %v\n", rule.Name, err)
-									}
-								}
-							}
-							if !matchedAny {
-								fmt.Fprintln(cmd.OutOrStdout(), "no rule matched")
-								if err := postWatchAnnouncement(""); err != nil {
-									fmt.Fprintf(cmd.ErrOrStderr(), "reporting failed for no-match: %v\n", err)
-								}
-							}
-						}
-						lastUID = maxUID(lastUID, uids)
+					if err := processUIDs(deps, state, uids); err != nil {
+						return err
 					}
 				}
-				lastCount = newCount
-				fmt.Fprintln(cmd.OutOrStdout(), "ready for next update")
+				state.lastCount = newCount
+				logger.Info("ready for next update")
 			case <-ctx.Done():
-				_ = idleCmd.Close()
-				_ = idleCmd.Wait()
+				if err := idleCmd.Close(); err != nil {
+					logger.Error("idle close error", "error", err)
+					continue
+				}
+				if err := idleCmd.Wait(); err != nil {
+					logger.Error("idle wait error", "error", err)
+					continue
+				}
 				return ctx.Err()
 			case <-reloadTicker.C:
+				logger.Debug("reload timer fired")
+				_ = idleCmd.Close()
+				if err := idleCmd.Wait(); err != nil {
+					if !isBenignIdleError(err) {
+						logger.Error("watch idle close failed", "error", err)
+					}
+				}
 				updated, err := config.Load(cfgPath)
 				if err != nil {
-					fmt.Fprintf(cmd.ErrOrStderr(), "watch config reload failed: %v\n", err)
+					logger.Error("watch config reload failed", "error", err)
 					continue
 				}
 				if err := config.Validate(updated); err != nil {
-					fmt.Fprintf(cmd.ErrOrStderr(), "watch config reload failed: %v\n", err)
+					logger.Error("watch config reload failed", "error", err)
 					continue
 				}
 				if err := validateWatchRules(updated); err != nil {
-					fmt.Fprintf(cmd.ErrOrStderr(), "watch config reload failed: %v\n", err)
+					logger.Error("watch config reload failed", "error", err)
 					continue
 				}
 				cfg = updated
-				fmt.Fprintln(cmd.OutOrStdout(), "watch config reloaded")
+				deps.rules = updated.Rules
+				logger.Info("watch config reloaded")
 			}
 		}
 	},
@@ -192,6 +211,84 @@ func maxUID(current uint32, uids []uint32) uint32 {
 		}
 	}
 	return max
+}
+
+func isBenignIdleError(err error) bool {
+	if err == nil {
+		return true
+	}
+	return strings.Contains(err.Error(), "use of closed network connection")
+}
+
+type watchDeps struct {
+	ctx      context.Context
+	client   *imapclient.Client
+	rules    []config.Rule
+	log      *slog.Logger
+	announce func(string)
+}
+
+type watchState struct {
+	lastUID   uint32
+	lastCount uint32
+}
+
+func processUIDs(deps watchDeps, state *watchState, uids []uint32) error {
+	deps.log.Debug("search newer than uid", "last_uid", state.lastUID, "uids", len(uids))
+	if len(uids) == 0 {
+		return nil
+	}
+	data, err := deps.client.FetchSenderData(deps.ctx, uids)
+	if err != nil {
+		return err
+	}
+	deps.log.Debug("fetched messages for processing", "messages", len(data))
+	for _, message := range data {
+		matchedAny := false
+		for _, rule := range deps.rules {
+			ok, err := matchers.MatchesClient(rule.Client, matchers.ClientMessage{
+				ListID:         message.ListID,
+				SenderDomains:  message.SenderDomains,
+				ReplyToDomains: message.ReplyToDomains,
+			})
+			if err != nil {
+				return err
+			}
+			if ok {
+				matchedAny = true
+				deps.log.Info("rule matched", "rule", rule.Name, "list_id", message.ListID)
+				deps.announce(rule.Name)
+			}
+		}
+		if !matchedAny {
+			deps.log.Info("no rule matched")
+			deps.announce("")
+		}
+	}
+	state.lastUID = maxUID(state.lastUID, uids)
+	deps.log.Debug("updated last uid", "last_uid", state.lastUID)
+	return nil
+}
+
+func reconnectWatch(deps watchDeps, state *watchState, mailbox string) error {
+	_ = deps.client.Close()
+	if err := deps.client.Connect(); err != nil {
+		return err
+	}
+	selection, err := deps.client.SelectMailbox(deps.ctx, mailbox)
+	if err != nil {
+		return err
+	}
+	deps.log.Info("reconnected", "mailbox", mailbox, "messages", selection.NumMessages)
+	uids, err := deps.client.SearchUIDsNewerThan(deps.ctx, state.lastUID)
+	if err != nil {
+		return err
+	}
+	if err := processUIDs(deps, state, uids); err != nil {
+		return err
+	}
+	state.lastCount = selection.NumMessages
+	return nil
 }
 
 func postWatchAnnouncement(ruleName string) error {
