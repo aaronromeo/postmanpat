@@ -10,8 +10,17 @@ cat >/etc/cron.d/postmanpat <<EOF
 SHELL=/bin/sh
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 POSTMANPAT_CONFIG=${POSTMANPAT_CONFIG}
+POSTMANPAT_IMAP_HOST=${POSTMANPAT_IMAP_HOST}
+POSTMANPAT_IMAP_PORT=${POSTMANPAT_IMAP_PORT}
+POSTMANPAT_IMAP_USER=${POSTMANPAT_IMAP_USER}
+POSTMANPAT_IMAP_PASS=${POSTMANPAT_IMAP_PASS}
+POSTMANPAT_S3_ENDPOINT=${POSTMANPAT_S3_ENDPOINT}
+POSTMANPAT_S3_REGION=${POSTMANPAT_S3_REGION}
+POSTMANPAT_S3_BUCKET=${POSTMANPAT_S3_BUCKET}
+POSTMANPAT_S3_KEY=${POSTMANPAT_S3_KEY}
+POSTMANPAT_S3_SECRET=${POSTMANPAT_S3_SECRET}
 
-*/15 * * * * root /usr/local/bin/postmanpat cleanup --config "$POSTMANPAT_CONFIG" >>/proc/1/fd/1 2>>/proc/1/fd/2
+*/15 * * * * /usr/local/bin/postmanpat cleanup --config "$POSTMANPAT_CONFIG" >>/proc/1/fd/1 2>>/proc/1/fd/2
 EOF
 
 chmod 0644 /etc/cron.d/postmanpat

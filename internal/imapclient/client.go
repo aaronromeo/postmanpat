@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	netmail "net/mail"
 	"regexp"
 	"sort"
 	"strings"
@@ -15,7 +16,7 @@ import (
 
 	"github.com/aaronromeo/postmanpat/internal/config"
 	"github.com/emersion/go-imap/v2"
-	"github.com/emersion/go-imap/v2/imapclient"
+	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-message"
 	"github.com/emersion/go-message/mail"
 	"github.com/emersion/go-message/textproto"
@@ -28,9 +29,9 @@ type Client struct {
 	Password  string
 	TLSConfig *tls.Config
 
-	UnilateralDataHandler *imapclient.UnilateralDataHandler
+	UnilateralDataHandler *giimapclient.UnilateralDataHandler
 
-	client *imapclient.Client
+	client *giimapclient.Client
 }
 
 type MailData struct {
@@ -58,15 +59,15 @@ func (c *Client) Connect() error {
 	if strings.TrimSpace(c.Username) == "" || strings.TrimSpace(c.Password) == "" {
 		return errors.New("IMAP credentials are required")
 	}
-	var options *imapclient.Options
+	var options *giimapclient.Options
 	if c.TLSConfig != nil || c.UnilateralDataHandler != nil {
-		options = &imapclient.Options{
+		options = &giimapclient.Options{
 			TLSConfig:             c.TLSConfig,
 			UnilateralDataHandler: c.UnilateralDataHandler,
 		}
 	}
 
-	client, err := imapclient.DialTLS(c.Addr, options)
+	client, err := giimapclient.DialTLS(c.Addr, options)
 	if err != nil {
 		return err
 	}
@@ -161,6 +162,7 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 	bodySection := &imap.FetchItemBodySection{
 		Specifier:    imap.PartSpecifierHeader,
 		HeaderFields: []string{"List-ID", "List-Unsubscribe", "Precedence", "X-Mailer", "User-Agent"},
+		Peek:         true,
 	}
 	fetchOptions := &imap.FetchOptions{
 		Envelope:    true,
@@ -188,11 +190,11 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 			if item == nil {
 				break
 			}
-			if data, ok := item.(imapclient.FetchItemDataEnvelope); ok {
+			if data, ok := item.(giimapclient.FetchItemDataEnvelope); ok {
 				envelope = data.Envelope
 				continue
 			}
-			if data, ok := item.(imapclient.FetchItemDataBodySection); ok {
+			if data, ok := item.(giimapclient.FetchItemDataBodySection); ok {
 				if data.Literal == nil {
 					continue
 				}
@@ -210,14 +212,7 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 			continue
 		}
 
-		replyToHosts := []string{}
-		for _, addr := range envelope.ReplyTo {
-			host := strings.ToLower(strings.TrimSpace(addr.Host))
-			if host == "" {
-				continue
-			}
-			replyToHosts = append(replyToHosts, host)
-		}
+		replyToHosts := parseReplyToDomains(header)
 
 		fromHosts := []string{}
 		for _, addr := range envelope.From {
@@ -337,7 +332,7 @@ func (c *Client) SelectMailbox(ctx context.Context, mailbox string) (*imap.Selec
 }
 
 // Idle starts an IMAP IDLE command.
-func (c *Client) Idle() (*imapclient.IdleCommand, error) {
+func (c *Client) Idle() (*giimapclient.IdleCommand, error) {
 	if c.client == nil {
 		return nil, errors.New("IMAP client is not connected")
 	}
@@ -401,6 +396,38 @@ func parseListUnsubscribeTargets(header *mail.Header) []string {
 	sorted := make([]string, 0, len(targets))
 	for target := range targets {
 		sorted = append(sorted, target)
+	}
+	sort.Strings(sorted)
+	return sorted
+}
+
+func parseReplyToDomains(header *mail.Header) []string {
+	raw := headerText(header, "Reply-To")
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	addresses, err := netmail.ParseAddressList(raw)
+	if err != nil {
+		return nil
+	}
+	hosts := make(map[string]struct{})
+	for _, addr := range addresses {
+		parts := strings.Split(addr.Address, "@")
+		if len(parts) != 2 {
+			continue
+		}
+		host := strings.ToLower(strings.TrimSpace(parts[1]))
+		if host == "" {
+			continue
+		}
+		hosts[host] = struct{}{}
+	}
+	if len(hosts) == 0 {
+		return nil
+	}
+	sorted := make([]string, 0, len(hosts))
+	for host := range hosts {
+		sorted = append(sorted, host)
 	}
 	sort.Strings(sorted)
 	return sorted
