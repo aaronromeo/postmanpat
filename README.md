@@ -72,6 +72,19 @@ rules:
 - `age_window` uses IMAP INTERNALDATE, not the message `Date:` header.
 - `age_window` defines a bounded range: `min` is the minimum age (older than), `max` is the maximum age (newer than).
 
+### Watch Test Mode
+
+Use `watch --test` to run a one-off match check for a single rule and print the last N matches.
+
+```bash
+postmanpat watch --config /path/to/watch.yml --test "Rule Name" --limit 10 --mailbox "[Gmail]/All Mail"
+```
+
+Notes:
+- `--test` takes a rule name from the config.
+- `--limit` caps the number of matches returned (default 10).
+- `--mailbox` overrides the mailbox to scan (default `INBOX`).
+
 ### Reporting and Checkpoint
 
 - Reporting is enabled when `POSTMANPAT_WEBHOOK_URL` is set. No YAML config is needed for reporting.

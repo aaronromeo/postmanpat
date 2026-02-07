@@ -781,8 +781,8 @@ func TestFetchSenderDataDoesNotSetSeen(t *testing.T) {
 
 func TestFetchSenderDataMalformedHeaderDoesNotError(t *testing.T) {
 	tlsConfig := testAnalyzeTLSConfig(t)
-	mem := gi_imapmemserver.New()
-	user := gi_imapmemserver.NewUser("user@example.com", "password")
+	mem := giimapmemserver.New()
+	user := giimapmemserver.NewUser("user@example.com", "password")
 	mem.AddUser(user)
 
 	if err := user.Create("INBOX", nil); err != nil {
@@ -800,8 +800,8 @@ func TestFetchSenderDataMalformedHeaderDoesNotError(t *testing.T) {
 		t.Fatalf("append message: %v", err)
 	}
 
-	server := gi_imapserver.New(&gi_imapserver.Options{
-		NewSession: func(*gi_imapserver.Conn) (gi_imapserver.Session, *gi_imapserver.GreetingData, error) {
+	server := giimapserver.New(&giimapserver.Options{
+		NewSession: func(*giimapserver.Conn) (giimapserver.Session, *giimapserver.GreetingData, error) {
 			return mem.NewSession(), nil, nil
 		},
 		TLSConfig:    tlsConfig,

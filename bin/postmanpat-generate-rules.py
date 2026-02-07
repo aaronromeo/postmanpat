@@ -225,7 +225,6 @@ def build_watch_rule_sender(cluster: Dict[str, Any], name: str) -> Optional[Dict
     recipients_values = prompt_optional_list(
         "recipients_regex",
         recipients_defaults,
-        allow_note="Note: client.recipients_regex is not implemented yet.",
     )
     if recipients_values is not None:
         rule["client"]["recipients_regex"] = recipients_values

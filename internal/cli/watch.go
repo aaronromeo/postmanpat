@@ -2,15 +2,18 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/aaronromeo/postmanpat/internal/config"
 	"github.com/aaronromeo/postmanpat/internal/imapclient"
+	"github.com/aaronromeo/postmanpat/internal/matchers"
 	"github.com/aaronromeo/postmanpat/internal/watchrunner"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 	"github.com/spf13/cobra"
@@ -40,6 +43,19 @@ var watchCmd = &cobra.Command{
 			return err
 		}
 		if err := validateWatchRules(cfg); err != nil {
+			return err
+		}
+
+		testRuleName, err := cmd.Flags().GetString("test")
+		if err != nil {
+			return err
+		}
+		limit, err := cmd.Flags().GetInt("limit")
+		if err != nil {
+			return err
+		}
+		testMailbox, err := cmd.Flags().GetString("mailbox")
+		if err != nil {
 			return err
 		}
 
@@ -89,6 +105,16 @@ var watchCmd = &cobra.Command{
 		}
 		defer client.Close()
 
+		out := cmd.OutOrStdout()
+		logger := slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: logLevel}))
+
+		if strings.TrimSpace(testRuleName) != "" {
+			if err := runWatchTest(cmd.Context(), client, cfg, logger, testRuleName, testMailbox, limit); err != nil {
+				return err
+			}
+			return nil
+		}
+
 		selection, err := client.SelectMailbox(ctx, defaultMailbox)
 		if err != nil {
 			return err
@@ -98,8 +124,6 @@ var watchCmd = &cobra.Command{
 		if selection.UIDNext > 0 {
 			state.LastUID = uint32(selection.UIDNext - 1)
 		}
-		out := cmd.OutOrStdout()
-		logger := slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: logLevel}))
 		logger.Info("watching mailbox", "mailbox", "INBOX", "messages", state.LastCount, "last_uid", state.LastUID)
 
 		deps := watchrunner.Deps{
@@ -192,6 +216,9 @@ var watchCmd = &cobra.Command{
 func init() {
 	watchCmd.Flags().String("config", "", "Path to YAML config file (or set POSTMANPAT_CONFIG)")
 	watchCmd.Flags().Bool("verbose", false, "Enable verbose logging")
+	watchCmd.Flags().String("test", "", "Run a one-off test for the named rule and exit")
+	watchCmd.Flags().Int("limit", 10, "Maximum matches to return when using --test")
+	watchCmd.Flags().String("mailbox", defaultMailbox, "Mailbox to scan when using --test")
 }
 
 func validateWatchRules(cfg config.Config) error {
@@ -232,4 +259,94 @@ func postWatchAnnouncement(ruleName string) error {
 		return fmt.Errorf("reporting webhook returned status %s", resp.Status)
 	}
 	return nil
+}
+
+func runWatchTest(ctx context.Context, client *imapclient.Client, cfg config.Config, logger *slog.Logger, ruleName, mailbox string, limit int) error {
+	if strings.TrimSpace(ruleName) == "" {
+		return errors.New("test rule name is required")
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+	rule, err := findRuleByName(cfg, ruleName)
+	if err != nil {
+		return err
+	}
+	if rule.Client == nil {
+		return fmt.Errorf("rule %q does not define client matchers", rule.Name)
+	}
+	if strings.TrimSpace(mailbox) == "" {
+		mailbox = defaultMailbox
+	}
+
+	if _, err := client.SelectMailbox(ctx, mailbox); err != nil {
+		return err
+	}
+
+	uids, err := client.SearchUIDsNewerThan(ctx, 0)
+	if err != nil {
+		return err
+	}
+	if len(uids) == 0 {
+		logger.Info("no messages found", "mailbox", mailbox)
+		return nil
+	}
+
+	logger.Info("running watch test", "rule", rule.Name, "mailbox", mailbox, "uids", len(uids))
+	matches := 0
+	chunkSize := 200
+	for end := len(uids); end > 0 && matches < limit; end -= chunkSize {
+		start := end - chunkSize
+		if start < 0 {
+			start = 0
+		}
+		batch := uids[start:end]
+		data, err := client.FetchSenderData(ctx, batch)
+		if err != nil {
+			return err
+		}
+		sort.Slice(data, func(i, j int) bool {
+			return data[i].MessageDate.After(data[j].MessageDate)
+		})
+		for _, message := range data {
+			ok, err := matchers.MatchesClient(rule.Client, matchers.ClientMessage{
+				ListID:         message.ListID,
+				SenderDomains:  message.SenderDomains,
+				ReplyToDomains: message.ReplyToDomains,
+				SubjectRaw:     message.SubjectRaw,
+				Recipients:     message.Recipients,
+			})
+			if err != nil {
+				return err
+			}
+			if !ok {
+				continue
+			}
+			logger.Info(
+				"test match",
+				"rule", rule.Name,
+				"date", message.MessageDate,
+				"subject", message.SubjectRaw,
+				"list_id", message.ListID,
+				"reply_to_domains", message.ReplyToDomains,
+				"sender_domains", message.SenderDomains,
+				"recipients", message.Recipients,
+			)
+			matches++
+			if matches >= limit {
+				break
+			}
+		}
+	}
+	logger.Info("watch test complete", "rule", rule.Name, "matches", matches)
+	return nil
+}
+
+func findRuleByName(cfg config.Config, ruleName string) (*config.Rule, error) {
+	for i := range cfg.Rules {
+		if cfg.Rules[i].Name == ruleName {
+			return &cfg.Rules[i], nil
+		}
+	}
+	return nil, fmt.Errorf("rule %q not found", ruleName)
 }
