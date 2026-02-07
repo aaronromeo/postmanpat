@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -55,7 +56,9 @@ var cleanupCmd = &cobra.Command{
 		}
 
 		cfgSummary := config.Summary(cfg)
-		fmt.Fprintln(cmd.OutOrStdout(), cfgSummary)
+		out := cmd.OutOrStdout()
+		logger := slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		logger.Info("config summary", "summary", cfgSummary)
 
 		imapEnv, err := config.IMAPEnvFromEnv()
 		if err != nil {
@@ -91,10 +94,10 @@ var cleanupCmd = &cobra.Command{
 			}
 			uids := matched[mailbox]
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Rule %q mailbox %q matched %d messages\n", rule.Name, mailbox, len(uids))
+			logger.Info("rule matched", "rule", rule.Name, "mailbox", mailbox, "messages", len(uids))
 			if len(uids) > 0 {
 				if err := postAnnouncement(rule.Name, mailbox, len(uids)); err != nil {
-					fmt.Fprintf(cmd.ErrOrStderr(), "reporting failed for rule %q mailbox %q: %v\n", rule.Name, mailbox, err)
+					logger.Error("reporting failed", "rule", rule.Name, "mailbox", mailbox, "error", err)
 				}
 			}
 
@@ -102,7 +105,7 @@ var cleanupCmd = &cobra.Command{
 				switch action.Type {
 				case config.DELETE:
 					if dryRun {
-						fmt.Fprintf(cmd.OutOrStdout(), "Dry run: would delete %d messages for rule %q\n", len(uids), rule.Name)
+						logger.Info("dry run delete", "rule", rule.Name, "messages", len(uids))
 						continue
 					}
 					expungeAfterDelete := true
@@ -117,7 +120,7 @@ var cleanupCmd = &cobra.Command{
 						return fmt.Errorf("Action move missing destination: %s", rule.Name)
 					}
 					if dryRun {
-						fmt.Fprintf(cmd.OutOrStdout(), "Dry run: would delete %d messages for rule %q\n", len(uids), rule.Name)
+						logger.Info("dry run move", "rule", rule.Name, "messages", len(uids))
 						continue
 					}
 					if err := client.MoveByMailbox(ctx, matched, strings.TrimSpace(action.Destination)); err != nil {
@@ -135,7 +138,6 @@ var cleanupCmd = &cobra.Command{
 func init() {
 	cleanupCmd.Flags().String("config", "", "Path to YAML config file (or set POSTMANPAT_CONFIG)")
 	cleanupCmd.Flags().Bool("dry-run", false, "Validate and report actions without making changes")
-	cleanupCmd.Flags().Bool("verbose", false, "Enable verbose logging")
 }
 
 func resolveConfigPath(cmd *cobra.Command) (string, error) {
