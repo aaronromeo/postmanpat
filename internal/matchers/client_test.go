@@ -77,3 +77,37 @@ func TestMatchesClientSenderAndReplyToRegexRequiresBoth(t *testing.T) {
 		t.Fatal("expected sender_regex and replyto_regex to require both matches")
 	}
 }
+
+func TestMatchesClientSubjectRegex(t *testing.T) {
+	matchers := &config.ClientMatchers{
+		SubjectRegex: []string{`(?i)welcome`},
+	}
+	data := ClientMessage{
+		SubjectRaw: "Welcome to the list",
+	}
+
+	ok, err := MatchesClient(matchers, data)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected subject_regex to match subject")
+	}
+}
+
+func TestMatchesClientRecipientsRegex(t *testing.T) {
+	matchers := &config.ClientMatchers{
+		RecipientsRegex: []string{`user@example\.com`},
+	}
+	data := ClientMessage{
+		Recipients: []string{"user@example.com"},
+	}
+
+	ok, err := MatchesClient(matchers, data)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected recipients_regex to match recipient")
+	}
+}

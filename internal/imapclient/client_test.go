@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	"math/big"
 	"net"
 	"os"
@@ -778,6 +779,149 @@ func TestFetchSenderDataDoesNotSetSeen(t *testing.T) {
 	}
 }
 
+func TestFetchSenderDataMalformedHeaderDoesNotError(t *testing.T) {
+	tlsConfig := testAnalyzeTLSConfig(t)
+	mem := gi_imapmemserver.New()
+	user := gi_imapmemserver.NewUser("user@example.com", "password")
+	mem.AddUser(user)
+
+	if err := user.Create("INBOX", nil); err != nil {
+		t.Fatalf("create mailbox: %v", err)
+	}
+
+	raw := "From: News <news@example.com>\r\n" +
+		"To: User <user@example.com>\r\n" +
+		"BadHeader\r\n" +
+		"Subject: Hello\r\n" +
+		"\r\n" +
+		"Body\r\n"
+
+	if _, err := user.Append("INBOX", newAnalyzeLiteral(t, raw), &imap.AppendOptions{Time: time.Now()}); err != nil {
+		t.Fatalf("append message: %v", err)
+	}
+
+	server := gi_imapserver.New(&gi_imapserver.Options{
+		NewSession: func(*gi_imapserver.Conn) (gi_imapserver.Session, *gi_imapserver.GreetingData, error) {
+			return mem.NewSession(), nil, nil
+		},
+		TLSConfig:    tlsConfig,
+		InsecureAuth: true,
+	})
+
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", tlsConfig)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.Serve(ln)
+	}()
+
+	t.Cleanup(func() {
+		_ = server.Close()
+		_ = ln.Close()
+		select {
+		case <-errCh:
+		default:
+		}
+	})
+
+	client := &Client{
+		Addr:      ln.Addr().String(),
+		Username:  "user@example.com",
+		Password:  "password",
+		TLSConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	if err := client.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	if _, err := client.SelectMailbox(ctx, "INBOX"); err != nil {
+		t.Fatalf("select inbox: %v", err)
+	}
+
+	uids, err := client.SearchUIDsNewerThan(ctx, 0)
+	if err != nil {
+		t.Fatalf("search uids: %v", err)
+	}
+	if len(uids) != 1 {
+		t.Fatalf("expected 1 uid, got %d", len(uids))
+	}
+
+	data, err := client.FetchSenderData(ctx, uids)
+	if err != nil {
+		t.Fatalf("fetch data: %v", err)
+	}
+	if len(data) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(data))
+	}
+	if data[0].ListID != "" {
+		t.Fatalf("expected empty ListID for malformed header, got %q", data[0].ListID)
+	}
+}
+
+func TestFetchSenderDataReturnsErrorOnFetchFailure(t *testing.T) {
+	addr, cleanup := setupAnalyzeIMAPServer(t, []testAnalyzeMessage{
+		{
+			From:    "News <news@example.com>",
+			To:      "User <user@example.com>",
+			Subject: "Hello",
+			ListID:  "",
+			Body:    "Body",
+			Time:    time.Now().Add(-2 * time.Hour),
+		},
+	})
+	t.Cleanup(cleanup)
+
+	client := &Client{
+		Addr:      addr,
+		Username:  "user@example.com",
+		Password:  "password",
+		TLSConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	if err := client.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	if _, err := client.SelectMailbox(ctx, "INBOX"); err != nil {
+		t.Fatalf("select inbox: %v", err)
+	}
+
+	uids, err := client.SearchUIDsNewerThan(ctx, 0)
+	if err != nil {
+		t.Fatalf("search uids: %v", err)
+	}
+	if len(uids) != 1 {
+		t.Fatalf("expected 1 uid, got %d", len(uids))
+	}
+
+	cleanup()
+	_, err = client.FetchSenderData(ctx, uids)
+	if err == nil {
+		t.Fatal("expected fetch error after server shutdown")
+	}
+}
+
+func TestReadHeaderLiteralFailure(t *testing.T) {
+	_, err := readHeader(errorLiteral{})
+	if err == nil {
+		t.Fatal("expected readHeader to return error")
+	}
+}
+
 func TestAnalyzeAgeWindowEndToEnd(t *testing.T) {
 	addr, cleanup := setupAnalyzeIMAPServer(t, []testAnalyzeMessage{
 		{
@@ -1053,6 +1197,16 @@ func containsFlag(flags []imap.Flag, target imap.Flag) bool {
 		}
 	}
 	return false
+}
+
+type errorLiteral struct{}
+
+func (errorLiteral) Read([]byte) (int, error) {
+	return 0, errors.New("read failed")
+}
+
+func (errorLiteral) Size() int64 {
+	return 0
 }
 
 func splitHostPort(addr string) (string, string, error) {
