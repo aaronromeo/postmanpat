@@ -12,7 +12,7 @@ import (
 	"github.com/aaronromeo/postmanpat/internal/config"
 	"github.com/aaronromeo/postmanpat/internal/imapclient"
 	"github.com/aaronromeo/postmanpat/internal/matchers"
-	imapclientv2 "github.com/emersion/go-imap/v2/imapclient"
+	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 	"github.com/spf13/cobra"
 )
 
@@ -66,8 +66,8 @@ var watchCmd = &cobra.Command{
 		}
 
 		updateCh := make(chan uint32, 1)
-		handler := &imapclientv2.UnilateralDataHandler{
-			Mailbox: func(data *imapclientv2.UnilateralDataMailbox) {
+		handler := &giimapclient.UnilateralDataHandler{
+			Mailbox: func(data *giimapclient.UnilateralDataMailbox) {
 				if data.NumMessages == nil {
 					return
 				}

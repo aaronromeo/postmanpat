@@ -19,8 +19,9 @@ import (
 	"github.com/aaronromeo/postmanpat/internal/config"
 	"github.com/aaronromeo/postmanpat/internal/matchers"
 	"github.com/emersion/go-imap/v2"
-	"github.com/emersion/go-imap/v2/imapserver"
-	"github.com/emersion/go-imap/v2/imapserver/imapmemserver"
+	giimapclient "github.com/emersion/go-imap/v2/imapclient"
+	giimapserver "github.com/emersion/go-imap/v2/imapserver"
+	giimapmemserver "github.com/emersion/go-imap/v2/imapserver/imapmemserver"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -389,8 +390,8 @@ func setupTestServer(t *testing.T, caps imap.CapSet, extraMailboxes []string, ex
 	t.Helper()
 
 	tlsConfig := testTLSConfig(t)
-	mem := imapmemserver.New()
-	user := imapmemserver.NewUser("user@example.com", "password")
+	mem := giimapmemserver.New()
+	user := giimapmemserver.NewUser("user@example.com", "password")
 	mem.AddUser(user)
 
 	if err := user.Create("INBOX", nil); err != nil {
@@ -447,8 +448,8 @@ func setupTestServer(t *testing.T, caps imap.CapSet, extraMailboxes []string, ex
 		}
 	}
 
-	server := imapserver.New(&imapserver.Options{
-		NewSession: func(*imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
+	server := giimapserver.New(&giimapserver.Options{
+		NewSession: func(*giimapserver.Conn) (giimapserver.Session, *giimapserver.GreetingData, error) {
 			return mem.NewSession(), nil, nil
 		},
 		Caps:         caps,
@@ -714,6 +715,69 @@ func TestFetchSenderDataReplyToRequiresHeader(t *testing.T) {
 	}
 }
 
+func TestFetchSenderDataDoesNotSetSeen(t *testing.T) {
+	addr, cleanup := setupAnalyzeIMAPServer(t, []testAnalyzeMessage{
+		{
+			From:    "News <news@example.com>",
+			To:      "User <user@example.com>",
+			Subject: "Peek test",
+			ListID:  "list.example.com",
+			Body:    "unsubscribe",
+			Time:    time.Now().Add(-2 * time.Hour),
+		},
+	})
+	t.Cleanup(cleanup)
+
+	client := &Client{
+		Addr:      addr,
+		Username:  "user@example.com",
+		Password:  "password",
+		TLSConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	if err := client.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	if _, err := client.SelectMailbox(ctx, "INBOX"); err != nil {
+		t.Fatalf("select inbox: %v", err)
+	}
+
+	uids, err := client.SearchUIDsNewerThan(ctx, 0)
+	if err != nil {
+		t.Fatalf("search uids: %v", err)
+	}
+	if len(uids) != 1 {
+		t.Fatalf("expected 1 uid, got %d", len(uids))
+	}
+
+	flagsBefore, err := fetchMessageFlags(ctx, client, uids)
+	if err != nil {
+		t.Fatalf("fetch flags before: %v", err)
+	}
+	if containsFlag(flagsBefore, imap.FlagSeen) {
+		t.Fatalf("expected message to be unseen before fetch, got flags %v", flagsBefore)
+	}
+
+	_, err = client.FetchSenderData(ctx, uids)
+	if err != nil {
+		t.Fatalf("fetch data: %v", err)
+	}
+
+	flagsAfter, err := fetchMessageFlags(ctx, client, uids)
+	if err != nil {
+		t.Fatalf("fetch flags after: %v", err)
+	}
+	if containsFlag(flagsAfter, imap.FlagSeen) {
+		t.Fatalf("expected message to remain unseen after fetch, got flags %v", flagsAfter)
+	}
+}
+
 func TestAnalyzeAgeWindowEndToEnd(t *testing.T) {
 	addr, cleanup := setupAnalyzeIMAPServer(t, []testAnalyzeMessage{
 		{
@@ -810,8 +874,8 @@ func setupAnalyzeIMAPServer(t *testing.T, messages []testAnalyzeMessage) (string
 	t.Helper()
 
 	tlsConfig := testAnalyzeTLSConfig(t)
-	mem := imapmemserver.New()
-	user := imapmemserver.NewUser("user@example.com", "password")
+	mem := giimapmemserver.New()
+	user := giimapmemserver.NewUser("user@example.com", "password")
 	mem.AddUser(user)
 
 	if err := user.Create("INBOX", nil); err != nil {
@@ -834,8 +898,8 @@ func setupAnalyzeIMAPServer(t *testing.T, messages []testAnalyzeMessage) (string
 		}
 	}
 
-	server := imapserver.New(&imapserver.Options{
-		NewSession: func(*imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
+	server := giimapserver.New(&giimapserver.Options{
+		NewSession: func(*giimapserver.Conn) (giimapserver.Session, *giimapserver.GreetingData, error) {
 			return mem.NewSession(), nil, nil
 		},
 		TLSConfig:    tlsConfig,
@@ -944,6 +1008,51 @@ func testAnalyzeTLSConfig(t *testing.T) *tls.Config {
 		Certificates: []tls.Certificate{cert},
 		NextProtos:   []string{"imap"},
 	}
+}
+
+func fetchMessageFlags(ctx context.Context, client *Client, uids []uint32) ([]imap.Flag, error) {
+	var uidSet imap.UIDSet
+	for _, uid := range uids {
+		uidSet.AddNum(imap.UID(uid))
+	}
+
+	fetchOptions := &imap.FetchOptions{
+		Flags: true,
+	}
+
+	fetchCmd := client.client.Fetch(uidSet, fetchOptions)
+	for {
+		if err := ctx.Err(); err != nil {
+			_ = fetchCmd.Close()
+			return nil, err
+		}
+		msg := fetchCmd.Next()
+		if msg == nil {
+			break
+		}
+		for {
+			item := msg.Next()
+			if item == nil {
+				break
+			}
+			if data, ok := item.(giimapclient.FetchItemDataFlags); ok {
+				return data.Flags, nil
+			}
+		}
+	}
+	if err := fetchCmd.Close(); err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
+func containsFlag(flags []imap.Flag, target imap.Flag) bool {
+	for _, flag := range flags {
+		if flag == target {
+			return true
+		}
+	}
+	return false
 }
 
 func splitHostPort(addr string) (string, string, error) {
