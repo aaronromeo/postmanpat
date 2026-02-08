@@ -39,6 +39,7 @@ type MailData struct {
 	SenderDomains          []string
 	Recipients             []string
 	RecipientTags          []string
+	Body                   string
 	ListID                 string
 	ListUnsubscribe        bool
 	ListUnsubscribeTargets string
@@ -159,15 +160,19 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 		uidSet.AddNum(imap.UID(uid))
 	}
 
-	bodySection := &imap.FetchItemBodySection{
+	headerSection := &imap.FetchItemBodySection{
 		Specifier:    imap.PartSpecifierHeader,
 		HeaderFields: []string{"List-ID", "List-Unsubscribe", "Precedence", "X-Mailer", "User-Agent", "Reply-To"},
 		Peek:         true,
 	}
+	bodySection := &imap.FetchItemBodySection{
+		Specifier: imap.PartSpecifierText,
+		Peek:      true,
+	}
 	fetchOptions := &imap.FetchOptions{
 		Envelope:    true,
 		UID:         true,
-		BodySection: []*imap.FetchItemBodySection{bodySection},
+		BodySection: []*imap.FetchItemBodySection{headerSection, bodySection},
 	}
 
 	fetchCmd := c.client.Fetch(uidSet, fetchOptions)
@@ -185,6 +190,7 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 
 		var envelope *imap.Envelope
 		var header *mail.Header
+		var body string
 		for {
 			item := msg.Next()
 			if item == nil {
@@ -198,10 +204,17 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 				if data.Literal == nil {
 					continue
 				}
-				if data.MatchCommand(bodySection) {
+				if data.MatchCommand(headerSection) {
 					parsedHeader, err := readHeader(data.Literal)
 					if err == nil {
 						header = parsedHeader
+					}
+					continue
+				}
+				if data.MatchCommand(bodySection) {
+					raw, err := io.ReadAll(data.Literal)
+					if err == nil {
+						body = string(raw)
 					}
 					continue
 				}
@@ -235,6 +248,7 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 			SenderDomains:     fromHosts,
 			Recipients:        recipients,
 			RecipientTags:     recipientTags,
+			Body:              body,
 			ListID:            headerText(header, "List-ID"),
 			PrecedenceRaw:     headerText(header, "Precedence"),
 			XMailer:           headerText(header, "X-Mailer"),
