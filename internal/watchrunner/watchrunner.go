@@ -2,6 +2,7 @@ package watchrunner
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 
@@ -44,6 +45,7 @@ func ProcessUIDs(deps Deps, state *State, uids []uint32) error {
 				Recipients:     message.Recipients,
 				RecipientTags:  message.RecipientTags,
 				Body:           message.Body,
+				Cc:             message.Cc,
 			})
 			if err != nil {
 				return err
@@ -53,6 +55,9 @@ func ProcessUIDs(deps Deps, state *State, uids []uint32) error {
 				deps.Log.Info("rule matched", "rule", rule.Name, "list_id", message.ListID)
 				if deps.Announce != nil {
 					deps.Announce(rule.Name)
+				}
+				if err := applyActions(deps, rule, message.UID); err != nil {
+					return err
 				}
 			}
 		}
@@ -104,4 +109,33 @@ func maxUID(current uint32, uids []uint32) uint32 {
 		}
 	}
 	return max
+}
+
+func applyActions(deps Deps, rule config.Rule, uid uint32) error {
+	if uid == 0 {
+		return nil
+	}
+	for _, action := range rule.Actions {
+		switch action.Type {
+		case config.DELETE:
+			expungeAfterDelete := true
+			if action.ExpungeAfterDelete != nil {
+				expungeAfterDelete = *action.ExpungeAfterDelete
+			}
+			if err := deps.Client.DeleteUIDs(deps.Ctx, []uint32{uid}, expungeAfterDelete); err != nil {
+				return err
+			}
+		case config.MOVE:
+			destination := strings.TrimSpace(action.Destination)
+			if destination == "" {
+				return fmt.Errorf("Action move missing destination for rule %q", rule.Name)
+			}
+			if err := deps.Client.MoveUIDs(deps.Ctx, []uint32{uid}, destination); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unsupported action type %q for rule %q", action.Type, rule.Name)
+		}
+	}
+	return nil
 }

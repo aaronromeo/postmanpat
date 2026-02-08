@@ -1,28 +1,20 @@
 package imapclient
 
 import (
-	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"errors"
-	"math/big"
 	"net"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
+	"github.com/aaronromeo/postmanpat/ftest"
 	"github.com/aaronromeo/postmanpat/internal/config"
 	"github.com/aaronromeo/postmanpat/internal/matchers"
 	"github.com/emersion/go-imap/v2"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
-	giimapserver "github.com/emersion/go-imap/v2/imapserver"
-	giimapmemserver "github.com/emersion/go-imap/v2/imapserver/imapmemserver"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -41,7 +33,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 				Folders:       []string{"INBOX"},
 				BodySubstring: []string{"unsubscribe", "updates"},
 			},
-			wantUIDs: []uint32{ids.newsUID},
+			wantUIDs: []uint32{ids.NewsUID},
 		},
 		{
 			name: "body substrings fail when missing",
@@ -57,7 +49,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 				Folders:          []string{"INBOX"},
 				ReplyToSubstring: []string{"example.com"},
 			},
-			wantUIDs: []uint32{ids.newsUID},
+			wantUIDs: []uint32{ids.NewsUID},
 		},
 		{
 			name: "match age window max",
@@ -67,7 +59,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 					Max: "1d",
 				},
 			},
-			wantUIDs: []uint32{ids.otherUID},
+			wantUIDs: []uint32{ids.OtherUID},
 		},
 		{
 			name: "match age window min",
@@ -77,7 +69,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 					Min: "1d",
 				},
 			},
-			wantUIDs: []uint32{ids.newsUID},
+			wantUIDs: []uint32{ids.NewsUID},
 		},
 		{
 			name: "match sender recipient body",
@@ -85,7 +77,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 				Folders:       []string{"INBOX"},
 				BodySubstring: []string{"unsubscribe"},
 			},
-			wantUIDs: []uint32{ids.newsUID},
+			wantUIDs: []uint32{ids.NewsUID},
 		},
 		{
 			name: "match sender email",
@@ -93,7 +85,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 				Folders:         []string{"INBOX"},
 				SenderSubstring: []string{"example.com"},
 			},
-			wantUIDs: []uint32{ids.newsUID},
+			wantUIDs: []uint32{ids.NewsUID},
 		},
 		{
 			name: "match recipients email",
@@ -101,7 +93,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 				Folders:    []string{"INBOX"},
 				Recipients: []string{"user@example.com"},
 			},
-			wantUIDs: []uint32{ids.newsUID, ids.otherUID},
+			wantUIDs: []uint32{ids.NewsUID, ids.OtherUID},
 		},
 		{
 			name: "no matches",
@@ -160,7 +152,7 @@ func TestDeleteUIDsLocalServer(t *testing.T) {
 			}
 			matched, err := client.SearchByServerMatchers(ctx, target)
 			assert.NoError(t, err, "search error")
-			assert.ElementsMatch(t, []uint32{ids.newsUID}, matched["INBOX"], "unexpected matches before delete")
+			assert.ElementsMatch(t, []uint32{ids.NewsUID}, matched["INBOX"], "unexpected matches before delete")
 
 			err = client.DeleteByMailbox(ctx, matched, true)
 			assert.NoError(t, err, "delete error")
@@ -175,7 +167,7 @@ func TestDeleteUIDsLocalServer(t *testing.T) {
 			}
 			matched, err = client.SearchByServerMatchers(ctx, remaining)
 			assert.NoError(t, err, "search remaining")
-			assert.ElementsMatch(t, []uint32{ids.otherUID}, matched["INBOX"], "unexpected remaining matches")
+			assert.ElementsMatch(t, []uint32{ids.OtherUID}, matched["INBOX"], "unexpected remaining matches")
 		})
 	}
 }
@@ -231,7 +223,7 @@ func TestMoveByMailboxLocalServer(t *testing.T) {
 			})
 			assert.NoError(t, err, "select inbox before move")
 
-			err = client.MoveByMailbox(ctx, map[string][]uint32{"INBOX": []uint32{ids.newsUID}}, tc.destination)
+			err = client.MoveByMailbox(ctx, map[string][]uint32{"INBOX": []uint32{ids.NewsUID}}, tc.destination)
 			if tc.expectError {
 				assert.Error(t, err, "expected move error")
 				return
@@ -273,7 +265,7 @@ func TestMoveByMailboxLocalServer(t *testing.T) {
 }
 
 func TestSearchByMatchersMultipleFolders(t *testing.T) {
-	extraMessages := []testMailboxMessage{
+	extraMessages := []ftest.MailboxMessage{
 		{
 			Mailbox: "Archive",
 			From:    "Archive <archive@example.net>",
@@ -295,7 +287,7 @@ func TestSearchByMatchersMultipleFolders(t *testing.T) {
 	}
 	matched, err := client.SearchByServerMatchers(ctx, matchers)
 	assert.NoError(t, err, "search error")
-	assert.ElementsMatch(t, []uint32{ids.newsUID, ids.otherUID}, matched["INBOX"], "unexpected INBOX matches")
+	assert.ElementsMatch(t, []uint32{ids.NewsUID, ids.OtherUID}, matched["INBOX"], "unexpected INBOX matches")
 	assert.Len(t, matched["Archive"], 1, "expected one Archive match")
 }
 
@@ -311,7 +303,7 @@ func TestClientReuseAcrossOperations(t *testing.T) {
 		SenderSubstring: []string{"example.com"},
 	})
 	assert.NoError(t, err, "search initial sender")
-	assert.ElementsMatch(t, []uint32{ids.newsUID}, matched["INBOX"], "unexpected initial sender matches")
+	assert.ElementsMatch(t, []uint32{ids.NewsUID}, matched["INBOX"], "unexpected initial sender matches")
 
 	err = client.DeleteUIDs(ctx, matched["INBOX"], true)
 	assert.NoError(t, err, "delete sender matches")
@@ -323,7 +315,7 @@ func TestClientReuseAcrossOperations(t *testing.T) {
 	assert.NoError(t, err, "search after delete")
 	assert.Empty(t, matched["INBOX"], "expected no matches after delete")
 
-	err = client.MoveUIDs(ctx, []uint32{ids.otherUID}, "Archive")
+	err = client.MoveUIDs(ctx, []uint32{ids.OtherUID}, "Archive")
 	assert.NoError(t, err, "move other message")
 
 	matched, err = client.SearchByServerMatchers(ctx, config.ServerMatchers{
@@ -334,209 +326,25 @@ func TestClientReuseAcrossOperations(t *testing.T) {
 	assert.Empty(t, matched["INBOX"], "expected no matches in INBOX after move")
 }
 
-type literalReader struct {
-	*bytes.Reader
-	size int64
-}
-
-func newLiteral(t *testing.T, raw string) imap.LiteralReader {
-	t.Helper()
-	buf := []byte(raw)
-	return &literalReader{
-		Reader: bytes.NewReader(buf),
-		size:   int64(len(buf)),
-	}
-}
-
-func (lr *literalReader) Size() int64 {
-	return lr.size
-}
-
-func sampleMessageWithReplyTo(from, to, replyTo, subject, body string) string {
-	builder := &strings.Builder{}
-	builder.WriteString("From: ")
-	builder.WriteString(from)
-	builder.WriteString("\r\n")
-	builder.WriteString("To: ")
-	builder.WriteString(to)
-	builder.WriteString("\r\n")
-	builder.WriteString("Reply-To: ")
-	builder.WriteString(replyTo)
-	builder.WriteString("\r\n")
-	builder.WriteString("Subject: ")
-	builder.WriteString(subject)
-	builder.WriteString("\r\n")
-	builder.WriteString("\r\n")
-	builder.WriteString(body)
-	builder.WriteString("\r\n")
-	return builder.String()
-}
-
-type testMessageIDs struct {
-	newsUID  uint32
-	otherUID uint32
-}
-
-type testMailboxMessage struct {
-	Mailbox string
-	From    string
-	To      string
-	ReplyTo string
-	Subject string
-	Body    string
-	Time    time.Time
-}
-
-func setupTestServer(t *testing.T, caps imap.CapSet, extraMailboxes []string, extraMessages []testMailboxMessage) (*Client, testMessageIDs, func()) {
+func setupTestServer(t *testing.T, caps imap.CapSet, extraMailboxes []string, extraMessages []ftest.MailboxMessage) (*Client, ftest.MessageIDs, func()) {
 	t.Helper()
 
-	tlsConfig := testTLSConfig(t)
-	mem := giimapmemserver.New()
-	user := giimapmemserver.NewUser("user@example.com", "password")
-	mem.AddUser(user)
-
-	if err := user.Create("INBOX", nil); err != nil {
-		t.Fatalf("create mailbox: %v", err)
-	}
-	for _, mailbox := range extraMailboxes {
-		if strings.TrimSpace(mailbox) == "" {
-			continue
-		}
-		if err := user.Create(mailbox, nil); err != nil {
-			t.Fatalf("create mailbox %q: %v", mailbox, err)
-		}
-	}
-
-	newsAppend, err := user.Append("INBOX", newLiteral(t, sampleMessageWithReplyTo(
-		"News <news@example.com>",
-		"User <user@example.com>",
-		"Reply <reply@example.com>",
-		"Hello",
-		"Please unsubscribe from these updates.",
-	)), &imap.AppendOptions{Time: time.Now().Add(-48 * time.Hour)})
-	if err != nil {
-		t.Fatalf("append message: %v", err)
-	}
-
-	otherAppend, err := user.Append("INBOX", newLiteral(t, sampleMessageWithReplyTo(
-		"Other <other@example.org>",
-		"User <user@example.com>",
-		"Reply <reply@example.org>",
-		"Hi",
-		"Nothing to see here.",
-	)), &imap.AppendOptions{Time: time.Now()})
-	if err != nil {
-		t.Fatalf("append message: %v", err)
-	}
-
-	for _, msg := range extraMessages {
-		mailbox := strings.TrimSpace(msg.Mailbox)
-		if mailbox == "" {
-			t.Fatalf("extra message mailbox is required")
-		}
-		appendTime := msg.Time
-		if appendTime.IsZero() {
-			appendTime = time.Now()
-		}
-		if _, err := user.Append(mailbox, newLiteral(t, sampleMessageWithReplyTo(
-			msg.From,
-			msg.To,
-			msg.ReplyTo,
-			msg.Subject,
-			msg.Body,
-		)), &imap.AppendOptions{Time: appendTime}); err != nil {
-			t.Fatalf("append extra message: %v", err)
-		}
-	}
-
-	server := giimapserver.New(&giimapserver.Options{
-		NewSession: func(*giimapserver.Conn) (giimapserver.Session, *giimapserver.GreetingData, error) {
-			return mem.NewSession(), nil, nil
-		},
-		Caps:         caps,
-		TLSConfig:    tlsConfig,
-		InsecureAuth: true,
-	})
-
-	ln, err := tls.Listen("tcp", "127.0.0.1:0", tlsConfig)
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- server.Serve(ln)
-	}()
+	addr, ids, cleanup := ftest.SetupIMAPServer(t, caps, extraMailboxes, extraMessages)
 
 	client := &Client{
-		Addr:      ln.Addr().String(),
-		Username:  "user@example.com",
-		Password:  "password",
+		Addr:      addr,
+		Username:  ftest.DefaultUser,
+		Password:  ftest.DefaultPass,
 		TLSConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	if err := client.Connect(); err != nil {
-		_ = ln.Close()
-		_ = server.Close()
+		cleanup()
 		t.Fatalf("connect: %v", err)
 	}
 
-	cleanup := func() {
+	return client, ids, func() {
 		_ = client.Close()
-		_ = server.Close()
-		_ = ln.Close()
-		select {
-		case <-errCh:
-		default:
-		}
-	}
-
-	ids := testMessageIDs{
-		newsUID:  uint32(newsAppend.UID),
-		otherUID: uint32(otherAppend.UID),
-	}
-
-	return client, ids, cleanup
-}
-
-func testTLSConfig(t *testing.T) *tls.Config {
-	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("generate key: %v", err)
-	}
-
-	serial, err := rand.Int(rand.Reader, big.NewInt(1<<62))
-	if err != nil {
-		t.Fatalf("generate serial: %v", err)
-	}
-
-	template := x509.Certificate{
-		SerialNumber: serial,
-		Subject: pkix.Name{
-			CommonName: "localhost",
-		},
-		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().Add(time.Hour),
-		DNSNames:              []string{"localhost"},
-		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-	}
-
-	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
-	if err != nil {
-		t.Fatalf("create cert: %v", err)
-	}
-
-	cert := tls.Certificate{
-		Certificate: [][]byte{der},
-		PrivateKey:  key,
-	}
-
-	return &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		NextProtos:   []string{"imap"},
+		cleanup()
 	}
 }
 
@@ -604,7 +412,7 @@ func TestBuildSearchCriteriaExcludesDeleted(t *testing.T) {
 }
 
 func TestListIDRegexEndToEnd(t *testing.T) {
-	addr, cleanup := setupAnalyzeIMAPServer(t, []testAnalyzeMessage{
+	addr, cleanup := ftest.SetupAnalyzeIMAPServer(t, []ftest.AnalyzeMessage{
 		{
 			From:    "News <news@example.com>",
 			To:      "User <user@example.com>",
@@ -664,7 +472,7 @@ func TestListIDRegexEndToEnd(t *testing.T) {
 }
 
 func TestFetchSenderDataReplyToRequiresHeader(t *testing.T) {
-	addr, cleanup := setupAnalyzeIMAPServer(t, []testAnalyzeMessage{
+	addr, cleanup := ftest.SetupAnalyzeIMAPServer(t, []ftest.AnalyzeMessage{
 		{
 			From:    "BandsInTown <updates@bandsintown.com>",
 			To:      "User <user@example.com>",
@@ -717,7 +525,7 @@ func TestFetchSenderDataReplyToRequiresHeader(t *testing.T) {
 }
 
 func TestFetchSenderDataDoesNotSetSeen(t *testing.T) {
-	addr, cleanup := setupAnalyzeIMAPServer(t, []testAnalyzeMessage{
+	addr, cleanup := ftest.SetupAnalyzeIMAPServer(t, []ftest.AnalyzeMessage{
 		{
 			From:    "News <news@example.com>",
 			To:      "User <user@example.com>",
@@ -780,15 +588,6 @@ func TestFetchSenderDataDoesNotSetSeen(t *testing.T) {
 }
 
 func TestFetchSenderDataMalformedHeaderDoesNotError(t *testing.T) {
-	tlsConfig := testAnalyzeTLSConfig(t)
-	mem := giimapmemserver.New()
-	user := giimapmemserver.NewUser("user@example.com", "password")
-	mem.AddUser(user)
-
-	if err := user.Create("INBOX", nil); err != nil {
-		t.Fatalf("create mailbox: %v", err)
-	}
-
 	raw := "From: News <news@example.com>\r\n" +
 		"To: User <user@example.com>\r\n" +
 		"BadHeader\r\n" +
@@ -796,41 +595,17 @@ func TestFetchSenderDataMalformedHeaderDoesNotError(t *testing.T) {
 		"\r\n" +
 		"Body\r\n"
 
-	if _, err := user.Append("INBOX", newAnalyzeLiteral(t, raw), &imap.AppendOptions{Time: time.Now()}); err != nil {
-		t.Fatalf("append message: %v", err)
-	}
-
-	server := giimapserver.New(&giimapserver.Options{
-		NewSession: func(*giimapserver.Conn) (giimapserver.Session, *giimapserver.GreetingData, error) {
-			return mem.NewSession(), nil, nil
-		},
-		TLSConfig:    tlsConfig,
-		InsecureAuth: true,
-	})
-
-	ln, err := tls.Listen("tcp", "127.0.0.1:0", tlsConfig)
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- server.Serve(ln)
-	}()
-
-	t.Cleanup(func() {
-		_ = server.Close()
-		_ = ln.Close()
-		select {
-		case <-errCh:
-		default:
-		}
-	})
+	addr, cleanup := ftest.SetupRawIMAPServer(t, nil, nil, []ftest.RawMessage{{
+		Mailbox: "INBOX",
+		Raw:     raw,
+		Time:    time.Now(),
+	}})
+	t.Cleanup(cleanup)
 
 	client := &Client{
-		Addr:      ln.Addr().String(),
-		Username:  "user@example.com",
-		Password:  "password",
+		Addr:      addr,
+		Username:  ftest.DefaultUser,
+		Password:  ftest.DefaultPass,
 		TLSConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	if err := client.Connect(); err != nil {
@@ -868,7 +643,7 @@ func TestFetchSenderDataMalformedHeaderDoesNotError(t *testing.T) {
 }
 
 func TestFetchSenderDataReturnsErrorOnFetchFailure(t *testing.T) {
-	addr, cleanup := setupAnalyzeIMAPServer(t, []testAnalyzeMessage{
+	addr, cleanup := ftest.SetupAnalyzeIMAPServer(t, []ftest.AnalyzeMessage{
 		{
 			From:    "News <news@example.com>",
 			To:      "User <user@example.com>",
@@ -923,7 +698,7 @@ func TestReadHeaderLiteralFailure(t *testing.T) {
 }
 
 func TestAnalyzeAgeWindowEndToEnd(t *testing.T) {
-	addr, cleanup := setupAnalyzeIMAPServer(t, []testAnalyzeMessage{
+	addr, cleanup := ftest.SetupAnalyzeIMAPServer(t, []ftest.AnalyzeMessage{
 		{
 			From:    "News <news@example.com>",
 			To:      "User <user@example.com>",
@@ -1002,155 +777,6 @@ rules:
 	uids := matched["INBOX"]
 	if len(uids) != 1 {
 		t.Fatalf("expected 1 matched message, got %d", len(uids))
-	}
-}
-
-type testAnalyzeMessage struct {
-	From    string
-	To      string
-	Subject string
-	ListID  string
-	Body    string
-	Time    time.Time
-}
-
-func setupAnalyzeIMAPServer(t *testing.T, messages []testAnalyzeMessage) (string, func()) {
-	t.Helper()
-
-	tlsConfig := testAnalyzeTLSConfig(t)
-	mem := giimapmemserver.New()
-	user := giimapmemserver.NewUser("user@example.com", "password")
-	mem.AddUser(user)
-
-	if err := user.Create("INBOX", nil); err != nil {
-		t.Fatalf("create mailbox: %v", err)
-	}
-
-	for _, msg := range messages {
-		appendTime := msg.Time
-		if appendTime.IsZero() {
-			appendTime = time.Now()
-		}
-		if _, err := user.Append("INBOX", newAnalyzeLiteral(t, sampleAnalyzeMessage(
-			msg.From,
-			msg.To,
-			msg.Subject,
-			msg.ListID,
-			msg.Body,
-		)), &imap.AppendOptions{Time: appendTime}); err != nil {
-			t.Fatalf("append message: %v", err)
-		}
-	}
-
-	server := giimapserver.New(&giimapserver.Options{
-		NewSession: func(*giimapserver.Conn) (giimapserver.Session, *giimapserver.GreetingData, error) {
-			return mem.NewSession(), nil, nil
-		},
-		TLSConfig:    tlsConfig,
-		InsecureAuth: true,
-	})
-
-	ln, err := tls.Listen("tcp", "127.0.0.1:0", tlsConfig)
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- server.Serve(ln)
-	}()
-
-	cleanup := func() {
-		_ = server.Close()
-		_ = ln.Close()
-		select {
-		case <-errCh:
-		default:
-		}
-	}
-
-	return ln.Addr().String(), cleanup
-}
-
-type analyzeLiteralReader struct {
-	*bytes.Reader
-	size int64
-}
-
-func newAnalyzeLiteral(t *testing.T, raw string) imap.LiteralReader {
-	t.Helper()
-	buf := []byte(raw)
-	return &analyzeLiteralReader{
-		Reader: bytes.NewReader(buf),
-		size:   int64(len(buf)),
-	}
-}
-
-func (lr *analyzeLiteralReader) Size() int64 {
-	return lr.size
-}
-
-func sampleAnalyzeMessage(from, to, subject, listID, body string) string {
-	builder := &strings.Builder{}
-	builder.WriteString("From: ")
-	builder.WriteString(from)
-	builder.WriteString("\r\n")
-	builder.WriteString("To: ")
-	builder.WriteString(to)
-	builder.WriteString("\r\n")
-	if listID != "" {
-		builder.WriteString("List-ID: ")
-		builder.WriteString(listID)
-		builder.WriteString("\r\n")
-	}
-	builder.WriteString("Subject: ")
-	builder.WriteString(subject)
-	builder.WriteString("\r\n")
-	builder.WriteString("\r\n")
-	builder.WriteString(body)
-	builder.WriteString("\r\n")
-	return builder.String()
-}
-
-func testAnalyzeTLSConfig(t *testing.T) *tls.Config {
-	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("generate key: %v", err)
-	}
-
-	serial, err := rand.Int(rand.Reader, big.NewInt(1<<62))
-	if err != nil {
-		t.Fatalf("generate serial: %v", err)
-	}
-
-	template := x509.Certificate{
-		SerialNumber: serial,
-		Subject: pkix.Name{
-			CommonName: "localhost",
-		},
-		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().Add(time.Hour),
-		DNSNames:              []string{"localhost"},
-		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-	}
-
-	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
-	if err != nil {
-		t.Fatalf("create cert: %v", err)
-	}
-
-	cert := tls.Certificate{
-		Certificate: [][]byte{der},
-		PrivateKey:  key,
-	}
-
-	return &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		NextProtos:   []string{"imap"},
 	}
 }
 

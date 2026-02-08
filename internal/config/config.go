@@ -52,6 +52,7 @@ type ClientMatchers struct {
 	BodyRegex         []string `yaml:"body_regex"`
 	SenderRegex       []string `yaml:"sender_regex"`
 	RecipientsRegex   []string `yaml:"recipients_regex"`
+	CcRegex           []string `yaml:"cc_regex"`
 	ReplyToRegex      []string `yaml:"replyto_regex"`
 	ListIDRegex       []string `yaml:"list_id_regex"`
 	RecipientTagRegex []string `yaml:"recipient_tag_regex"`
@@ -65,6 +66,7 @@ func (m *ClientMatchers) IsEmpty() bool {
 		len(m.BodyRegex) == 0 &&
 		len(m.SenderRegex) == 0 &&
 		len(m.RecipientsRegex) == 0 &&
+		len(m.CcRegex) == 0 &&
 		len(m.ReplyToRegex) == 0 &&
 		len(m.ListIDRegex) == 0 &&
 		len(m.RecipientTagRegex) == 0
@@ -87,6 +89,7 @@ type ServerMatchers struct {
 	AgeWindow        *AgeWindow `yaml:"age_window"`
 	SenderSubstring  []string   `yaml:"sender_substring"`
 	Recipients       []string   `yaml:"recipients"`
+	CcSubstring      []string   `yaml:"cc_substring"`
 	BodySubstring    []string   `yaml:"body_substring"`
 	ReplyToSubstring []string   `yaml:"replyto_substring"`
 	ListIDSubstring  []string   `yaml:"list_id_substring"`

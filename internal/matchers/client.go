@@ -16,6 +16,7 @@ type ClientMessage struct {
 	Recipients     []string
 	RecipientTags  []string
 	Body           string
+	Cc             []string
 }
 
 // MatchesClient returns true if the message satisfies all configured client matchers.
@@ -43,6 +44,15 @@ func MatchesClient(matchers *config.ClientMatchers, data ClientMessage) (bool, e
 	}
 	if len(matchers.RecipientsRegex) > 0 {
 		ok, err := matchAnyRegexInList(matchers.RecipientsRegex, data.Recipients)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+	}
+	if len(matchers.CcRegex) > 0 {
+		ok, err := matchAnyRegexInList(matchers.CcRegex, data.Cc)
 		if err != nil {
 			return false, err
 		}

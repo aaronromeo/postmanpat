@@ -35,9 +35,11 @@ type Client struct {
 }
 
 type MailData struct {
+	UID                    uint32
 	ReplyToDomains         []string
 	SenderDomains          []string
 	Recipients             []string
+	Cc                     []string
 	RecipientTags          []string
 	Body                   string
 	ListID                 string
@@ -191,6 +193,7 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 		var envelope *imap.Envelope
 		var header *mail.Header
 		var body string
+		var uid uint32
 		for {
 			item := msg.Next()
 			if item == nil {
@@ -198,6 +201,10 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 			}
 			if data, ok := item.(giimapclient.FetchItemDataEnvelope); ok {
 				envelope = data.Envelope
+				continue
+			}
+			if data, ok := item.(giimapclient.FetchItemDataUID); ok {
+				uid = uint32(data.UID)
 				continue
 			}
 			if data, ok := item.(giimapclient.FetchItemDataBodySection); ok {
@@ -242,11 +249,17 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 			recipients = append(recipients, addr.Addr())
 			recipientTags = append(recipientTags, recipientTag(addr.Addr()))
 		}
+		ccRecipients := []string{}
+		for _, addr := range envelope.Cc {
+			ccRecipients = append(ccRecipients, addr.Addr())
+		}
 
 		data := MailData{
+			UID:               uid,
 			ReplyToDomains:    replyToHosts,
 			SenderDomains:     fromHosts,
 			Recipients:        recipients,
+			Cc:                ccRecipients,
 			RecipientTags:     recipientTags,
 			Body:              body,
 			ListID:            headerText(header, "List-ID"),
@@ -694,6 +707,24 @@ func buildSearchCriteria(matchers config.ServerMatchers) (*imap.SearchCriteria, 
 			})
 		}
 		if combined := combineAnd(recipientCriteria); combined != nil {
+			criteria.And(combined)
+		}
+	}
+
+	if len(matchers.CcSubstring) > 0 {
+		ccCriteria := make([]imap.SearchCriteria, 0, len(matchers.CcSubstring))
+		for _, value := range matchers.CcSubstring {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			ccCriteria = append(ccCriteria, imap.SearchCriteria{
+				Header: []imap.SearchCriteriaHeaderField{{
+					Key:   "Cc",
+					Value: value,
+				}},
+			})
+		}
+		if combined := combineAnd(ccCriteria); combined != nil {
 			criteria.And(combined)
 		}
 	}

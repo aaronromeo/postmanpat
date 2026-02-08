@@ -112,6 +112,40 @@ func TestMatchesClientRecipientsRegex(t *testing.T) {
 	}
 }
 
+func TestMatchesClientCcRegex(t *testing.T) {
+	matchers := &config.ClientMatchers{
+		CcRegex: []string{`cc@example\.com`},
+	}
+	data := ClientMessage{
+		Cc: []string{"cc@example.com"},
+	}
+
+	ok, err := MatchesClient(matchers, data)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected cc_regex to match cc recipient")
+	}
+}
+
+func TestMatchesClientCcRegexNoMatch(t *testing.T) {
+	matchers := &config.ClientMatchers{
+		CcRegex: []string{`cc@example\.com`},
+	}
+	data := ClientMessage{
+		Cc: []string{"other@example.com"},
+	}
+
+	ok, err := MatchesClient(matchers, data)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if ok {
+		t.Fatal("expected cc_regex to not match cc recipient")
+	}
+}
+
 func TestMatchesClientBodyRegex(t *testing.T) {
 	matchers := &config.ClientMatchers{
 		BodyRegex: []string{`unsubscribe`},

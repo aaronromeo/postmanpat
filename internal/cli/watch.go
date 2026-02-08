@@ -330,6 +330,7 @@ func runWatchTest(ctx context.Context, client *imapclient.Client, cfg config.Con
 				Recipients:     message.Recipients,
 				RecipientTags:  message.RecipientTags,
 				Body:           message.Body,
+				Cc:             message.Cc,
 			})
 			if err != nil {
 				return err
