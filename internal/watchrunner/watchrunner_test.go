@@ -10,7 +10,7 @@ import (
 
 	"github.com/aaronromeo/postmanpat/ftest"
 	"github.com/aaronromeo/postmanpat/internal/config"
-	"github.com/aaronromeo/postmanpat/internal/imapclient"
+	"github.com/aaronromeo/postmanpat/internal/imap"
 )
 
 func TestIsBenignIdleError(t *testing.T) {
@@ -171,7 +171,7 @@ func TestWatchProcessUIDsUnsupportedAction(t *testing.T) {
 const senderHostValue = "example.com"
 const senderHostPattern = "example\\.com"
 
-func assertMailboxCount(ctx context.Context, client *imapclient.Client, mailbox, senderHost string, expected int) error {
+func assertMailboxCount(ctx context.Context, client *imap.Client, mailbox, senderHost string, expected int) error {
 	matchers := config.ServerMatchers{
 		Folders:         []string{mailbox},
 		SenderSubstring: []string{senderHost},
@@ -186,11 +186,11 @@ func assertMailboxCount(ctx context.Context, client *imapclient.Client, mailbox,
 	return nil
 }
 
-func setupWatchRunnerServer(t *testing.T, extraMailboxes []string) (*imapclient.Client, ftest.MessageIDs, func()) {
+func setupWatchRunnerServer(t *testing.T, extraMailboxes []string) (*imap.Client, ftest.MessageIDs, func()) {
 	t.Helper()
 
 	addr, ids, cleanup := ftest.SetupIMAPServer(t, nil, extraMailboxes, nil)
-	client := &imapclient.Client{
+	client := &imap.Client{
 		Addr:      addr,
 		Username:  ftest.DefaultUser,
 		Password:  ftest.DefaultPass,

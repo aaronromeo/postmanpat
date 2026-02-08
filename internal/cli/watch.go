@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/aaronromeo/postmanpat/internal/config"
-	"github.com/aaronromeo/postmanpat/internal/imapclient"
+	"github.com/aaronromeo/postmanpat/internal/imap"
 	"github.com/aaronromeo/postmanpat/internal/matchers"
 	"github.com/aaronromeo/postmanpat/internal/watchrunner"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
@@ -102,7 +102,7 @@ var watchCmd = &cobra.Command{
 			tlsConfig = watchTLSConfigProvider()
 		}
 
-		client := &imapclient.Client{
+		client := &imap.Client{
 			Addr:                  fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
 			Username:              imapEnv.User,
 			Password:              imapEnv.Pass,
@@ -274,7 +274,7 @@ func postWatchAnnouncement(ruleName string) error {
 	return nil
 }
 
-func runWatchTest(ctx context.Context, client *imapclient.Client, cfg config.Config, logger *slog.Logger, ruleName, mailbox string, limit int) error {
+func runWatchTest(ctx context.Context, client *imap.Client, cfg config.Config, logger *slog.Logger, ruleName, mailbox string, limit int) error {
 	if strings.TrimSpace(ruleName) == "" {
 		return errors.New("test rule name is required")
 	}

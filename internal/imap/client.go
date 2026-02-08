@@ -1,4 +1,4 @@
-package imapclient
+package imap
 
 import (
 	"bufio"
