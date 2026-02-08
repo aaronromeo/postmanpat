@@ -248,11 +248,15 @@ func postWatchAnnouncement(ruleName string) error {
 		return nil
 	}
 	baseURL = strings.TrimRight(baseURL, "/")
-	message := "no rule matched"
+	message := ""
 	if strings.TrimSpace(ruleName) != "" {
 		message = fmt.Sprintf("rule %q matched", ruleName)
 	}
 	payload := fmt.Sprintf("{\"message\": %q}", message)
+	if message == "" {
+		return nil
+	}
+
 	req, err := http.NewRequest("POST", baseURL+"/announcements", strings.NewReader(payload))
 	if err != nil {
 		return err
@@ -324,6 +328,8 @@ func runWatchTest(ctx context.Context, client *imapclient.Client, cfg config.Con
 				ReplyToDomains: message.ReplyToDomains,
 				SubjectRaw:     message.SubjectRaw,
 				Recipients:     message.Recipients,
+				RecipientTags:  message.RecipientTags,
+				Body:           message.Body,
 			})
 			if err != nil {
 				return err
