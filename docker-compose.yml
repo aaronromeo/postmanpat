@@ -3,7 +3,7 @@ services:
     build:
       context: ./announcements
       dockerfile: Dockerfile
-    container_name: announcements
+    container_name: postmanpat-announcements
     restart: unless-stopped
     environment:
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
@@ -33,7 +33,7 @@ services:
       POSTMANPAT_S3_BUCKET: ${POSTMANPAT_S3_BUCKET}
       POSTMANPAT_S3_KEY: ${POSTMANPAT_S3_KEY}
       POSTMANPAT_S3_SECRET: ${POSTMANPAT_S3_SECRET}
-      POSTMANPAT_WEBHOOK_URL: ${POSTMANPAT_WEBHOOK_URL}
+      POSTMANPAT_WEBHOOK_URL: ${POSTMANPAT_WEBHOOK_URL:-http://postmanpat-announcements:8091}
     volumes:
       - ${POSTMANPAT_CLEANUP_CONFIG:-./config/config_cleanup.yaml}:/config/config_cleanup.yaml:ro
     restart: unless-stopped
@@ -42,7 +42,7 @@ services:
 
   postmanpat-watch:
     build: .
-    command: ["postmanpat", "watch"]
+    command: ["postmanpat", "watch", "--verbose"]
     environment:
       POSTMANPAT_IMAP_HOST: ${POSTMANPAT_IMAP_HOST}
       POSTMANPAT_IMAP_PORT: ${POSTMANPAT_IMAP_PORT}
@@ -53,7 +53,7 @@ services:
       POSTMANPAT_S3_BUCKET: ${POSTMANPAT_S3_BUCKET}
       POSTMANPAT_S3_KEY: ${POSTMANPAT_S3_KEY}
       POSTMANPAT_S3_SECRET: ${POSTMANPAT_S3_SECRET}
-      POSTMANPAT_WEBHOOK_URL: ${POSTMANPAT_WEBHOOK_URL}
+      POSTMANPAT_WEBHOOK_URL: ${POSTMANPAT_WEBHOOK_URL:-http://postmanpat-announcements:8091}
       POSTMANPAT_CONFIG: /config/config_watch.yaml
       POSTMANPAT_WATCH_CONFIG: ${POSTMANPAT_WATCH_CONFIG}
     volumes:

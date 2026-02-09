@@ -16,10 +16,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const configEnvVar = "POSTMANPAT_CONFIG"
-const defaultEnvFile = ".env"
-const webhookAnnouncePath = "/announcements"
-
 var cleanupCmd = &cobra.Command{
 	Use:   "cleanup",
 	Short: "Process IMAP folders based on configured rules",

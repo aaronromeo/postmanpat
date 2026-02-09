@@ -257,7 +257,7 @@ func postWatchAnnouncement(ruleName string) error {
 		return nil
 	}
 
-	req, err := http.NewRequest("POST", baseURL+"/announcements", strings.NewReader(payload))
+	req, err := http.NewRequest("POST", baseURL+webhookAnnouncePath, strings.NewReader(payload))
 	if err != nil {
 		return err
 	}
