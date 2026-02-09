@@ -1,4 +1,4 @@
-package imapclient
+package imap
 
 import (
 	"bufio"
@@ -35,10 +35,13 @@ type Client struct {
 }
 
 type MailData struct {
+	UID                    uint32
 	ReplyToDomains         []string
 	SenderDomains          []string
 	Recipients             []string
+	Cc                     []string
 	RecipientTags          []string
+	Body                   string
 	ListID                 string
 	ListUnsubscribe        bool
 	ListUnsubscribeTargets string
@@ -159,15 +162,19 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 		uidSet.AddNum(imap.UID(uid))
 	}
 
-	bodySection := &imap.FetchItemBodySection{
+	headerSection := &imap.FetchItemBodySection{
 		Specifier:    imap.PartSpecifierHeader,
 		HeaderFields: []string{"List-ID", "List-Unsubscribe", "Precedence", "X-Mailer", "User-Agent", "Reply-To"},
 		Peek:         true,
 	}
+	bodySection := &imap.FetchItemBodySection{
+		Specifier: imap.PartSpecifierText,
+		Peek:      true,
+	}
 	fetchOptions := &imap.FetchOptions{
 		Envelope:    true,
 		UID:         true,
-		BodySection: []*imap.FetchItemBodySection{bodySection},
+		BodySection: []*imap.FetchItemBodySection{headerSection, bodySection},
 	}
 
 	fetchCmd := c.client.Fetch(uidSet, fetchOptions)
@@ -185,6 +192,8 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 
 		var envelope *imap.Envelope
 		var header *mail.Header
+		var body string
+		var uid uint32
 		for {
 			item := msg.Next()
 			if item == nil {
@@ -194,14 +203,25 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 				envelope = data.Envelope
 				continue
 			}
+			if data, ok := item.(giimapclient.FetchItemDataUID); ok {
+				uid = uint32(data.UID)
+				continue
+			}
 			if data, ok := item.(giimapclient.FetchItemDataBodySection); ok {
 				if data.Literal == nil {
 					continue
 				}
-				if data.MatchCommand(bodySection) {
+				if data.MatchCommand(headerSection) {
 					parsedHeader, err := readHeader(data.Literal)
 					if err == nil {
 						header = parsedHeader
+					}
+					continue
+				}
+				if data.MatchCommand(bodySection) {
+					raw, err := io.ReadAll(data.Literal)
+					if err == nil {
+						body = string(raw)
 					}
 					continue
 				}
@@ -229,12 +249,19 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 			recipients = append(recipients, addr.Addr())
 			recipientTags = append(recipientTags, recipientTag(addr.Addr()))
 		}
+		ccRecipients := []string{}
+		for _, addr := range envelope.Cc {
+			ccRecipients = append(ccRecipients, addr.Addr())
+		}
 
 		data := MailData{
+			UID:               uid,
 			ReplyToDomains:    replyToHosts,
 			SenderDomains:     fromHosts,
 			Recipients:        recipients,
+			Cc:                ccRecipients,
 			RecipientTags:     recipientTags,
+			Body:              body,
 			ListID:            headerText(header, "List-ID"),
 			PrecedenceRaw:     headerText(header, "Precedence"),
 			XMailer:           headerText(header, "X-Mailer"),
@@ -680,6 +707,24 @@ func buildSearchCriteria(matchers config.ServerMatchers) (*imap.SearchCriteria, 
 			})
 		}
 		if combined := combineAnd(recipientCriteria); combined != nil {
+			criteria.And(combined)
+		}
+	}
+
+	if len(matchers.CcSubstring) > 0 {
+		ccCriteria := make([]imap.SearchCriteria, 0, len(matchers.CcSubstring))
+		for _, value := range matchers.CcSubstring {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			ccCriteria = append(ccCriteria, imap.SearchCriteria{
+				Header: []imap.SearchCriteriaHeaderField{{
+					Key:   "Cc",
+					Value: value,
+				}},
+			})
+		}
+		if combined := combineAnd(ccCriteria); combined != nil {
 			criteria.And(combined)
 		}
 	}

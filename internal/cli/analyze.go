@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/aaronromeo/postmanpat/internal/config"
-	"github.com/aaronromeo/postmanpat/internal/imapclient"
+	"github.com/aaronromeo/postmanpat/internal/imap"
 	"github.com/spf13/cobra"
 )
 
@@ -57,7 +57,7 @@ var analyzeCmd = &cobra.Command{
 			ctx = context.Background()
 		}
 
-		client := &imapclient.Client{
+		client := &imap.Client{
 			Addr:     fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
 			Username: imapEnv.User,
 			Password: imapEnv.Pass,
@@ -259,7 +259,7 @@ func buildTimeWindow(now time.Time, window *config.AgeWindow) (timeWindow, error
 	return timeWindow{After: after, Before: before}, nil
 }
 
-func buildAnalyzeReport(data []imapclient.MailData, params analyzeReportParams) (analyzeReport, error) {
+func buildAnalyzeReport(data []imap.MailData, params analyzeReportParams) (analyzeReport, error) {
 	window, err := buildTimeWindow(params.Generated, params.AgeWindow)
 	if err != nil {
 		return analyzeReport{}, err
@@ -335,7 +335,7 @@ func writeAnalyzeReport(report analyzeReport) (string, error) {
 	return path, nil
 }
 
-func buildListLens(data []imapclient.MailData, options analyzeOptions) analyzeLens {
+func buildListLens(data []imap.MailData, options analyzeOptions) analyzeLens {
 	clusters := make(map[string]*clusterAccumulator)
 	for _, item := range data {
 		listID := normalizeListID(item.ListID)
@@ -356,7 +356,7 @@ func buildListLens(data []imapclient.MailData, options analyzeOptions) analyzeLe
 	}
 }
 
-func buildSenderLens(data []imapclient.MailData, options analyzeOptions) analyzeLens {
+func buildSenderLens(data []imap.MailData, options analyzeOptions) analyzeLens {
 	clusters := make(map[string]*clusterAccumulator)
 	for _, item := range data {
 		senderDomains := normalizeDomains(item.SenderDomains)
@@ -374,7 +374,7 @@ func buildSenderLens(data []imapclient.MailData, options analyzeOptions) analyze
 	}
 }
 
-func buildTemplateLens(data []imapclient.MailData, options analyzeOptions) analyzeLens {
+func buildTemplateLens(data []imap.MailData, options analyzeOptions) analyzeLens {
 	clusters := make(map[string]*clusterAccumulator)
 	for _, item := range data {
 		senderDomains := normalizeDomains(item.SenderDomains)
@@ -394,7 +394,7 @@ func buildTemplateLens(data []imapclient.MailData, options analyzeOptions) analy
 	}
 }
 
-func buildRecipientTagLens(data []imapclient.MailData, options analyzeOptions) analyzeLens {
+func buildRecipientTagLens(data []imap.MailData, options analyzeOptions) analyzeLens {
 	clusters := make(map[string]*clusterAccumulator)
 	for _, item := range data {
 		tags := normalizeRecipientTags(item.RecipientTags)
@@ -494,7 +494,7 @@ func ensureClusterAccumulator(clusters map[string]*clusterAccumulator, clusterID
 	return acc
 }
 
-func accumulateCluster(acc *clusterAccumulator, item imapclient.MailData, hasListID bool, maxExamples int) {
+func accumulateCluster(acc *clusterAccumulator, item imap.MailData, hasListID bool, maxExamples int) {
 	acc.count++
 	if !hasListID {
 		acc.hasListID = false

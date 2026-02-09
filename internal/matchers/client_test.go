@@ -111,3 +111,105 @@ func TestMatchesClientRecipientsRegex(t *testing.T) {
 		t.Fatal("expected recipients_regex to match recipient")
 	}
 }
+
+func TestMatchesClientCcRegex(t *testing.T) {
+	matchers := &config.ClientMatchers{
+		CcRegex: []string{`cc@example\.com`},
+	}
+	data := ClientMessage{
+		Cc: []string{"cc@example.com"},
+	}
+
+	ok, err := MatchesClient(matchers, data)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected cc_regex to match cc recipient")
+	}
+}
+
+func TestMatchesClientCcRegexNoMatch(t *testing.T) {
+	matchers := &config.ClientMatchers{
+		CcRegex: []string{`cc@example\.com`},
+	}
+	data := ClientMessage{
+		Cc: []string{"other@example.com"},
+	}
+
+	ok, err := MatchesClient(matchers, data)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if ok {
+		t.Fatal("expected cc_regex to not match cc recipient")
+	}
+}
+
+func TestMatchesClientBodyRegex(t *testing.T) {
+	matchers := &config.ClientMatchers{
+		BodyRegex: []string{`unsubscribe`},
+	}
+	data := ClientMessage{
+		Body: "Click here to unsubscribe.",
+	}
+
+	ok, err := MatchesClient(matchers, data)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected body_regex to match body")
+	}
+}
+
+func TestMatchesClientBodyRegexNoMatch(t *testing.T) {
+	matchers := &config.ClientMatchers{
+		BodyRegex: []string{`unsubscribe`},
+	}
+	data := ClientMessage{
+		Body: "Welcome to the list.",
+	}
+
+	ok, err := MatchesClient(matchers, data)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if ok {
+		t.Fatal("expected body_regex to not match body")
+	}
+}
+
+func TestMatchesClientRecipientTagRegex(t *testing.T) {
+	matchers := &config.ClientMatchers{
+		RecipientTagRegex: []string{`news`},
+	}
+	data := ClientMessage{
+		RecipientTags: []string{"news", "alerts"},
+	}
+
+	ok, err := MatchesClient(matchers, data)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected recipient_tag_regex to match recipient tags")
+	}
+}
+
+func TestMatchesClientRecipientTagRegexNoMatch(t *testing.T) {
+	matchers := &config.ClientMatchers{
+		RecipientTagRegex: []string{`events`},
+	}
+	data := ClientMessage{
+		RecipientTags: []string{"news", "alerts"},
+	}
+
+	ok, err := MatchesClient(matchers, data)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if ok {
+		t.Fatal("expected recipient_tag_regex to not match recipient tags")
+	}
+}

@@ -20,7 +20,7 @@ POSTMANPAT_S3_BUCKET=${POSTMANPAT_S3_BUCKET}
 POSTMANPAT_S3_KEY=${POSTMANPAT_S3_KEY}
 POSTMANPAT_S3_SECRET=${POSTMANPAT_S3_SECRET}
 
-*/15 * * * * /usr/local/bin/postmanpat cleanup --config "$POSTMANPAT_CONFIG" >>/proc/1/fd/1 2>>/proc/1/fd/2
+0 * * * * /usr/local/bin/postmanpat cleanup --config "$POSTMANPAT_CONFIG" >>/proc/1/fd/1 2>>/proc/1/fd/2
 EOF
 
 chmod 0644 /etc/cron.d/postmanpat

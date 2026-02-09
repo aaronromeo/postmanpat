@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/aaronromeo/postmanpat/internal/config"
-	"github.com/aaronromeo/postmanpat/internal/imapclient"
+	"github.com/aaronromeo/postmanpat/internal/imap"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
@@ -75,7 +75,7 @@ var cleanupCmd = &cobra.Command{
 			return err
 		}
 
-		client := &imapclient.Client{
+		client := &imap.Client{
 			Addr:     fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
 			Username: imapEnv.User,
 			Password: imapEnv.Pass,
