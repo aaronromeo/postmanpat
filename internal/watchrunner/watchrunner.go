@@ -46,6 +46,7 @@ func ProcessUIDs(deps Deps, state *State, uids []uint32) error {
 				RecipientTags:  message.RecipientTags,
 				Body:           message.Body,
 				Cc:             message.Cc,
+				MailedByDomain: message.MailedByDomain,
 			})
 			if err != nil {
 				return err

@@ -146,6 +146,40 @@ func TestMatchesClientCcRegexNoMatch(t *testing.T) {
 	}
 }
 
+func TestMatchesClientMailedByRegex(t *testing.T) {
+	matchers := &config.ClientMatchers{
+		MailedByRegex: []string{`srs\.messagingengine\.com`},
+	}
+	data := ClientMessage{
+		MailedByDomain: "srs.messagingengine.com",
+	}
+
+	ok, err := MatchesClient(matchers, data)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected mailedby_regex to match mailed by domain")
+	}
+}
+
+func TestMatchesClientMailedByRegexNoMatch(t *testing.T) {
+	matchers := &config.ClientMatchers{
+		MailedByRegex: []string{`srs\.messagingengine\.com`},
+	}
+	data := ClientMessage{
+		MailedByDomain: "example.com",
+	}
+
+	ok, err := MatchesClient(matchers, data)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if ok {
+		t.Fatal("expected mailedby_regex to not match mailed by domain")
+	}
+}
+
 func TestMatchesClientBodyRegex(t *testing.T) {
 	matchers := &config.ClientMatchers{
 		BodyRegex: []string{`unsubscribe`},

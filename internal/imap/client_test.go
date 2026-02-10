@@ -388,6 +388,79 @@ func TestBuildSearchCriteriaListIDSubstringSkipsEmpty(t *testing.T) {
 	}
 }
 
+func TestBuildSearchCriteriaMailedBySubstring(t *testing.T) {
+	matchers := config.ServerMatchers{
+		MailedBySubstring: []string{"srs.messagingengine.com"},
+	}
+
+	criteria, err := buildSearchCriteria(matchers)
+	if err != nil {
+		t.Fatalf("build criteria: %v", err)
+	}
+	if criteria == nil {
+		t.Fatal("expected criteria")
+	}
+	if len(criteria.Header) != 1 {
+		t.Fatalf("expected 1 header criteria, got %d", len(criteria.Header))
+	}
+	if criteria.Header[0].Key != "Return-Path" {
+		t.Fatalf("expected Return-Path header key, got %q", criteria.Header[0].Key)
+	}
+	if criteria.Header[0].Value != "srs.messagingengine.com" {
+		t.Fatalf("expected Return-Path header value, got %q", criteria.Header[0].Value)
+	}
+}
+
+func TestBuildSearchCriteriaSeenTrue(t *testing.T) {
+	seen := true
+	matchers := config.ServerMatchers{
+		Seen: &seen,
+	}
+
+	criteria, err := buildSearchCriteria(matchers)
+	if err != nil {
+		t.Fatalf("build criteria: %v", err)
+	}
+	if criteria == nil {
+		t.Fatal("expected criteria")
+	}
+	found := false
+	for _, flag := range criteria.Flag {
+		if flag == imap.FlagSeen {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected \\Seen flag to be included")
+	}
+}
+
+func TestBuildSearchCriteriaSeenFalse(t *testing.T) {
+	seen := false
+	matchers := config.ServerMatchers{
+		Seen: &seen,
+	}
+
+	criteria, err := buildSearchCriteria(matchers)
+	if err != nil {
+		t.Fatalf("build criteria: %v", err)
+	}
+	if criteria == nil {
+		t.Fatal("expected criteria")
+	}
+	found := false
+	for _, flag := range criteria.NotFlag {
+		if flag == imap.FlagSeen {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected \\Seen to be included in NotFlag")
+	}
+}
+
 func TestBuildSearchCriteriaExcludesDeleted(t *testing.T) {
 	criteria, err := buildSearchCriteria(config.ServerMatchers{})
 	if err != nil {
@@ -639,6 +712,57 @@ func TestFetchSenderDataMalformedHeaderDoesNotError(t *testing.T) {
 	}
 	if data[0].ListID != "" {
 		t.Fatalf("expected empty ListID for malformed header, got %q", data[0].ListID)
+	}
+}
+
+func TestFetchSenderDataMailedByDomain(t *testing.T) {
+	addr, cleanup := ftest.SetupRawIMAPServer(t, nil, nil, []ftest.RawMessage{{
+		Mailbox: "INBOX",
+		Raw: "From: News <news@example.com>\r\n" +
+			"To: User <user@example.com>\r\n" +
+			"Return-Path: <SRS0=foo@SRS.MessagingEngine.com>\r\n" +
+			"Subject: Hello\r\n" +
+			"\r\n" +
+			"Body\r\n",
+		Time: time.Now(),
+	}})
+	t.Cleanup(cleanup)
+
+	client := &Client{
+		Addr:      addr,
+		Username:  ftest.DefaultUser,
+		Password:  ftest.DefaultPass,
+		TLSConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	if err := client.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+
+	ctx := context.Background()
+	if _, err := client.SelectMailbox(ctx, "INBOX"); err != nil {
+		t.Fatalf("select inbox: %v", err)
+	}
+
+	uids, err := client.SearchUIDsNewerThan(ctx, 0)
+	if err != nil {
+		t.Fatalf("search uids: %v", err)
+	}
+	if len(uids) != 1 {
+		t.Fatalf("expected 1 uid, got %d", len(uids))
+	}
+
+	data, err := client.FetchSenderData(ctx, uids)
+	if err != nil {
+		t.Fatalf("fetch sender data: %v", err)
+	}
+	if len(data) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(data))
+	}
+	if data[0].MailedByDomain != "srs.messagingengine.com" {
+		t.Fatalf("expected mailedby domain, got %q", data[0].MailedByDomain)
 	}
 }
 

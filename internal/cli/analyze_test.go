@@ -22,6 +22,7 @@ func TestBuildAnalyzeReportJSON(t *testing.T) {
 		{
 			SenderDomains:          []string{"example.com"},
 			ReplyToDomains:         []string{"reply.example.com"},
+			MailedByDomain:         "srs.messagingengine.com",
 			Recipients:             []string{"me@example.com"},
 			ListID:                 "list.example.com",
 			ListUnsubscribe:        true,
@@ -138,6 +139,9 @@ func TestBuildAnalyzeReportJSON(t *testing.T) {
 	}
 	if indexes["recipient_tag_lens"] == nil {
 		t.Fatal("indexes.recipient_tag_lens is missing")
+	}
+	if indexes["mailedby_lens"] == nil {
+		t.Fatal("indexes.mailedby_lens is missing")
 	}
 
 	// record, ok := raw[0].(map[string]any)

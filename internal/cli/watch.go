@@ -331,6 +331,7 @@ func runWatchTest(ctx context.Context, client *imap.Client, cfg config.Config, l
 				RecipientTags:  message.RecipientTags,
 				Body:           message.Body,
 				Cc:             message.Cc,
+				MailedByDomain: message.MailedByDomain,
 			})
 			if err != nil {
 				return err
