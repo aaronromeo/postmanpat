@@ -22,7 +22,7 @@ func TestBuildAnalyzeReportJSON(t *testing.T) {
 		{
 			SenderDomains:          []string{"example.com"},
 			ReplyToDomains:         []string{"reply.example.com"},
-			MailedByDomain:         "srs.messagingengine.com",
+			ReturnPathDomain:       "srs.messagingengine.com",
 			Recipients:             []string{"me@example.com"},
 			ListID:                 "list.example.com",
 			ListUnsubscribe:        true,
@@ -131,8 +131,8 @@ func TestBuildAnalyzeReportJSON(t *testing.T) {
 	if cluster["latest_date"] != "2024-01-10T12:00:00Z" {
 		t.Fatalf("unexpected latest_date: %v", cluster["latest_date"])
 	}
-	if indexes["sender_lens"] == nil {
-		t.Fatal("indexes.sender_lens is missing")
+	if indexes["sender_unsub_lens"] == nil {
+		t.Fatal("indexes.sender_unsub_lens is missing")
 	}
 	if indexes["template_lens"] == nil {
 		t.Fatal("indexes.template_lens is missing")
@@ -140,8 +140,8 @@ func TestBuildAnalyzeReportJSON(t *testing.T) {
 	if indexes["recipient_tag_lens"] == nil {
 		t.Fatal("indexes.recipient_tag_lens is missing")
 	}
-	if indexes["mailedby_lens"] == nil {
-		t.Fatal("indexes.mailedby_lens is missing")
+	if indexes["returnpath_lens"] == nil {
+		t.Fatal("indexes.returnpath_lens is missing")
 	}
 
 	// record, ok := raw[0].(map[string]any)

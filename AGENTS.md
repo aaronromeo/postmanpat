@@ -56,3 +56,4 @@
 ## Agent-Specific Instructions
 - Work in small, discussed steps; requirements and stages should be agreed before implementation.
 - Keep this document updated as new directories, commands, and workflows are introduced.
+- IMAP logic must remain vendor-neutral; avoid provider-specific assumptions or headers unless explicitly documented and optional.

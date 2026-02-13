@@ -184,10 +184,10 @@ type analyzeStats struct {
 type analyzeIndexes struct {
 	// Raw              []analyzeRawRecord `json:"raw"`
 	ListLens         analyzeLens `json:"list_lens"`
-	SenderLens       analyzeLens `json:"sender_lens"`
+	SenderLens       analyzeLens `json:"sender_unsub_lens"`
 	TemplateLens     analyzeLens `json:"template_lens"`
 	RecipientTagLens analyzeLens `json:"recipient_tag_lens"`
-	MailedByLens     analyzeLens `json:"mailedby_lens"`
+	ReturnPathLens   analyzeLens `json:"returnpath_lens"`
 }
 
 type analyzeLens struct {
@@ -215,7 +215,7 @@ type analyzeClusterExamples struct {
 	Recipients             []string `json:"recipients"`
 	ReplyToDomains         []string `json:"reply_to_domains"`
 	SenderDomains          []string `json:"sender_domains"`
-	MailedByDomains        []string `json:"mailedby_domains"`
+	ReturnPathDomains      []string `json:"returnpath_domains"`
 	ListUnsubscribeTargets []string `json:"list_unsubscribe_targets"`
 }
 
@@ -247,7 +247,7 @@ const (
 	ExampleKeyRecipients             = "recipients"
 	ExampleKeyReplyToDomains         = "reply_to_domains"
 	ExampleKeySenderDomains          = "sender_domains"
-	ExampleKeyMailedByDomains        = "mailedby_domains"
+	ExampleKeyReturnPathDomains      = "returnpath_domains"
 	ExampleKeyListUnsubscribeTargets = "list_unsubscribe_targets"
 )
 
@@ -288,10 +288,10 @@ func buildAnalyzeReport(data []imap.MailData, params analyzeReportParams) (analy
 
 	options := params.Options
 	listLens := buildListLens(data, options)
-	senderLens := buildSenderLens(data, options)
+	senderLens := buildSenderUnsubLens(data, options)
 	templateLens := buildTemplateLens(data, options)
 	recipientTagLens := buildRecipientTagLens(data, options)
-	mailedByLens := buildMailedByLens(data, options)
+	returnPathLens := buildReturnPathLens(data, options)
 
 	return analyzeReport{
 		GeneratedAt: params.Generated.Format(time.RFC3339),
@@ -312,7 +312,7 @@ func buildAnalyzeReport(data []imap.MailData, params analyzeReportParams) (analy
 			SenderLens:       senderLens,
 			TemplateLens:     templateLens,
 			RecipientTagLens: recipientTagLens,
-			MailedByLens:     mailedByLens,
+			ReturnPathLens:   returnPathLens,
 		},
 	}, nil
 }
@@ -361,21 +361,26 @@ func buildListLens(data []imap.MailData, options analyzeOptions) analyzeLens {
 	}
 }
 
-func buildSenderLens(data []imap.MailData, options analyzeOptions) analyzeLens {
+func buildSenderUnsubLens(data []imap.MailData, options analyzeOptions) analyzeLens {
 	clusters := make(map[string]*clusterAccumulator)
 	for _, item := range data {
 		senderDomains := normalizeDomains(item.SenderDomains)
-		keyString := fmt.Sprintf("SenderDomains=%s", strings.Join(senderDomains, ","))
-		clusterID := makeClusterID("sender_lens", keyString)
+		if len(senderDomains) == 1 && strings.TrimSpace(senderDomains[0]) == "" {
+			continue
+		}
+		hasUnsub := item.ListUnsubscribe
+		keyString := fmt.Sprintf("SenderDomains=%s|HasListUnsubscribe=%s", strings.Join(senderDomains, ","), boolString(hasUnsub))
+		clusterID := makeClusterID("sender_unsub_lens", keyString)
 		acc := ensureClusterAccumulator(clusters, clusterID, map[string]any{
-			"SenderDomains": senderDomains,
-			"FromList":      item.From,
+			"SenderDomains":      senderDomains,
+			"HasListUnsubscribe": hasUnsub,
+			"FromList":           item.From,
 		})
 		accumulateCluster(acc, item, item.ListID != "", options.Examples)
 	}
 
 	return analyzeLens{
-		KeyFields: []string{"SenderDomains"},
+		KeyFields: []string{"SenderDomains", "HasListUnsubscribe"},
 		Clusters:  finalizeClusters(clusters, options),
 	}
 }
@@ -422,23 +427,23 @@ func buildRecipientTagLens(data []imap.MailData, options analyzeOptions) analyze
 	}
 }
 
-func buildMailedByLens(data []imap.MailData, options analyzeOptions) analyzeLens {
+func buildReturnPathLens(data []imap.MailData, options analyzeOptions) analyzeLens {
 	clusters := make(map[string]*clusterAccumulator)
 	for _, item := range data {
-		mailedBy := strings.ToLower(strings.TrimSpace(item.MailedByDomain))
-		if mailedBy == "" {
+		returnPath := strings.ToLower(strings.TrimSpace(item.ReturnPathDomain))
+		if returnPath == "" {
 			continue
 		}
-		keyString := fmt.Sprintf("mailedby=%s", mailedBy)
-		clusterID := makeClusterID("mailedby_lens", keyString)
+		keyString := fmt.Sprintf("returnpath=%s", returnPath)
+		clusterID := makeClusterID("returnpath_lens", keyString)
 		acc := ensureClusterAccumulator(clusters, clusterID, map[string]any{
-			"mailedby": mailedBy,
+			"returnpath": returnPath,
 		})
 		accumulateCluster(acc, item, item.ListID != "", options.Examples)
 	}
 
 	return analyzeLens{
-		KeyFields: []string{"mailedby"},
+		KeyFields: []string{"returnpath"},
 		Clusters:  finalizeClusters(clusters, options),
 	}
 }
@@ -514,7 +519,7 @@ func ensureClusterAccumulator(clusters map[string]*clusterAccumulator, clusterID
 			ExampleKeyRecipients:             {},
 			ExampleKeyReplyToDomains:         {},
 			ExampleKeySenderDomains:          {},
-			ExampleKeyMailedByDomains:        {},
+			ExampleKeyReturnPathDomains:      {},
 			ExampleKeyListUnsubscribeTargets: {},
 		},
 	}
@@ -547,8 +552,8 @@ func accumulateCluster(acc *clusterAccumulator, item imap.MailData, hasListID bo
 	for _, senderDomain := range item.SenderDomains {
 		addExample(acc, ExampleKeySenderDomains, senderDomain, maxExamples)
 	}
-	if strings.TrimSpace(item.MailedByDomain) != "" {
-		addExample(acc, ExampleKeyMailedByDomains, item.MailedByDomain, maxExamples)
+	if strings.TrimSpace(item.ReturnPathDomain) != "" {
+		addExample(acc, ExampleKeyReturnPathDomains, item.ReturnPathDomain, maxExamples)
 	}
 	for _, target := range splitAndTrim(item.ListUnsubscribeTargets) {
 		addExample(acc, ExampleKeyListUnsubscribeTargets, target, maxExamples)
@@ -563,6 +568,13 @@ func normalizePrecedenceCategory(value string) string {
 	default:
 		return "unknown"
 	}
+}
+
+func boolString(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
 }
 
 func splitAndTrim(value string) []string {

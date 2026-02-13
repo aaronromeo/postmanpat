@@ -388,9 +388,9 @@ func TestBuildSearchCriteriaListIDSubstringSkipsEmpty(t *testing.T) {
 	}
 }
 
-func TestBuildSearchCriteriaMailedBySubstring(t *testing.T) {
+func TestBuildSearchCriteriaReturnPathSubstring(t *testing.T) {
 	matchers := config.ServerMatchers{
-		MailedBySubstring: []string{"srs.messagingengine.com"},
+		ReturnPathSubstring: []string{"srs.messagingengine.com"},
 	}
 
 	criteria, err := buildSearchCriteria(matchers)
@@ -433,6 +433,51 @@ func TestBuildSearchCriteriaSeenTrue(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("expected \\Seen flag to be included")
+	}
+}
+
+func TestBuildSearchCriteriaListUnsubscribeTrue(t *testing.T) {
+	listUnsub := true
+	matchers := config.ServerMatchers{
+		ListUnsubscribe: &listUnsub,
+	}
+
+	criteria, err := buildSearchCriteria(matchers)
+	if err != nil {
+		t.Fatalf("build criteria: %v", err)
+	}
+	if criteria == nil {
+		t.Fatal("expected criteria")
+	}
+	if len(criteria.Header) != 1 {
+		t.Fatalf("expected 1 header criteria, got %d", len(criteria.Header))
+	}
+	if criteria.Header[0].Key != "List-Unsubscribe" {
+		t.Fatalf("expected List-Unsubscribe header key, got %q", criteria.Header[0].Key)
+	}
+}
+
+func TestBuildSearchCriteriaListUnsubscribeFalse(t *testing.T) {
+	listUnsub := false
+	matchers := config.ServerMatchers{
+		ListUnsubscribe: &listUnsub,
+	}
+
+	criteria, err := buildSearchCriteria(matchers)
+	if err != nil {
+		t.Fatalf("build criteria: %v", err)
+	}
+	if criteria == nil {
+		t.Fatal("expected criteria")
+	}
+	if len(criteria.Not) != 1 {
+		t.Fatalf("expected 1 NOT criteria, got %d", len(criteria.Not))
+	}
+	if len(criteria.Not[0].Header) != 1 {
+		t.Fatalf("expected 1 NOT header criteria, got %d", len(criteria.Not[0].Header))
+	}
+	if criteria.Not[0].Header[0].Key != "List-Unsubscribe" {
+		t.Fatalf("expected List-Unsubscribe header key, got %q", criteria.Not[0].Header[0].Key)
 	}
 }
 
@@ -715,7 +760,7 @@ func TestFetchSenderDataMalformedHeaderDoesNotError(t *testing.T) {
 	}
 }
 
-func TestFetchSenderDataMailedByDomain(t *testing.T) {
+func TestFetchSenderDataReturnPathDomain(t *testing.T) {
 	addr, cleanup := ftest.SetupRawIMAPServer(t, nil, nil, []ftest.RawMessage{{
 		Mailbox: "INBOX",
 		Raw: "From: News <news@example.com>\r\n" +
@@ -761,8 +806,8 @@ func TestFetchSenderDataMailedByDomain(t *testing.T) {
 	if len(data) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(data))
 	}
-	if data[0].MailedByDomain != "srs.messagingengine.com" {
-		t.Fatalf("expected mailedby domain, got %q", data[0].MailedByDomain)
+	if data[0].ReturnPathDomain != "srs.messagingengine.com" {
+		t.Fatalf("expected return-path domain, got %q", data[0].ReturnPathDomain)
 	}
 }
 

@@ -39,7 +39,7 @@ type MailData struct {
 	ReplyToDomains         []string
 	SenderDomains          []string
 	From                   []string
-	MailedByDomain         string
+	ReturnPathDomain       string
 	Recipients             []string
 	Cc                     []string
 	RecipientTags          []string
@@ -265,7 +265,7 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 			ReplyToDomains:    replyToHosts,
 			From:              from,
 			SenderDomains:     fromHosts,
-			MailedByDomain:    parseMailedByDomain(header),
+			ReturnPathDomain:  parseReturnPathDomain(header),
 			Recipients:        recipients,
 			Cc:                ccRecipients,
 			RecipientTags:     recipientTags,
@@ -468,7 +468,7 @@ func parseReplyToDomains(header *mail.Header) []string {
 	return sorted
 }
 
-func parseMailedByDomain(header *mail.Header) string {
+func parseReturnPathDomain(header *mail.Header) string {
 	raw := headerText(header, "Return-Path")
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -752,20 +752,20 @@ func buildSearchCriteria(matchers config.ServerMatchers) (*imap.SearchCriteria, 
 		}
 	}
 
-	if len(matchers.MailedBySubstring) > 0 {
-		mailedByCriteria := make([]imap.SearchCriteria, 0, len(matchers.MailedBySubstring))
-		for _, value := range matchers.MailedBySubstring {
+	if len(matchers.ReturnPathSubstring) > 0 {
+		returnPathCriteria := make([]imap.SearchCriteria, 0, len(matchers.ReturnPathSubstring))
+		for _, value := range matchers.ReturnPathSubstring {
 			if strings.TrimSpace(value) == "" {
 				continue
 			}
-			mailedByCriteria = append(mailedByCriteria, imap.SearchCriteria{
+			returnPathCriteria = append(returnPathCriteria, imap.SearchCriteria{
 				Header: []imap.SearchCriteriaHeaderField{{
 					Key:   "Return-Path",
 					Value: value,
 				}},
 			})
 		}
-		if combined := combineAnd(mailedByCriteria); combined != nil {
+		if combined := combineAnd(returnPathCriteria); combined != nil {
 			criteria.And(combined)
 		}
 	}
@@ -826,6 +826,19 @@ func buildSearchCriteria(matchers config.ServerMatchers) (*imap.SearchCriteria, 
 			criteria.Flag = append(criteria.Flag, imap.FlagSeen)
 		} else {
 			criteria.NotFlag = append(criteria.NotFlag, imap.FlagSeen)
+		}
+	}
+	if matchers.ListUnsubscribe != nil {
+		listUnsubscribeCriteria := &imap.SearchCriteria{
+			Header: []imap.SearchCriteriaHeaderField{{
+				Key:   "List-Unsubscribe",
+				Value: "",
+			}},
+		}
+		if *matchers.ListUnsubscribe {
+			criteria.And(listUnsubscribeCriteria)
+		} else {
+			criteria.Not = append(criteria.Not, *listUnsubscribeCriteria)
 		}
 	}
 

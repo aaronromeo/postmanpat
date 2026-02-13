@@ -146,12 +146,12 @@ func TestMatchesClientCcRegexNoMatch(t *testing.T) {
 	}
 }
 
-func TestMatchesClientMailedByRegex(t *testing.T) {
+func TestMatchesClientReturnPathRegex(t *testing.T) {
 	matchers := &config.ClientMatchers{
-		MailedByRegex: []string{`srs\.messagingengine\.com`},
+		ReturnPathRegex: []string{`srs\.messagingengine\.com`},
 	}
 	data := ClientMessage{
-		MailedByDomain: "srs.messagingengine.com",
+		ReturnPathDomain: "srs.messagingengine.com",
 	}
 
 	ok, err := MatchesClient(matchers, data)
@@ -159,16 +159,16 @@ func TestMatchesClientMailedByRegex(t *testing.T) {
 		t.Fatalf("match client: %v", err)
 	}
 	if !ok {
-		t.Fatal("expected mailedby_regex to match mailed by domain")
+		t.Fatal("expected returnpath_regex to match return-path domain")
 	}
 }
 
-func TestMatchesClientMailedByRegexNoMatch(t *testing.T) {
+func TestMatchesClientReturnPathRegexNoMatch(t *testing.T) {
 	matchers := &config.ClientMatchers{
-		MailedByRegex: []string{`srs\.messagingengine\.com`},
+		ReturnPathRegex: []string{`srs\.messagingengine\.com`},
 	}
 	data := ClientMessage{
-		MailedByDomain: "example.com",
+		ReturnPathDomain: "example.com",
 	}
 
 	ok, err := MatchesClient(matchers, data)
@@ -176,7 +176,7 @@ func TestMatchesClientMailedByRegexNoMatch(t *testing.T) {
 		t.Fatalf("match client: %v", err)
 	}
 	if ok {
-		t.Fatal("expected mailedby_regex to not match mailed by domain")
+		t.Fatal("expected returnpath_regex to not match return-path domain")
 	}
 }
 
@@ -194,6 +194,42 @@ func TestMatchesClientBodyRegex(t *testing.T) {
 	}
 	if !ok {
 		t.Fatal("expected body_regex to match body")
+	}
+}
+
+func TestMatchesClientListUnsubscribeTrue(t *testing.T) {
+	listUnsub := true
+	matchers := &config.ClientMatchers{
+		ListUnsubscribe: &listUnsub,
+	}
+	data := ClientMessage{
+		ListUnsubscribe: true,
+	}
+
+	ok, err := MatchesClient(matchers, data)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected list_unsubscribe true to match")
+	}
+}
+
+func TestMatchesClientListUnsubscribeFalse(t *testing.T) {
+	listUnsub := false
+	matchers := &config.ClientMatchers{
+		ListUnsubscribe: &listUnsub,
+	}
+	data := ClientMessage{
+		ListUnsubscribe: true,
+	}
+
+	ok, err := MatchesClient(matchers, data)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if ok {
+		t.Fatal("expected list_unsubscribe false to not match")
 	}
 }
 

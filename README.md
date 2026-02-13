@@ -71,8 +71,8 @@ rules:
 - `client` matchers are reserved for post-fetch regex filtering (used by `watch`).
 - `age_window` uses IMAP INTERNALDATE, not the message `Date:` header.
 - `age_window` defines a bounded range: `min` is the minimum age (older than), `max` is the maximum age (newer than).
-- Server matchers: `age_window`, `folders`, `sender_substring`, `recipients`, `cc_substring`, `mailedby_substring` (matches `Return-Path` / MAIL FROM domain, e.g. Gmail “mailed-by”), `body_substring`, `replyto_substring`, `list_id_substring`.
-- Client matchers: `subject_regex`, `body_regex`, `sender_regex`, `recipients_regex`, `cc_regex`, `mailedby_regex` (matches `Return-Path` / MAIL FROM domain, e.g. Gmail “mailed-by”), `replyto_regex`, `list_id_regex`, `recipient_tag_regex`.
+- Server matchers: `age_window`, `folders`, `sender_substring`, `recipients`, `cc_substring`, `returnpath_substring` (matches `Return-Path` / MAIL FROM domain, e.g. Gmail “mailed-by”), `body_substring`, `replyto_substring`, `list_id_substring`, `seen` (true/false), `list_unsubscribe` (true/false).
+- Client matchers: `subject_regex`, `body_regex`, `sender_regex`, `recipients_regex`, `cc_regex`, `returnpath_regex` (matches `Return-Path` / MAIL FROM domain, e.g. Gmail “mailed-by”), `replyto_regex`, `list_id_regex`, `recipient_tag_regex`, `list_unsubscribe` (true/false).
 
 ### Watch Test Mode
 
