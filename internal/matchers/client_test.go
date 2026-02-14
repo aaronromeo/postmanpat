@@ -146,6 +146,40 @@ func TestMatchesClientCcRegexNoMatch(t *testing.T) {
 	}
 }
 
+func TestMatchesClientReturnPathRegex(t *testing.T) {
+	matchers := &config.ClientMatchers{
+		ReturnPathRegex: []string{`srs\.messagingengine\.com`},
+	}
+	data := ClientMessage{
+		ReturnPathDomain: "srs.messagingengine.com",
+	}
+
+	ok, err := MatchesClient(matchers, data)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected returnpath_regex to match return-path domain")
+	}
+}
+
+func TestMatchesClientReturnPathRegexNoMatch(t *testing.T) {
+	matchers := &config.ClientMatchers{
+		ReturnPathRegex: []string{`srs\.messagingengine\.com`},
+	}
+	data := ClientMessage{
+		ReturnPathDomain: "example.com",
+	}
+
+	ok, err := MatchesClient(matchers, data)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if ok {
+		t.Fatal("expected returnpath_regex to not match return-path domain")
+	}
+}
+
 func TestMatchesClientBodyRegex(t *testing.T) {
 	matchers := &config.ClientMatchers{
 		BodyRegex: []string{`unsubscribe`},
@@ -160,6 +194,42 @@ func TestMatchesClientBodyRegex(t *testing.T) {
 	}
 	if !ok {
 		t.Fatal("expected body_regex to match body")
+	}
+}
+
+func TestMatchesClientListUnsubscribeTrue(t *testing.T) {
+	listUnsub := true
+	matchers := &config.ClientMatchers{
+		ListUnsubscribe: &listUnsub,
+	}
+	data := ClientMessage{
+		ListUnsubscribe: true,
+	}
+
+	ok, err := MatchesClient(matchers, data)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected list_unsubscribe true to match")
+	}
+}
+
+func TestMatchesClientListUnsubscribeFalse(t *testing.T) {
+	listUnsub := false
+	matchers := &config.ClientMatchers{
+		ListUnsubscribe: &listUnsub,
+	}
+	data := ClientMessage{
+		ListUnsubscribe: true,
+	}
+
+	ok, err := MatchesClient(matchers, data)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if ok {
+		t.Fatal("expected list_unsubscribe false to not match")
 	}
 }
 

@@ -53,9 +53,11 @@ type ClientMatchers struct {
 	SenderRegex       []string `yaml:"sender_regex"`
 	RecipientsRegex   []string `yaml:"recipients_regex"`
 	CcRegex           []string `yaml:"cc_regex"`
+	ReturnPathRegex   []string `yaml:"returnpath_regex"`
 	ReplyToRegex      []string `yaml:"replyto_regex"`
 	ListIDRegex       []string `yaml:"list_id_regex"`
 	RecipientTagRegex []string `yaml:"recipient_tag_regex"`
+	ListUnsubscribe   *bool    `yaml:"list_unsubscribe"`
 }
 
 func (m *ClientMatchers) IsEmpty() bool {
@@ -67,9 +69,11 @@ func (m *ClientMatchers) IsEmpty() bool {
 		len(m.SenderRegex) == 0 &&
 		len(m.RecipientsRegex) == 0 &&
 		len(m.CcRegex) == 0 &&
+		len(m.ReturnPathRegex) == 0 &&
 		len(m.ReplyToRegex) == 0 &&
 		len(m.ListIDRegex) == 0 &&
-		len(m.RecipientTagRegex) == 0
+		len(m.RecipientTagRegex) == 0 &&
+		m.ListUnsubscribe == nil
 }
 
 type AgeWindow struct {
@@ -86,14 +90,17 @@ func (a *AgeWindow) IsEmpty() bool {
 
 // ServerMatchers define the matching criteria for a rule.
 type ServerMatchers struct {
-	AgeWindow        *AgeWindow `yaml:"age_window"`
-	SenderSubstring  []string   `yaml:"sender_substring"`
-	Recipients       []string   `yaml:"recipients"`
-	CcSubstring      []string   `yaml:"cc_substring"`
-	BodySubstring    []string   `yaml:"body_substring"`
-	ReplyToSubstring []string   `yaml:"replyto_substring"`
-	ListIDSubstring  []string   `yaml:"list_id_substring"`
-	Folders          []string   `yaml:"folders"`
+	AgeWindow           *AgeWindow `yaml:"age_window"`
+	SenderSubstring     []string   `yaml:"sender_substring"`
+	Recipients          []string   `yaml:"recipients"`
+	CcSubstring         []string   `yaml:"cc_substring"`
+	ReturnPathSubstring []string   `yaml:"returnpath_substring"`
+	BodySubstring       []string   `yaml:"body_substring"`
+	ReplyToSubstring    []string   `yaml:"replyto_substring"`
+	ListIDSubstring     []string   `yaml:"list_id_substring"`
+	Folders             []string   `yaml:"folders"`
+	Seen                *bool      `yaml:"seen"`
+	ListUnsubscribe     *bool      `yaml:"list_unsubscribe"`
 }
 
 func ParseRelativeDuration(value string) (time.Duration, error) {

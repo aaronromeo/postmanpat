@@ -38,6 +38,8 @@ type MailData struct {
 	UID                    uint32
 	ReplyToDomains         []string
 	SenderDomains          []string
+	From                   []string
+	ReturnPathDomain       string
 	Recipients             []string
 	Cc                     []string
 	RecipientTags          []string
@@ -164,7 +166,7 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 
 	headerSection := &imap.FetchItemBodySection{
 		Specifier:    imap.PartSpecifierHeader,
-		HeaderFields: []string{"List-ID", "List-Unsubscribe", "Precedence", "X-Mailer", "User-Agent", "Reply-To"},
+		HeaderFields: []string{"List-ID", "List-Unsubscribe", "Precedence", "X-Mailer", "User-Agent", "Reply-To", "Return-Path"},
 		Peek:         true,
 	}
 	bodySection := &imap.FetchItemBodySection{
@@ -253,11 +255,17 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 		for _, addr := range envelope.Cc {
 			ccRecipients = append(ccRecipients, addr.Addr())
 		}
+		from := []string{}
+		for _, addr := range envelope.From {
+			from = append(from, addr.Addr())
+		}
 
 		data := MailData{
 			UID:               uid,
 			ReplyToDomains:    replyToHosts,
+			From:              from,
 			SenderDomains:     fromHosts,
+			ReturnPathDomain:  parseReturnPathDomain(header),
 			Recipients:        recipients,
 			Cc:                ccRecipients,
 			RecipientTags:     recipientTags,
@@ -458,6 +466,21 @@ func parseReplyToDomains(header *mail.Header) []string {
 	}
 	sort.Strings(sorted)
 	return sorted
+}
+
+func parseReturnPathDomain(header *mail.Header) string {
+	raw := headerText(header, "Return-Path")
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	raw = strings.TrimPrefix(raw, "<")
+	raw = strings.TrimSuffix(raw, ">")
+	parts := strings.Split(raw, "@")
+	if len(parts) != 2 {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(parts[1]))
 }
 
 func normalizePrecedence(raw string) string {
@@ -729,6 +752,24 @@ func buildSearchCriteria(matchers config.ServerMatchers) (*imap.SearchCriteria, 
 		}
 	}
 
+	if len(matchers.ReturnPathSubstring) > 0 {
+		returnPathCriteria := make([]imap.SearchCriteria, 0, len(matchers.ReturnPathSubstring))
+		for _, value := range matchers.ReturnPathSubstring {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			returnPathCriteria = append(returnPathCriteria, imap.SearchCriteria{
+				Header: []imap.SearchCriteriaHeaderField{{
+					Key:   "Return-Path",
+					Value: value,
+				}},
+			})
+		}
+		if combined := combineAnd(returnPathCriteria); combined != nil {
+			criteria.And(combined)
+		}
+	}
+
 	if len(matchers.BodySubstring) > 0 {
 		bodyCriteria := make([]imap.SearchCriteria, 0, len(matchers.BodySubstring))
 		for _, value := range matchers.BodySubstring {
@@ -777,6 +818,27 @@ func buildSearchCriteria(matchers config.ServerMatchers) (*imap.SearchCriteria, 
 		}
 		if combined := combineAnd(listIDCriteria); combined != nil {
 			criteria.And(combined)
+		}
+	}
+
+	if matchers.Seen != nil {
+		if *matchers.Seen {
+			criteria.Flag = append(criteria.Flag, imap.FlagSeen)
+		} else {
+			criteria.NotFlag = append(criteria.NotFlag, imap.FlagSeen)
+		}
+	}
+	if matchers.ListUnsubscribe != nil {
+		listUnsubscribeCriteria := &imap.SearchCriteria{
+			Header: []imap.SearchCriteriaHeaderField{{
+				Key:   "List-Unsubscribe",
+				Value: "",
+			}},
+		}
+		if *matchers.ListUnsubscribe {
+			criteria.And(listUnsubscribeCriteria)
+		} else {
+			criteria.Not = append(criteria.Not, *listUnsubscribeCriteria)
 		}
 	}
 

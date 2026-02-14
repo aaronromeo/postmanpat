@@ -98,18 +98,29 @@ def write_yaml(path: str, data: Dict[str, Any]) -> None:
         handle.write("\n")
 
 
-def load_checkpoint(path: str) -> Optional[Dict[str, str]]:
+def load_checkpoint(path: str) -> Optional[set[str]]:
     if not path or not os.path.exists(path):
         return None
     with open(path, "r", encoding="utf-8") as handle:
-        return json.load(handle)
+        data = json.load(handle)
+    if isinstance(data, dict):
+        cluster_ids = data.get("cluster_ids")
+        if isinstance(cluster_ids, list):
+            return {str(value) for value in cluster_ids if str(value).strip()}
+        legacy_id = data.get("cluster_id")
+        if isinstance(legacy_id, str) and legacy_id.strip() and legacy_id != "__skipped__":
+            return {legacy_id.strip()}
+        return set()
+    if isinstance(data, list):
+        return {str(value) for value in data if str(value).strip()}
+    return set()
 
 
-def save_checkpoint(path: str, lens: str, cluster_id: str) -> None:
+def save_checkpoint(path: str, cluster_ids: set[str]) -> None:
     if not path:
         return
     with open(path, "w", encoding="utf-8") as handle:
-        json.dump({"lens": lens, "cluster_id": cluster_id}, handle, indent=2)
+        json.dump({"cluster_ids": sorted(cluster_ids)}, handle, indent=2)
         handle.write("\n")
 
 
@@ -122,7 +133,7 @@ def cluster_summary(cluster: Dict[str, Any]) -> str:
 def format_examples(cluster: Dict[str, Any], limit: int = 3) -> List[str]:
     examples = cluster.get("examples", {}) or {}
     lines: List[str] = []
-    for label in ("subject_raw", "recipients", "reply_to_domains", "list_unsubscribe_targets"):
+    for label in ("subject_raw", "recipients", "reply_to_domains", "list_unsubscribe_targets", "sender_domains"):
         values = examples.get(label, []) or []
         if not values:
             continue
@@ -203,7 +214,15 @@ def build_cleanup_rule_list(cluster: Dict[str, Any], name: str, default_folders:
 
 def build_watch_rule_sender(cluster: Dict[str, Any], name: str) -> Optional[Dict[str, Any]]:
     sender_domains = cluster.get("keys", {}).get("SenderDomains", []) or []
-    sender_defaults = [escape_regex(str(domain)) for domain in sender_domains]
+    from_list = cluster.get("keys", {}).get("FromList", []) or []
+    has_unsub = cluster.get("keys", {}).get("HasListUnsubscribe")
+    from_domains = []
+    for value in from_list:
+        parts = str(value).split("@")
+        if len(parts) == 2 and parts[1].strip():
+            from_domains.append(parts[1].strip())
+    merged = list(dict.fromkeys([*sender_domains, *from_domains]))
+    sender_defaults = [escape_regex(str(domain)) for domain in merged]
     sender_prompt_default = ", ".join(sender_defaults)
     raw_sender = prompt("sender_regex (comma-separated)", default=sender_prompt_default, required=True)
     sender_values = split_list(raw_sender)
@@ -214,6 +233,8 @@ def build_watch_rule_sender(cluster: Dict[str, Any], name: str) -> Optional[Dict
         },
         "actions": [prompt_rule_action()],
     }
+    if isinstance(has_unsub, bool):
+        rule["client"]["list_unsubscribe"] = has_unsub
     reply_defaults = cluster.get("examples", {}).get("reply_to_domains", []) or []
     reply_defaults = [escape_regex(str(value)) for value in reply_defaults]
     if reply_defaults:
@@ -233,7 +254,15 @@ def build_watch_rule_sender(cluster: Dict[str, Any], name: str) -> Optional[Dict
 
 def build_cleanup_rule_sender(cluster: Dict[str, Any], name: str, default_folders: Optional[str]) -> Tuple[Optional[Dict[str, Any]], str]:
     sender_domains = cluster.get("keys", {}).get("SenderDomains", []) or []
-    sender_defaults = ", ".join(str(domain) for domain in sender_domains)
+    from_list = cluster.get("keys", {}).get("FromList", []) or []
+    has_unsub = cluster.get("keys", {}).get("HasListUnsubscribe")
+    from_domains = []
+    for value in from_list:
+        parts = str(value).split("@")
+        if len(parts) == 2 and parts[1].strip():
+            from_domains.append(parts[1].strip())
+    merged = list(dict.fromkeys([*sender_domains, *from_domains]))
+    sender_defaults = ", ".join(str(domain) for domain in merged)
     raw_sender = prompt("sender_substring (comma-separated)", default=sender_defaults, required=True)
     sender_values = split_list(raw_sender)
     folders = prompt_folders(default_folders)
@@ -245,6 +274,8 @@ def build_cleanup_rule_sender(cluster: Dict[str, Any], name: str, default_folder
         },
         "actions": [prompt_rule_action()],
     }
+    if isinstance(has_unsub, bool):
+        rule["server"]["list_unsubscribe"] = has_unsub
     reply_defaults = cluster.get("examples", {}).get("reply_to_domains", []) or []
     if reply_defaults:
         reply_values = prompt_optional_list("replyto_substring", [str(value) for value in reply_defaults])
@@ -255,6 +286,20 @@ def build_cleanup_rule_sender(cluster: Dict[str, Any], name: str, default_folder
     if recipients_values is not None:
         rule["server"]["recipients"] = recipients_values
     return rule, ", ".join(folders)
+
+
+def build_watch_rule_recipient_tag(cluster: Dict[str, Any], name: str) -> Optional[Dict[str, Any]]:
+    tag_key = str(cluster.get("keys", {}).get("recipient_tag", "")).strip()
+    default_regex = escape_regex(tag_key) if tag_key else ""
+    regex = prompt("recipient_tag_regex", default=default_regex, required=True)
+    rule = {
+        "name": name,
+        "client": {
+            "recipient_tag_regex": [regex],
+        },
+        "actions": [prompt_rule_action()],
+    }
+    return rule
 
 
 def process_cluster(
@@ -278,8 +323,13 @@ def process_cluster(
         rule_name = rule_name or rule_name_prompt(lens, cluster)
         if lens == "list_lens":
             rule = build_watch_rule_list(cluster, rule_name)
-        else:
+        elif lens == "sender_unsub_lens":
             rule = build_watch_rule_sender(cluster, rule_name)
+        elif lens == "recipient_tag_lens":
+            rule = build_watch_rule_recipient_tag(cluster, rule_name)
+        else:
+            print(f"Unsupported lens for watch rules: {lens}")
+            rule = None
         if rule:
             watch_rules.append(rule)
 
@@ -290,8 +340,14 @@ def process_cluster(
         rule_name = rule_name or rule_name_prompt(lens, cluster)
         if lens == "list_lens":
             rule, default_folders = build_cleanup_rule_list(cluster, rule_name, default_folders)
-        else:
+        elif lens == "sender_unsub_lens":
             rule, default_folders = build_cleanup_rule_sender(cluster, rule_name, default_folders)
+        elif lens == "recipient_tag_lens":
+            print("recipient_tag_lens does not support server-side cleanup rules.")
+            rule = None
+        else:
+            print(f"Unsupported lens for cleanup rules: {lens}")
+            rule = None
         if rule:
             cleanup_rules.append(rule)
 
@@ -300,7 +356,7 @@ def process_cluster(
 
 def iter_clusters(indexes: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]]:
     result: List[Tuple[str, Dict[str, Any]]] = []
-    for lens in ("list_lens", "sender_lens"):
+    for lens in ("list_lens", "sender_unsub_lens", "recipient_tag_lens"):
         clusters = indexes.get(lens, {}).get("clusters", []) or []
         for cluster in clusters:
             result.append((lens, cluster))
@@ -328,31 +384,27 @@ def main() -> int:
         return 1
 
     indexes = data.get("indexes", {})
+
+    enabled_lenses = {}
+    for lens in ("list_lens", "sender_unsub_lens", "recipient_tag_lens"):
+        response = prompt_yes_no(f"Process {lens}?", default=True)
+        if response == "q":
+            return 0
+        enabled_lenses[lens] = response == "y"
+
     clusters = iter_clusters(indexes)
 
-    checkpoint = load_checkpoint(checkpoint_path)
-    resume_lens = checkpoint.get("lens") if checkpoint else None
-    resume_cluster = checkpoint.get("cluster_id") if checkpoint else None
-    resumed = resume_lens is None
-    resume_found = False
+    processed_ids = load_checkpoint(checkpoint_path) or set()
 
     watch_rules: List[Dict[str, Any]] = []
     cleanup_rules: List[Dict[str, Any]] = []
     default_folders: Optional[str] = "INBOX"
 
-    if checkpoint and resume_lens and resume_cluster:
-        if any(lens == resume_lens and str(cluster.get("cluster_id", "")) == resume_cluster for lens, cluster in clusters):
-            resume_found = True
-        else:
-            resumed = True
-            print("Warning: checkpoint not found in analyze file; starting from beginning.", file=sys.stderr)
-
     for lens, cluster in clusters:
+        if not enabled_lenses.get(lens, True):
+            continue
         cluster_id = str(cluster.get("cluster_id", ""))
-        if not resumed:
-            if lens == resume_lens and cluster_id == resume_cluster:
-                resumed = True
-                continue
+        if cluster_id in processed_ids:
             continue
 
         proceed, default_folders = process_cluster(
@@ -364,7 +416,8 @@ def main() -> int:
         )
         if not proceed:
             break
-        save_checkpoint(checkpoint_path, lens, cluster_id)
+        processed_ids.add(cluster_id)
+        save_checkpoint(checkpoint_path, processed_ids)
 
     watch_config = {"rules": watch_rules}
     cleanup_config = {"rules": cleanup_rules}

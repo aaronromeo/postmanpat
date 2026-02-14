@@ -323,14 +323,16 @@ func runWatchTest(ctx context.Context, client *imap.Client, cfg config.Config, l
 		})
 		for _, message := range data {
 			ok, err := matchers.MatchesClient(rule.Client, matchers.ClientMessage{
-				ListID:         message.ListID,
-				SenderDomains:  message.SenderDomains,
-				ReplyToDomains: message.ReplyToDomains,
-				SubjectRaw:     message.SubjectRaw,
-				Recipients:     message.Recipients,
-				RecipientTags:  message.RecipientTags,
-				Body:           message.Body,
-				Cc:             message.Cc,
+				ListID:           message.ListID,
+				SenderDomains:    message.SenderDomains,
+				ReplyToDomains:   message.ReplyToDomains,
+				SubjectRaw:       message.SubjectRaw,
+				Recipients:       message.Recipients,
+				RecipientTags:    message.RecipientTags,
+				Body:             message.Body,
+				Cc:               message.Cc,
+				ReturnPathDomain: message.ReturnPathDomain,
+				ListUnsubscribe:  message.ListUnsubscribe,
 			})
 			if err != nil {
 				return err

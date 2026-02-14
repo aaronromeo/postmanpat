@@ -9,14 +9,16 @@ import (
 )
 
 type ClientMessage struct {
-	ListID         string
-	SenderDomains  []string
-	ReplyToDomains []string
-	SubjectRaw     string
-	Recipients     []string
-	RecipientTags  []string
-	Body           string
-	Cc             []string
+	ListID           string
+	SenderDomains    []string
+	ReplyToDomains   []string
+	SubjectRaw       string
+	Recipients       []string
+	RecipientTags    []string
+	Body             string
+	Cc               []string
+	ReturnPathDomain string
+	ListUnsubscribe  bool
 }
 
 // MatchesClient returns true if the message satisfies all configured client matchers.
@@ -60,6 +62,15 @@ func MatchesClient(matchers *config.ClientMatchers, data ClientMessage) (bool, e
 			return false, nil
 		}
 	}
+	if len(matchers.ReturnPathRegex) > 0 {
+		ok, err := matchAnyRegex(matchers.ReturnPathRegex, data.ReturnPathDomain)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+	}
 	if len(matchers.SenderRegex) > 0 {
 		ok, err := matchAnyRegexInList(matchers.SenderRegex, data.SenderDomains)
 		if err != nil {
@@ -93,6 +104,11 @@ func MatchesClient(matchers *config.ClientMatchers, data ClientMessage) (bool, e
 			return false, err
 		}
 		if !ok {
+			return false, nil
+		}
+	}
+	if matchers.ListUnsubscribe != nil {
+		if data.ListUnsubscribe != *matchers.ListUnsubscribe {
 			return false, nil
 		}
 	}
