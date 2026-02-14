@@ -302,58 +302,6 @@ def build_watch_rule_recipient_tag(cluster: Dict[str, Any], name: str) -> Option
     return rule
 
 
-def build_watch_rule_returnpath(cluster: Dict[str, Any], name: str) -> Optional[Dict[str, Any]]:
-    key = str(cluster.get("keys", {}).get("returnpath", "")).strip()
-    default_regex = escape_regex(key) if key else ""
-    regex = prompt("returnpath_regex", default=default_regex, required=True)
-    rule = {
-        "name": name,
-        "client": {
-            "returnpath_regex": [regex],
-        },
-        "actions": [prompt_rule_action()],
-    }
-    sender_defaults = cluster.get("examples", {}).get("sender_domains", []) or []
-    sender_defaults = [escape_regex(str(value)) for value in sender_defaults]
-    if sender_defaults:
-        sender_values = prompt_optional_list("sender_regex", sender_defaults)
-        if sender_values is not None:
-            rule["client"]["sender_regex"] = sender_values
-    reply_defaults = cluster.get("examples", {}).get("reply_to_domains", []) or []
-    reply_defaults = [escape_regex(str(value)) for value in reply_defaults]
-    if reply_defaults:
-        reply_values = prompt_optional_list("replyto_regex", reply_defaults)
-        if reply_values is not None:
-            rule["client"]["replyto_regex"] = reply_values
-    return rule
-
-
-def build_cleanup_rule_returnpath(cluster: Dict[str, Any], name: str, default_folders: Optional[str]) -> Tuple[Optional[Dict[str, Any]], str]:
-    key = str(cluster.get("keys", {}).get("returnpath", "")).strip()
-    substring = prompt("returnpath_substring", default=key, required=True)
-    folders = prompt_folders(default_folders)
-    rule = {
-        "name": name,
-        "server": {
-            "folders": folders,
-            "returnpath_substring": [substring],
-        },
-        "actions": [prompt_rule_action()],
-    }
-    sender_defaults = cluster.get("examples", {}).get("sender_domains", []) or []
-    sender_defaults = [str(value) for value in sender_defaults]
-    if sender_defaults:
-        sender_values = prompt_optional_list("sender_substring", sender_defaults)
-        if sender_values is not None:
-            rule["server"]["sender_substring"] = sender_values
-    reply_defaults = cluster.get("examples", {}).get("reply_to_domains", []) or []
-    reply_defaults = [str(value) for value in reply_defaults]
-    if reply_defaults:
-        reply_values = prompt_optional_list("replyto_substring", reply_defaults)
-        if reply_values is not None:
-            rule["server"]["replyto_substring"] = reply_values
-    return rule, ", ".join(folders)
-
 def process_cluster(
     lens: str,
     cluster: Dict[str, Any],
@@ -380,7 +328,8 @@ def process_cluster(
         elif lens == "recipient_tag_lens":
             rule = build_watch_rule_recipient_tag(cluster, rule_name)
         else:
-            rule = build_watch_rule_returnpath(cluster, rule_name)
+            print(f"Unsupported lens for watch rules: {lens}")
+            rule = None
         if rule:
             watch_rules.append(rule)
 
@@ -397,7 +346,8 @@ def process_cluster(
             print("recipient_tag_lens does not support server-side cleanup rules.")
             rule = None
         else:
-            rule, default_folders = build_cleanup_rule_returnpath(cluster, rule_name, default_folders)
+            print(f"Unsupported lens for cleanup rules: {lens}")
+            rule = None
         if rule:
             cleanup_rules.append(rule)
 
@@ -406,7 +356,7 @@ def process_cluster(
 
 def iter_clusters(indexes: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]]:
     result: List[Tuple[str, Dict[str, Any]]] = []
-    for lens in ("list_lens", "sender_unsub_lens", "recipient_tag_lens", "returnpath_lens"):
+    for lens in ("list_lens", "sender_unsub_lens", "recipient_tag_lens"):
         clusters = indexes.get(lens, {}).get("clusters", []) or []
         for cluster in clusters:
             result.append((lens, cluster))
@@ -436,7 +386,7 @@ def main() -> int:
     indexes = data.get("indexes", {})
 
     enabled_lenses = {}
-    for lens in ("list_lens", "sender_unsub_lens", "recipient_tag_lens", "returnpath_lens"):
+    for lens in ("list_lens", "sender_unsub_lens", "recipient_tag_lens"):
         response = prompt_yes_no(f"Process {lens}?", default=True)
         if response == "q":
             return 0

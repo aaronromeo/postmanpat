@@ -187,7 +187,6 @@ type analyzeIndexes struct {
 	SenderLens       analyzeLens `json:"sender_unsub_lens"`
 	TemplateLens     analyzeLens `json:"template_lens"`
 	RecipientTagLens analyzeLens `json:"recipient_tag_lens"`
-	ReturnPathLens   analyzeLens `json:"returnpath_lens"`
 }
 
 type analyzeLens struct {
@@ -291,7 +290,6 @@ func buildAnalyzeReport(data []imap.MailData, params analyzeReportParams) (analy
 	senderLens := buildSenderUnsubLens(data, options)
 	templateLens := buildTemplateLens(data, options)
 	recipientTagLens := buildRecipientTagLens(data, options)
-	returnPathLens := buildReturnPathLens(data, options)
 
 	return analyzeReport{
 		GeneratedAt: params.Generated.Format(time.RFC3339),
@@ -312,7 +310,6 @@ func buildAnalyzeReport(data []imap.MailData, params analyzeReportParams) (analy
 			SenderLens:       senderLens,
 			TemplateLens:     templateLens,
 			RecipientTagLens: recipientTagLens,
-			ReturnPathLens:   returnPathLens,
 		},
 	}, nil
 }
@@ -423,27 +420,6 @@ func buildRecipientTagLens(data []imap.MailData, options analyzeOptions) analyze
 
 	return analyzeLens{
 		KeyFields: []string{"recipient_tag"},
-		Clusters:  finalizeClusters(clusters, options),
-	}
-}
-
-func buildReturnPathLens(data []imap.MailData, options analyzeOptions) analyzeLens {
-	clusters := make(map[string]*clusterAccumulator)
-	for _, item := range data {
-		returnPath := strings.ToLower(strings.TrimSpace(item.ReturnPathDomain))
-		if returnPath == "" {
-			continue
-		}
-		keyString := fmt.Sprintf("returnpath=%s", returnPath)
-		clusterID := makeClusterID("returnpath_lens", keyString)
-		acc := ensureClusterAccumulator(clusters, clusterID, map[string]any{
-			"returnpath": returnPath,
-		})
-		accumulateCluster(acc, item, item.ListID != "", options.Examples)
-	}
-
-	return analyzeLens{
-		KeyFields: []string{"returnpath"},
 		Clusters:  finalizeClusters(clusters, options),
 	}
 }

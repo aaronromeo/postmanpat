@@ -140,9 +140,6 @@ func TestBuildAnalyzeReportJSON(t *testing.T) {
 	if indexes["recipient_tag_lens"] == nil {
 		t.Fatal("indexes.recipient_tag_lens is missing")
 	}
-	if indexes["returnpath_lens"] == nil {
-		t.Fatal("indexes.returnpath_lens is missing")
-	}
 
 	// record, ok := raw[0].(map[string]any)
 	// if !ok {
