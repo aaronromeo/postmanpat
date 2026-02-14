@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/aaronromeo/postmanpat/internal/config"
+	"github.com/aaronromeo/postmanpat/internal/foo"
 	"github.com/emersion/go-imap/v2"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-message"
@@ -32,28 +33,6 @@ type Client struct {
 	UnilateralDataHandler *giimapclient.UnilateralDataHandler
 
 	client *giimapclient.Client
-}
-
-type MailData struct {
-	UID                    uint32
-	ReplyToDomains         []string
-	SenderDomains          []string
-	From                   []string
-	ReturnPathDomain       string
-	Recipients             []string
-	Cc                     []string
-	RecipientTags          []string
-	Body                   string
-	ListID                 string
-	ListUnsubscribe        bool
-	ListUnsubscribeTargets string
-	PrecedenceRaw          string
-	PrecedenceCategory     string
-	XMailer                string
-	UserAgent              string
-	SubjectRaw             string
-	SubjectNormalized      string
-	MessageDate            time.Time
 }
 
 // Connect establishes the IMAP connection, logs in, and selects the mailbox.
@@ -148,12 +127,12 @@ func (c *Client) SearchByServerMatchers(ctx context.Context, matchers config.Ser
 }
 
 // FetchSenderData returns sender data for the provided UIDs.
-func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData, error) {
+func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]foo.MailData, error) {
 	if c.client == nil {
 		return nil, errors.New("IMAP client is not connected")
 	}
 	if len(uids) == 0 {
-		return []MailData{}, nil
+		return []foo.MailData{}, nil
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -180,7 +159,7 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 	}
 
 	fetchCmd := c.client.Fetch(uidSet, fetchOptions)
-	rows := make([]MailData, 0, len(uids))
+	rows := make([]foo.MailData, 0, len(uids))
 	for {
 		if err := ctx.Err(); err != nil {
 			_ = fetchCmd.Close()
@@ -260,7 +239,7 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 			from = append(from, addr.Addr())
 		}
 
-		data := MailData{
+		data := foo.MailData{
 			UID:               uid,
 			ReplyToDomains:    replyToHosts,
 			From:              from,
@@ -295,18 +274,18 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]MailData
 }
 
 // FetchSenderDataByMailbox returns sender data per mailbox for the provided UIDs.
-func (c *Client) FetchSenderDataByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32) (map[string][]MailData, error) {
+func (c *Client) FetchSenderDataByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32) (map[string][]foo.MailData, error) {
 	if c.client == nil {
 		return nil, errors.New("IMAP client is not connected")
 	}
 	if len(uidsByMailbox) == 0 {
-		return map[string][]MailData{}, nil
+		return map[string][]foo.MailData{}, nil
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	results := make(map[string][]MailData)
+	results := make(map[string][]foo.MailData)
 	for mailbox, uids := range uidsByMailbox {
 		mailbox = strings.TrimSpace(mailbox)
 		if mailbox == "" {

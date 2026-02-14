@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/aaronromeo/postmanpat/internal/config"
-	"github.com/aaronromeo/postmanpat/internal/imap"
+	"github.com/aaronromeo/postmanpat/internal/foo"
 )
 
 func TestBuildAnalyzeReportJSON(t *testing.T) {
@@ -18,7 +18,7 @@ func TestBuildAnalyzeReportJSON(t *testing.T) {
 	ageWindow := &config.AgeWindow{
 		Min: "48h",
 	}
-	data := []imap.MailData{
+	data := []foo.MailData{
 		{
 			SenderDomains:          []string{"example.com"},
 			ReplyToDomains:         []string{"reply.example.com"},
