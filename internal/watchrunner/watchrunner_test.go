@@ -11,7 +11,7 @@ import (
 	"github.com/aaronromeo/postmanpat/ftest"
 	"github.com/aaronromeo/postmanpat/internal/config"
 	"github.com/aaronromeo/postmanpat/internal/imap"
-	"github.com/aaronromeo/postmanpat/internal/imap/auth"
+	"github.com/aaronromeo/postmanpat/internal/imap/session_manager"
 )
 
 func TestIsBenignIdleError(t *testing.T) {
@@ -191,15 +191,17 @@ func setupWatchRunnerServer(t *testing.T, extraMailboxes []string) (*imap.Client
 	t.Helper()
 
 	addr, ids, cleanup := ftest.SetupIMAPServer(t, nil, extraMailboxes, nil)
-	client := &imap.Client{}
-
-	opts := []auth.Option{
-		auth.WithAddr(addr),
-		auth.WithCreds(ftest.DefaultUser, ftest.DefaultPass),
-		auth.WithTLSConfig(&tls.Config{InsecureSkipVerify: true}),
+	opts := []session_manager.Option{
+		session_manager.WithAddr(addr),
+		session_manager.WithCreds(ftest.DefaultUser, ftest.DefaultPass),
+		session_manager.WithTLSConfig(&tls.Config{InsecureSkipVerify: true}),
 	}
 
-	if err := client.Connect(opts...); err != nil {
+	client := imap.New(
+		opts...,
+	)
+
+	if err := client.Connect(); err != nil {
 		cleanup()
 		t.Fatalf("connect: %v", err)
 	}

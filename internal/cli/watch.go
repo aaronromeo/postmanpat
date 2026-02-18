@@ -14,7 +14,7 @@ import (
 	"github.com/aaronromeo/postmanpat/internal/announcer"
 	"github.com/aaronromeo/postmanpat/internal/config"
 	"github.com/aaronromeo/postmanpat/internal/imap"
-	"github.com/aaronromeo/postmanpat/internal/imap/auth"
+	"github.com/aaronromeo/postmanpat/internal/imap/session_manager"
 	"github.com/aaronromeo/postmanpat/internal/matchers"
 	"github.com/aaronromeo/postmanpat/internal/watchrunner"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
@@ -103,15 +103,15 @@ var watchCmd = &cobra.Command{
 			tlsConfig = watchTLSConfigProvider()
 		}
 
-		var client watchrunner.WatchRunner = &imap.Client{}
-		if err := client.Connect(
-			auth.WithAddr(
+		var client watchrunner.WatchRunner = imap.New(
+			session_manager.WithAddr(
 				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
 			),
-			auth.WithCreds(imapEnv.User, imapEnv.Pass),
-			auth.WithTLSConfig(tlsConfig),
-			auth.WithUnilateralDataHandler(handler),
-		); err != nil {
+			session_manager.WithCreds(imapEnv.User, imapEnv.Pass),
+			session_manager.WithTLSConfig(tlsConfig),
+			session_manager.WithUnilateralDataHandler(handler),
+		)
+		if err := client.Connect(); err != nil {
 			return err
 		}
 		defer client.Close()

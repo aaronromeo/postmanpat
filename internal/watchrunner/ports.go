@@ -4,14 +4,12 @@ import (
 	"context"
 
 	"github.com/aaronromeo/postmanpat/internal/foo"
-	"github.com/aaronromeo/postmanpat/internal/imap/auth"
+	"github.com/aaronromeo/postmanpat/internal/imap/session_manager"
 	giimap "github.com/emersion/go-imap/v2"
-	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 )
 
 type Connector interface {
-	auth.Connector
-	Idle() (*giimapclient.IdleCommand, error)
+	session_manager.ClientConnector
 }
 
 type Selector interface {

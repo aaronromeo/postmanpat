@@ -1,4 +1,4 @@
-package auth
+package session_manager
 
 import (
 	"crypto/tls"
@@ -11,9 +11,17 @@ import (
 
 type Option func(*IMAPConnector)
 
-type Connector interface {
-	Connect(opts ...Option) error
+type ServerConnector interface {
+	Connect() error
 	Close() error
+
+	IMAPClient() *giimapclient.Client
+}
+
+type ClientConnector interface {
+	ServerConnector
+
+	Idle() (*giimapclient.IdleCommand, error)
 }
 
 type IMAPConnector struct {
@@ -51,12 +59,30 @@ func WithUnilateralDataHandler(handler *giimapclient.UnilateralDataHandler) Opti
 	}
 }
 
-// Connect establishes the IMAP connection, logs in, and selects the mailbox.
-func (c *IMAPConnector) Connect(opts ...Option) error {
+func NewServerConnector(opts ...Option) *IMAPConnector {
+	c := &IMAPConnector{}
 	for _, opt := range opts {
 		opt(c)
 	}
 
+	return c
+}
+
+func NewClientConnector(opts ...Option) *IMAPConnector {
+	c := &IMAPConnector{}
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	return c
+}
+
+func (c *IMAPConnector) IMAPClient() *giimapclient.Client {
+	return c.Client
+}
+
+// Connect establishes the IMAP connection, logs in, and selects the mailbox.
+func (c *IMAPConnector) Connect() error {
 	if err := validateDeps(c); err != nil {
 		return err
 	}
@@ -81,6 +107,14 @@ func (c *IMAPConnector) Connect(opts ...Option) error {
 
 	c.Client = client
 	return nil
+}
+
+// Idle starts an IMAP IDLE command.
+func (c *IMAPConnector) Idle() (*giimapclient.IdleCommand, error) {
+	if c.Client == nil {
+		return nil, errors.New("IMAP client is not connected")
+	}
+	return c.Client.Idle()
 }
 
 // Close logs out and clears the connection.

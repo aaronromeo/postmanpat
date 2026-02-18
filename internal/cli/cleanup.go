@@ -11,7 +11,7 @@ import (
 	"github.com/aaronromeo/postmanpat/internal/announcer"
 	"github.com/aaronromeo/postmanpat/internal/config"
 	"github.com/aaronromeo/postmanpat/internal/imap"
-	"github.com/aaronromeo/postmanpat/internal/imap/auth"
+	"github.com/aaronromeo/postmanpat/internal/imap/session_manager"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
@@ -71,18 +71,18 @@ var cleanupCmd = &cobra.Command{
 			return err
 		}
 
-		var client imap.ServerRunner = &imap.Client{}
+		var client imap.ServerRunner = imap.New(
+			session_manager.WithAddr(
+				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
+			),
+			session_manager.WithCreds(imapEnv.User, imapEnv.Pass),
+		)
 
 		var announcerService announcer.Service = announcer.New(
 			announcer.WithWebhookURL(os.Getenv("POSTMANPAT_WEBHOOK_URL")),
 		)
 
-		if err := client.Connect(
-			auth.WithAddr(
-				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
-			),
-			auth.WithCreds(imapEnv.User, imapEnv.Pass),
-		); err != nil {
+		if err := client.Connect(); err != nil {
 			return err
 		}
 		defer client.Close()

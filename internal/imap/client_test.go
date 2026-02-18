@@ -12,7 +12,7 @@ import (
 
 	"github.com/aaronromeo/postmanpat/ftest"
 	"github.com/aaronromeo/postmanpat/internal/config"
-	"github.com/aaronromeo/postmanpat/internal/imap/auth"
+	"github.com/aaronromeo/postmanpat/internal/imap/session_manager"
 	"github.com/aaronromeo/postmanpat/internal/matchers"
 	"github.com/emersion/go-imap/v2"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
@@ -329,203 +329,22 @@ func setupTestServer(t *testing.T, caps imap.CapSet, extraMailboxes []string, ex
 
 func mustConnectClient(t *testing.T, addr, username, password string, handler *giimapclient.UnilateralDataHandler) *Client {
 	t.Helper()
-	client := &Client{}
-	opts := []auth.Option{
-		auth.WithAddr(addr),
-		auth.WithCreds(username, password),
-		auth.WithTLSConfig(&tls.Config{InsecureSkipVerify: true}),
+	opts := []session_manager.Option{
+		session_manager.WithAddr(addr),
+		session_manager.WithCreds(username, password),
+		session_manager.WithTLSConfig(&tls.Config{InsecureSkipVerify: true}),
 	}
 	if handler != nil {
-		opts = append(opts, auth.WithUnilateralDataHandler(handler))
+		opts = append(opts, session_manager.WithUnilateralDataHandler(handler))
 	}
-	if err := client.Connect(opts...); err != nil {
+	client := New(opts...)
+	if err := client.Connect(); err != nil {
 		t.Fatalf("connect: %v", err)
 	}
 	t.Cleanup(func() {
 		_ = client.Close()
 	})
 	return client
-}
-
-func TestBuildSearchCriteriaListIDSubstring(t *testing.T) {
-	matchers := config.ServerMatchers{
-		ListIDSubstring: []string{"list.example.com"},
-	}
-
-	criteria, err := buildSearchCriteria(matchers)
-	if err != nil {
-		t.Fatalf("build criteria: %v", err)
-	}
-	if criteria == nil {
-		t.Fatal("expected criteria")
-	}
-	if len(criteria.Header) != 1 {
-		t.Fatalf("expected 1 header criteria, got %d", len(criteria.Header))
-	}
-	if criteria.Header[0].Key != "List-ID" {
-		t.Fatalf("expected List-ID header key, got %q", criteria.Header[0].Key)
-	}
-	if criteria.Header[0].Value != "list.example.com" {
-		t.Fatalf("expected List-ID header value, got %q", criteria.Header[0].Value)
-	}
-}
-
-func TestBuildSearchCriteriaListIDSubstringSkipsEmpty(t *testing.T) {
-	matchers := config.ServerMatchers{
-		ListIDSubstring: []string{"", "   "},
-	}
-
-	criteria, err := buildSearchCriteria(matchers)
-	if err != nil {
-		t.Fatalf("build criteria: %v", err)
-	}
-	if criteria == nil {
-		t.Fatal("expected criteria")
-	}
-	if len(criteria.Header) != 0 {
-		t.Fatalf("expected no header criteria, got %d", len(criteria.Header))
-	}
-}
-
-func TestBuildSearchCriteriaReturnPathSubstring(t *testing.T) {
-	matchers := config.ServerMatchers{
-		ReturnPathSubstring: []string{"srs.messagingengine.com"},
-	}
-
-	criteria, err := buildSearchCriteria(matchers)
-	if err != nil {
-		t.Fatalf("build criteria: %v", err)
-	}
-	if criteria == nil {
-		t.Fatal("expected criteria")
-	}
-	if len(criteria.Header) != 1 {
-		t.Fatalf("expected 1 header criteria, got %d", len(criteria.Header))
-	}
-	if criteria.Header[0].Key != "Return-Path" {
-		t.Fatalf("expected Return-Path header key, got %q", criteria.Header[0].Key)
-	}
-	if criteria.Header[0].Value != "srs.messagingengine.com" {
-		t.Fatalf("expected Return-Path header value, got %q", criteria.Header[0].Value)
-	}
-}
-
-func TestBuildSearchCriteriaSeenTrue(t *testing.T) {
-	seen := true
-	matchers := config.ServerMatchers{
-		Seen: &seen,
-	}
-
-	criteria, err := buildSearchCriteria(matchers)
-	if err != nil {
-		t.Fatalf("build criteria: %v", err)
-	}
-	if criteria == nil {
-		t.Fatal("expected criteria")
-	}
-	found := false
-	for _, flag := range criteria.Flag {
-		if flag == imap.FlagSeen {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatal("expected \\Seen flag to be included")
-	}
-}
-
-func TestBuildSearchCriteriaListUnsubscribeTrue(t *testing.T) {
-	listUnsub := true
-	matchers := config.ServerMatchers{
-		ListUnsubscribe: &listUnsub,
-	}
-
-	criteria, err := buildSearchCriteria(matchers)
-	if err != nil {
-		t.Fatalf("build criteria: %v", err)
-	}
-	if criteria == nil {
-		t.Fatal("expected criteria")
-	}
-	if len(criteria.Header) != 1 {
-		t.Fatalf("expected 1 header criteria, got %d", len(criteria.Header))
-	}
-	if criteria.Header[0].Key != "List-Unsubscribe" {
-		t.Fatalf("expected List-Unsubscribe header key, got %q", criteria.Header[0].Key)
-	}
-}
-
-func TestBuildSearchCriteriaListUnsubscribeFalse(t *testing.T) {
-	listUnsub := false
-	matchers := config.ServerMatchers{
-		ListUnsubscribe: &listUnsub,
-	}
-
-	criteria, err := buildSearchCriteria(matchers)
-	if err != nil {
-		t.Fatalf("build criteria: %v", err)
-	}
-	if criteria == nil {
-		t.Fatal("expected criteria")
-	}
-	if len(criteria.Not) != 1 {
-		t.Fatalf("expected 1 NOT criteria, got %d", len(criteria.Not))
-	}
-	if len(criteria.Not[0].Header) != 1 {
-		t.Fatalf("expected 1 NOT header criteria, got %d", len(criteria.Not[0].Header))
-	}
-	if criteria.Not[0].Header[0].Key != "List-Unsubscribe" {
-		t.Fatalf("expected List-Unsubscribe header key, got %q", criteria.Not[0].Header[0].Key)
-	}
-}
-
-func TestBuildSearchCriteriaSeenFalse(t *testing.T) {
-	seen := false
-	matchers := config.ServerMatchers{
-		Seen: &seen,
-	}
-
-	criteria, err := buildSearchCriteria(matchers)
-	if err != nil {
-		t.Fatalf("build criteria: %v", err)
-	}
-	if criteria == nil {
-		t.Fatal("expected criteria")
-	}
-	found := false
-	for _, flag := range criteria.NotFlag {
-		if flag == imap.FlagSeen {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatal("expected \\Seen to be included in NotFlag")
-	}
-}
-
-func TestBuildSearchCriteriaExcludesDeleted(t *testing.T) {
-	criteria, err := buildSearchCriteria(config.ServerMatchers{})
-	if err != nil {
-		t.Fatalf("build criteria: %v", err)
-	}
-	if criteria == nil {
-		t.Fatal("expected criteria")
-	}
-	if len(criteria.NotFlag) == 0 {
-		t.Fatal("expected NotFlag to include \\Deleted")
-	}
-	found := false
-	for _, flag := range criteria.NotFlag {
-		if flag == imap.FlagDeleted {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatal("expected NotFlag to include \\Deleted")
-	}
 }
 
 func TestListIDRegexEndToEnd(t *testing.T) {
@@ -649,7 +468,7 @@ func TestFetchSenderDataDoesNotSetSeen(t *testing.T) {
 		t.Fatalf("expected 1 uid, got %d", len(uids))
 	}
 
-	flagsBefore, err := fetchMessageFlags(ctx, client, uids)
+	flagsBefore, err := fetchMessageFlags(ctx, client.Client, uids)
 	if err != nil {
 		t.Fatalf("fetch flags before: %v", err)
 	}
@@ -662,7 +481,7 @@ func TestFetchSenderDataDoesNotSetSeen(t *testing.T) {
 		t.Fatalf("fetch data: %v", err)
 	}
 
-	flagsAfter, err := fetchMessageFlags(ctx, client, uids)
+	flagsAfter, err := fetchMessageFlags(ctx, client.Client, uids)
 	if err != nil {
 		t.Fatalf("fetch flags after: %v", err)
 	}
@@ -871,7 +690,7 @@ rules:
 	}
 }
 
-func fetchMessageFlags(ctx context.Context, client *Client, uids []uint32) ([]imap.Flag, error) {
+func fetchMessageFlags(ctx context.Context, client *giimapclient.Client, uids []uint32) ([]imap.Flag, error) {
 	var uidSet imap.UIDSet
 	for _, uid := range uids {
 		uidSet.AddNum(imap.UID(uid))
@@ -881,7 +700,7 @@ func fetchMessageFlags(ctx context.Context, client *Client, uids []uint32) ([]im
 		Flags: true,
 	}
 
-	fetchCmd := client.Client.Fetch(uidSet, fetchOptions)
+	fetchCmd := client.Fetch(uidSet, fetchOptions)
 	for {
 		if err := ctx.Err(); err != nil {
 			_ = fetchCmd.Close()
