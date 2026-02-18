@@ -14,6 +14,7 @@ import (
 	"github.com/aaronromeo/postmanpat/internal/config"
 	"github.com/aaronromeo/postmanpat/internal/foo"
 	"github.com/aaronromeo/postmanpat/internal/imap"
+	"github.com/aaronromeo/postmanpat/internal/imap/auth"
 	"github.com/spf13/cobra"
 )
 
@@ -58,12 +59,13 @@ var analyzeCmd = &cobra.Command{
 			ctx = context.Background()
 		}
 
-		client := &imap.Client{
-			Addr:     fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
-			Username: imapEnv.User,
-			Password: imapEnv.Pass,
-		}
-		if err := client.Connect(); err != nil {
+		client := &imap.Client{}
+		if err := client.Connect(
+			auth.WithAddr(
+				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
+			),
+			auth.WithCreds(imapEnv.User, imapEnv.Pass),
+		); err != nil {
 			return err
 		}
 		defer client.Close()

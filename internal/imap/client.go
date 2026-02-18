@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/aaronromeo/postmanpat/internal/config"
 	"github.com/aaronromeo/postmanpat/internal/foo"
+	"github.com/aaronromeo/postmanpat/internal/imap/auth"
 	"github.com/emersion/go-imap/v2"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-message"
@@ -25,60 +25,13 @@ import (
 
 // Client encapsulates an IMAP connection for search operations.
 type Client struct {
-	Addr      string
-	Username  string
-	Password  string
-	TLSConfig *tls.Config
-
-	UnilateralDataHandler *giimapclient.UnilateralDataHandler
-
-	client *giimapclient.Client
-}
-
-// Connect establishes the IMAP connection, logs in, and selects the mailbox.
-func (c *Client) Connect() error {
-	if strings.TrimSpace(c.Addr) == "" {
-		return errors.New("IMAP address is required")
-	}
-	if strings.TrimSpace(c.Username) == "" || strings.TrimSpace(c.Password) == "" {
-		return errors.New("IMAP credentials are required")
-	}
-	var options *giimapclient.Options
-	if c.TLSConfig != nil || c.UnilateralDataHandler != nil {
-		options = &giimapclient.Options{
-			TLSConfig:             c.TLSConfig,
-			UnilateralDataHandler: c.UnilateralDataHandler,
-		}
-	}
-
-	client, err := giimapclient.DialTLS(c.Addr, options)
-	if err != nil {
-		return err
-	}
-
-	if err := client.Login(c.Username, c.Password).Wait(); err != nil {
-		_ = client.Logout().Wait()
-		return err
-	}
-
-	c.client = client
-	return nil
-}
-
-// Close logs out and clears the connection.
-func (c *Client) Close() error {
-	if c.client == nil {
-		return nil
-	}
-	err := c.client.Logout().Wait()
-	c.client = nil
-	return err
+	auth.IMAPConnector
 }
 
 // SearchByServerMatchers returns UIDs for messages matching the provided matchers via IMAP SEARCH.
 // Results are grouped by mailbox to avoid UID collisions across folders.
 func (c *Client) SearchByServerMatchers(ctx context.Context, matchers config.ServerMatchers) (map[string][]uint32, error) {
-	if c.client == nil {
+	if c.Client == nil {
 		return nil, errors.New("IMAP client is not connected")
 	}
 	if err := ctx.Err(); err != nil {
@@ -95,7 +48,7 @@ func (c *Client) SearchByServerMatchers(ctx context.Context, matchers config.Ser
 			return nil, errors.New("matcher Folder is required")
 		}
 
-		if _, err := c.client.Select(folder, nil).Wait(); err != nil {
+		if _, err := c.Client.Select(folder, nil).Wait(); err != nil {
 			return nil, err
 		}
 
@@ -104,7 +57,7 @@ func (c *Client) SearchByServerMatchers(ctx context.Context, matchers config.Ser
 			return nil, err
 		}
 
-		data, err := c.client.UIDSearch(criteria, nil).Wait()
+		data, err := c.Client.UIDSearch(criteria, nil).Wait()
 		if err != nil {
 			return nil, err
 		}
@@ -128,7 +81,7 @@ func (c *Client) SearchByServerMatchers(ctx context.Context, matchers config.Ser
 
 // FetchSenderData returns sender data for the provided UIDs.
 func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]foo.MailData, error) {
-	if c.client == nil {
+	if c.Client == nil {
 		return nil, errors.New("IMAP client is not connected")
 	}
 	if len(uids) == 0 {
@@ -158,7 +111,7 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]foo.Mail
 		BodySection: []*imap.FetchItemBodySection{headerSection, bodySection},
 	}
 
-	fetchCmd := c.client.Fetch(uidSet, fetchOptions)
+	fetchCmd := c.Client.Fetch(uidSet, fetchOptions)
 	rows := make([]foo.MailData, 0, len(uids))
 	for {
 		if err := ctx.Err(); err != nil {
@@ -275,7 +228,7 @@ func (c *Client) FetchSenderData(ctx context.Context, uids []uint32) ([]foo.Mail
 
 // FetchSenderDataByMailbox returns sender data per mailbox for the provided UIDs.
 func (c *Client) FetchSenderDataByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32) (map[string][]foo.MailData, error) {
-	if c.client == nil {
+	if c.Client == nil {
 		return nil, errors.New("IMAP client is not connected")
 	}
 	if len(uidsByMailbox) == 0 {
@@ -291,7 +244,7 @@ func (c *Client) FetchSenderDataByMailbox(ctx context.Context, uidsByMailbox map
 		if mailbox == "" {
 			return nil, errors.New("mailbox is required")
 		}
-		if _, err := c.client.Select(mailbox, nil).Wait(); err != nil {
+		if _, err := c.Client.Select(mailbox, nil).Wait(); err != nil {
 			return nil, err
 		}
 
@@ -307,7 +260,7 @@ func (c *Client) FetchSenderDataByMailbox(ctx context.Context, uidsByMailbox map
 
 // SearchUIDsNewerThan returns UIDs greater than the provided last UID in the selected mailbox.
 func (c *Client) SearchUIDsNewerThan(ctx context.Context, lastUID uint32) ([]uint32, error) {
-	if c.client == nil {
+	if c.Client == nil {
 		return nil, errors.New("IMAP client is not connected")
 	}
 	if err := ctx.Err(); err != nil {
@@ -319,7 +272,7 @@ func (c *Client) SearchUIDsNewerThan(ctx context.Context, lastUID uint32) ([]uin
 	criteria := &imap.SearchCriteria{
 		UID: []imap.UIDSet{uidSet},
 	}
-	data, err := c.client.UIDSearch(criteria, nil).Wait()
+	data, err := c.Client.UIDSearch(criteria, nil).Wait()
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +286,7 @@ func (c *Client) SearchUIDsNewerThan(ctx context.Context, lastUID uint32) ([]uin
 
 // SelectMailbox selects a mailbox and returns its metadata.
 func (c *Client) SelectMailbox(ctx context.Context, mailbox string) (*imap.SelectData, error) {
-	if c.client == nil {
+	if c.Client == nil {
 		return nil, errors.New("IMAP client is not connected")
 	}
 	if err := ctx.Err(); err != nil {
@@ -342,15 +295,15 @@ func (c *Client) SelectMailbox(ctx context.Context, mailbox string) (*imap.Selec
 	if strings.TrimSpace(mailbox) == "" {
 		return nil, errors.New("mailbox is required")
 	}
-	return c.client.Select(mailbox, nil).Wait()
+	return c.Client.Select(mailbox, nil).Wait()
 }
 
 // Idle starts an IMAP IDLE command.
 func (c *Client) Idle() (*giimapclient.IdleCommand, error) {
-	if c.client == nil {
+	if c.Client == nil {
 		return nil, errors.New("IMAP client is not connected")
 	}
-	return c.client.Idle()
+	return c.Client.Idle()
 }
 
 func readHeader(literal imap.LiteralReader) (*mail.Header, error) {
@@ -511,7 +464,7 @@ func recipientTag(recipient string) string {
 
 // MoveUIDs move messages to a different destination folder.
 func (c *Client) MoveUIDs(ctx context.Context, uids []uint32, destination string) error {
-	if c.client == nil {
+	if c.Client == nil {
 		return errors.New("IMAP client is not connected")
 	}
 	if len(uids) == 0 {
@@ -529,7 +482,7 @@ func (c *Client) MoveUIDs(ctx context.Context, uids []uint32, destination string
 		uidSet.AddNum(imap.UID(uid))
 	}
 
-	if _, err := c.client.Move(uidSet, destination).Wait(); err != nil {
+	if _, err := c.Client.Move(uidSet, destination).Wait(); err != nil {
 		return err
 	}
 	if err := ctx.Err(); err != nil {
@@ -540,7 +493,7 @@ func (c *Client) MoveUIDs(ctx context.Context, uids []uint32, destination string
 
 // MoveByMailbox moves messages for each mailbox to a destination folder.
 func (c *Client) MoveByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32, destination string) error {
-	if c.client == nil {
+	if c.Client == nil {
 		return errors.New("IMAP client is not connected")
 	}
 	if len(uidsByMailbox) == 0 {
@@ -558,7 +511,7 @@ func (c *Client) MoveByMailbox(ctx context.Context, uidsByMailbox map[string][]u
 		if mailbox == "" {
 			return errors.New("mailbox is required")
 		}
-		if _, err := c.client.Select(mailbox, nil).Wait(); err != nil {
+		if _, err := c.Client.Select(mailbox, nil).Wait(); err != nil {
 			return err
 		}
 		if err := c.MoveUIDs(ctx, uids, destination); err != nil {
@@ -570,7 +523,7 @@ func (c *Client) MoveByMailbox(ctx context.Context, uidsByMailbox map[string][]u
 
 // DeleteUIDs marks messages as deleted and optionally expunges them.
 func (c *Client) DeleteUIDs(ctx context.Context, uids []uint32, expunge bool) error {
-	if c.client == nil {
+	if c.Client == nil {
 		return errors.New("IMAP client is not connected")
 	}
 	if len(uids) == 0 {
@@ -590,7 +543,7 @@ func (c *Client) DeleteUIDs(ctx context.Context, uids []uint32, expunge bool) er
 		Silent: true,
 		Flags:  []imap.Flag{imap.FlagDeleted},
 	}
-	if err := c.client.Store(uidSet, &store, nil).Close(); err != nil {
+	if err := c.Client.Store(uidSet, &store, nil).Close(); err != nil {
 		return err
 	}
 	if err := ctx.Err(); err != nil {
@@ -600,18 +553,18 @@ func (c *Client) DeleteUIDs(ctx context.Context, uids []uint32, expunge bool) er
 	if !expunge {
 		return nil
 	}
-	if c.client.Caps().Has(imap.CapUIDPlus) {
-		_, err := c.client.UIDExpunge(uidSet).Collect()
+	if c.Client.Caps().Has(imap.CapUIDPlus) {
+		_, err := c.Client.UIDExpunge(uidSet).Collect()
 		return err
 	}
 
-	_, err := c.client.Expunge().Collect()
+	_, err := c.Client.Expunge().Collect()
 	return err
 }
 
 // DeleteByMailbox marks messages as deleted and optionally expunges them per mailbox.
 func (c *Client) DeleteByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32, expunge bool) error {
-	if c.client == nil {
+	if c.Client == nil {
 		return errors.New("IMAP client is not connected")
 	}
 	if len(uidsByMailbox) == 0 {
@@ -626,7 +579,7 @@ func (c *Client) DeleteByMailbox(ctx context.Context, uidsByMailbox map[string][
 		if mailbox == "" {
 			return errors.New("mailbox is required")
 		}
-		if _, err := c.client.Select(mailbox, nil).Wait(); err != nil {
+		if _, err := c.Client.Select(mailbox, nil).Wait(); err != nil {
 			return err
 		}
 		if err := c.DeleteUIDs(ctx, uids, expunge); err != nil {

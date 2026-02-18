@@ -12,6 +12,7 @@ import (
 
 	"github.com/aaronromeo/postmanpat/ftest"
 	"github.com/aaronromeo/postmanpat/internal/config"
+	"github.com/aaronromeo/postmanpat/internal/imap/auth"
 	"github.com/aaronromeo/postmanpat/internal/matchers"
 	"github.com/emersion/go-imap/v2"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
@@ -239,26 +240,14 @@ func TestMoveByMailboxLocalServer(t *testing.T) {
 			assert.Empty(t, matched["INBOX"], "expected no matches in INBOX after move")
 
 			if tc.expectInArchive {
-				archiveClient := &Client{
-					Addr:      client.Addr,
-					Username:  client.Username,
-					Password:  client.Password,
-					TLSConfig: client.TLSConfig,
+				archiveClient := mustConnectClient(t, client.Addr, client.Username, client.Password, nil)
+				archiveMatchers := config.ServerMatchers{
+					Folders:         []string{tc.destination},
+					SenderSubstring: []string{"example.com"},
 				}
-				err = archiveClient.Connect()
-				assert.NoError(t, err, "connect archive client")
-				if err == nil {
-					t.Cleanup(func() {
-						_ = archiveClient.Close()
-					})
-					archiveMatchers := config.ServerMatchers{
-						Folders:         []string{tc.destination},
-						SenderSubstring: []string{"example.com"},
-					}
-					matched, err = archiveClient.SearchByServerMatchers(ctx, archiveMatchers)
-					assert.NoError(t, err, "search archive after move")
-					assert.Len(t, matched[tc.destination], 1, "expected moved message in destination")
-				}
+				matched, err = archiveClient.SearchByServerMatchers(ctx, archiveMatchers)
+				assert.NoError(t, err, "search archive after move")
+				assert.Len(t, matched[tc.destination], 1, "expected moved message in destination")
 			}
 		})
 	}
@@ -331,21 +320,31 @@ func setupTestServer(t *testing.T, caps imap.CapSet, extraMailboxes []string, ex
 
 	addr, ids, cleanup := ftest.SetupIMAPServer(t, caps, extraMailboxes, extraMessages)
 
-	client := &Client{
-		Addr:      addr,
-		Username:  ftest.DefaultUser,
-		Password:  ftest.DefaultPass,
-		TLSConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	if err := client.Connect(); err != nil {
-		cleanup()
-		t.Fatalf("connect: %v", err)
-	}
+	client := mustConnectClient(t, addr, ftest.DefaultUser, ftest.DefaultPass, nil)
 
 	return client, ids, func() {
-		_ = client.Close()
 		cleanup()
 	}
+}
+
+func mustConnectClient(t *testing.T, addr, username, password string, handler *giimapclient.UnilateralDataHandler) *Client {
+	t.Helper()
+	client := &Client{}
+	opts := []auth.Option{
+		auth.WithAddr(addr),
+		auth.WithCreds(username, password),
+		auth.WithTLSConfig(&tls.Config{InsecureSkipVerify: true}),
+	}
+	if handler != nil {
+		opts = append(opts, auth.WithUnilateralDataHandler(handler))
+	}
+	if err := client.Connect(opts...); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+	return client
 }
 
 func TestBuildSearchCriteriaListIDSubstring(t *testing.T) {
@@ -542,18 +541,7 @@ func TestListIDRegexEndToEnd(t *testing.T) {
 	})
 	t.Cleanup(cleanup)
 
-	client := &Client{
-		Addr:      addr,
-		Username:  "user@example.com",
-		Password:  "password",
-		TLSConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	if err := client.Connect(); err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = client.Close()
-	})
+	client := mustConnectClient(t, addr, "user@example.com", "password", nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
@@ -602,18 +590,7 @@ func TestFetchSenderDataReplyToRequiresHeader(t *testing.T) {
 	})
 	t.Cleanup(cleanup)
 
-	client := &Client{
-		Addr:      addr,
-		Username:  "user@example.com",
-		Password:  "password",
-		TLSConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	if err := client.Connect(); err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = client.Close()
-	})
+	client := mustConnectClient(t, addr, "user@example.com", "password", nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
@@ -655,18 +632,7 @@ func TestFetchSenderDataDoesNotSetSeen(t *testing.T) {
 	})
 	t.Cleanup(cleanup)
 
-	client := &Client{
-		Addr:      addr,
-		Username:  "user@example.com",
-		Password:  "password",
-		TLSConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	if err := client.Connect(); err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = client.Close()
-	})
+	client := mustConnectClient(t, addr, "user@example.com", "password", nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
@@ -720,18 +686,7 @@ func TestFetchSenderDataMalformedHeaderDoesNotError(t *testing.T) {
 	}})
 	t.Cleanup(cleanup)
 
-	client := &Client{
-		Addr:      addr,
-		Username:  ftest.DefaultUser,
-		Password:  ftest.DefaultPass,
-		TLSConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	if err := client.Connect(); err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = client.Close()
-	})
+	client := mustConnectClient(t, addr, ftest.DefaultUser, ftest.DefaultPass, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
@@ -773,18 +728,7 @@ func TestFetchSenderDataReturnPathDomain(t *testing.T) {
 	}})
 	t.Cleanup(cleanup)
 
-	client := &Client{
-		Addr:      addr,
-		Username:  ftest.DefaultUser,
-		Password:  ftest.DefaultPass,
-		TLSConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	if err := client.Connect(); err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = client.Close()
-	})
+	client := mustConnectClient(t, addr, ftest.DefaultUser, ftest.DefaultPass, nil)
 
 	ctx := context.Background()
 	if _, err := client.SelectMailbox(ctx, "INBOX"); err != nil {
@@ -824,18 +768,7 @@ func TestFetchSenderDataReturnsErrorOnFetchFailure(t *testing.T) {
 	})
 	t.Cleanup(cleanup)
 
-	client := &Client{
-		Addr:      addr,
-		Username:  "user@example.com",
-		Password:  "password",
-		TLSConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	if err := client.Connect(); err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = client.Close()
-	})
+	client := mustConnectClient(t, addr, "user@example.com", "password", nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
@@ -922,18 +855,7 @@ rules:
 		t.Fatalf("validate config: %v", err)
 	}
 
-	client := &Client{
-		Addr:      addr,
-		Username:  "user@example.com",
-		Password:  "password",
-		TLSConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	if err := client.Connect(); err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = client.Close()
-	})
+	client := mustConnectClient(t, addr, "user@example.com", "password", nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
@@ -959,7 +881,7 @@ func fetchMessageFlags(ctx context.Context, client *Client, uids []uint32) ([]im
 		Flags: true,
 	}
 
-	fetchCmd := client.client.Fetch(uidSet, fetchOptions)
+	fetchCmd := client.Client.Fetch(uidSet, fetchOptions)
 	for {
 		if err := ctx.Err(); err != nil {
 			_ = fetchCmd.Close()

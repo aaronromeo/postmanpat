@@ -4,12 +4,8 @@ import (
 	"context"
 
 	"github.com/aaronromeo/postmanpat/internal/config"
+	"github.com/aaronromeo/postmanpat/internal/imap/auth"
 )
-
-type Connector interface {
-	Connect() error
-	Close() error
-}
 
 type Searcher interface {
 	SearchByServerMatchers(ctx context.Context, matchers config.ServerMatchers) (map[string][]uint32, error)
@@ -21,7 +17,7 @@ type Actions interface {
 }
 
 type ServerRunner interface {
-	Connector
+	auth.Connector
 	Searcher
 	Actions
 }

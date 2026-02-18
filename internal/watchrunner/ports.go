@@ -4,13 +4,13 @@ import (
 	"context"
 
 	"github.com/aaronromeo/postmanpat/internal/foo"
+	"github.com/aaronromeo/postmanpat/internal/imap/auth"
 	giimap "github.com/emersion/go-imap/v2"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 )
 
 type Connector interface {
-	Connect() error
-	Close() error
+	auth.Connector
 	Idle() (*giimapclient.IdleCommand, error)
 }
 
