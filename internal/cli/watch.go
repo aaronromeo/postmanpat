@@ -14,7 +14,7 @@ import (
 	"github.com/aaronromeo/postmanpat/internal/announcer"
 	"github.com/aaronromeo/postmanpat/internal/config"
 	"github.com/aaronromeo/postmanpat/internal/imap"
-	"github.com/aaronromeo/postmanpat/internal/imap/session_manager"
+	"github.com/aaronromeo/postmanpat/internal/imap/sessionmanager"
 	"github.com/aaronromeo/postmanpat/internal/matchers"
 	"github.com/aaronromeo/postmanpat/internal/watchrunner"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
@@ -104,12 +104,12 @@ var watchCmd = &cobra.Command{
 		}
 
 		var client watchrunner.WatchRunner = imap.New(
-			session_manager.WithAddr(
+			sessionmanager.WithAddr(
 				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
 			),
-			session_manager.WithCreds(imapEnv.User, imapEnv.Pass),
-			session_manager.WithTLSConfig(tlsConfig),
-			session_manager.WithUnilateralDataHandler(handler),
+			sessionmanager.WithCreds(imapEnv.User, imapEnv.Pass),
+			sessionmanager.WithTLSConfig(tlsConfig),
+			sessionmanager.WithUnilateralDataHandler(handler),
 		)
 		if err := client.Connect(); err != nil {
 			return err

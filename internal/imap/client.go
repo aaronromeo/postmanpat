@@ -13,7 +13,7 @@ import (
 
 	"github.com/aaronromeo/postmanpat/internal/foo"
 	"github.com/aaronromeo/postmanpat/internal/imap/actionmanager"
-	"github.com/aaronromeo/postmanpat/internal/imap/session_manager"
+	"github.com/aaronromeo/postmanpat/internal/imap/sessionmanager"
 	"github.com/emersion/go-imap/v2"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-message"
@@ -23,12 +23,12 @@ import (
 
 // Client encapsulates an IMAP connection for search operations.
 type Client struct {
-	*session_manager.IMAPConnector
+	*sessionmanager.IMAPConnector
 	*actionmanager.IMAPManager
 }
 
-func New(opts ...session_manager.Option) *Client {
-	session := session_manager.NewServerConnector(opts...)
+func New(opts ...sessionmanager.Option) *Client {
+	session := sessionmanager.NewServerConnector(opts...)
 	manager := actionmanager.New(session)
 	client := &Client{
 		session,

@@ -12,7 +12,7 @@ import (
 
 	"github.com/aaronromeo/postmanpat/ftest"
 	"github.com/aaronromeo/postmanpat/internal/config"
-	"github.com/aaronromeo/postmanpat/internal/imap/session_manager"
+	"github.com/aaronromeo/postmanpat/internal/imap/sessionmanager"
 	"github.com/aaronromeo/postmanpat/internal/matchers"
 	"github.com/emersion/go-imap/v2"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
@@ -329,13 +329,13 @@ func setupTestServer(t *testing.T, caps imap.CapSet, extraMailboxes []string, ex
 
 func mustConnectClient(t *testing.T, addr, username, password string, handler *giimapclient.UnilateralDataHandler) *Client {
 	t.Helper()
-	opts := []session_manager.Option{
-		session_manager.WithAddr(addr),
-		session_manager.WithCreds(username, password),
-		session_manager.WithTLSConfig(&tls.Config{InsecureSkipVerify: true}),
+	opts := []sessionmanager.Option{
+		sessionmanager.WithAddr(addr),
+		sessionmanager.WithCreds(username, password),
+		sessionmanager.WithTLSConfig(&tls.Config{InsecureSkipVerify: true}),
 	}
 	if handler != nil {
-		opts = append(opts, session_manager.WithUnilateralDataHandler(handler))
+		opts = append(opts, sessionmanager.WithUnilateralDataHandler(handler))
 	}
 	client := New(opts...)
 	if err := client.Connect(); err != nil {

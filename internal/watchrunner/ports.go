@@ -4,12 +4,12 @@ import (
 	"context"
 
 	"github.com/aaronromeo/postmanpat/internal/foo"
-	"github.com/aaronromeo/postmanpat/internal/imap/session_manager"
+	"github.com/aaronromeo/postmanpat/internal/imap/sessionmanager"
 	giimap "github.com/emersion/go-imap/v2"
 )
 
 type Connector interface {
-	session_manager.ClientConnector
+	sessionmanager.ClientConnector
 }
 
 type Selector interface {

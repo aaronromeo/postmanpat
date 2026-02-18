@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/aaronromeo/postmanpat/internal/imap/actionmanager"
-	"github.com/aaronromeo/postmanpat/internal/imap/session_manager"
+	"github.com/aaronromeo/postmanpat/internal/imap/sessionmanager"
 )
 
 type Actions interface {
@@ -13,7 +13,7 @@ type Actions interface {
 }
 
 type ServerRunner interface {
-	session_manager.ServerConnector
+	sessionmanager.ServerConnector
 	actionmanager.ServerSearcher
 	Actions
 }
