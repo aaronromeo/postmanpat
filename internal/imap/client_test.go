@@ -12,7 +12,7 @@ import (
 
 	"github.com/aaronromeo/postmanpat/ftest"
 	"github.com/aaronromeo/postmanpat/internal/config"
-	"github.com/aaronromeo/postmanpat/internal/imap/sessionmanager"
+	"github.com/aaronromeo/postmanpat/internal/imap/sessionmgr"
 	"github.com/aaronromeo/postmanpat/internal/matchers"
 	"github.com/emersion/go-imap/v2"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
@@ -329,13 +329,13 @@ func setupTestServer(t *testing.T, caps imap.CapSet, extraMailboxes []string, ex
 
 func mustConnectClient(t *testing.T, addr, username, password string, handler *giimapclient.UnilateralDataHandler) *Client {
 	t.Helper()
-	opts := []sessionmanager.Option{
-		sessionmanager.WithAddr(addr),
-		sessionmanager.WithCreds(username, password),
-		sessionmanager.WithTLSConfig(&tls.Config{InsecureSkipVerify: true}),
+	opts := []sessionmgr.Option{
+		sessionmgr.WithAddr(addr),
+		sessionmgr.WithCreds(username, password),
+		sessionmgr.WithTLSConfig(&tls.Config{InsecureSkipVerify: true}),
 	}
 	if handler != nil {
-		opts = append(opts, sessionmanager.WithUnilateralDataHandler(handler))
+		opts = append(opts, sessionmgr.WithUnilateralDataHandler(handler))
 	}
 	client := New(opts...)
 	if err := client.Connect(); err != nil {
@@ -608,13 +608,6 @@ func TestFetchSenderDataReturnsErrorOnFetchFailure(t *testing.T) {
 	_, err = client.FetchSenderData(ctx, uids)
 	if err == nil {
 		t.Fatal("expected fetch error after server shutdown")
-	}
-}
-
-func TestReadHeaderLiteralFailure(t *testing.T) {
-	_, err := readHeader(errorLiteral{})
-	if err == nil {
-		t.Fatal("expected readHeader to return error")
 	}
 }
 

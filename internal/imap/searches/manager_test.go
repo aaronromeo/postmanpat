@@ -1,4 +1,4 @@
-package actionmanager
+package searches
 
 import (
 	"testing"

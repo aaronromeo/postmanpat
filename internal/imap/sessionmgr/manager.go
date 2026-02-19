@@ -1,11 +1,10 @@
-package sessionmanager
+package sessionmgr
 
 import (
 	"crypto/tls"
 	"errors"
 	"strings"
 
-	"github.com/aaronromeo/postmanpat/internal/imap/base"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 )
 
@@ -30,8 +29,7 @@ type IMAPConnector struct {
 	Password              string
 	TLSConfig             *tls.Config
 	UnilateralDataHandler *giimapclient.UnilateralDataHandler
-
-	base.State
+	Client                *giimapclient.Client
 }
 
 func WithAddr(a string) Option {

@@ -11,7 +11,7 @@ import (
 	"github.com/aaronromeo/postmanpat/internal/announcer"
 	"github.com/aaronromeo/postmanpat/internal/config"
 	"github.com/aaronromeo/postmanpat/internal/imap"
-	"github.com/aaronromeo/postmanpat/internal/imap/sessionmanager"
+	"github.com/aaronromeo/postmanpat/internal/imap/sessionmgr"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
@@ -72,10 +72,10 @@ var cleanupCmd = &cobra.Command{
 		}
 
 		var client imap.ServerRunner = imap.New(
-			sessionmanager.WithAddr(
+			sessionmgr.WithAddr(
 				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
 			),
-			sessionmanager.WithCreds(imapEnv.User, imapEnv.Pass),
+			sessionmgr.WithCreds(imapEnv.User, imapEnv.Pass),
 		)
 
 		var announcerService announcer.Service = announcer.New(

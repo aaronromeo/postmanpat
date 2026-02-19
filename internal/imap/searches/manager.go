@@ -1,4 +1,4 @@
-package actionmanager
+package searches
 
 import (
 	"context"
@@ -16,21 +16,26 @@ type ServerSearcher interface {
 	SearchByServerMatchers(ctx context.Context, matchers config.ServerMatchers) (map[string][]uint32, error)
 }
 
+type ClientSearcher interface {
+	SearchUIDsNewerThan(ctx context.Context, lastUID uint32) ([]uint32, error)
+}
+
+// Interface to initialize the manager
 type ClientProvider interface {
 	IMAPClient() *giimapclient.Client
 }
 
-type IMAPManager struct {
+type IMAPSearchManager struct {
 	provider func() *giimapclient.Client
 }
 
-func New(provider ClientProvider) *IMAPManager {
-	return &IMAPManager{provider: provider.IMAPClient}
+func New(provider ClientProvider) *IMAPSearchManager {
+	return &IMAPSearchManager{provider: provider.IMAPClient}
 }
 
 // SearchByServerMatchers returns UIDs for messages matching the provided matchers via IMAP SEARCH.
 // Results are grouped by mailbox to avoid UID collisions across folders.
-func (m *IMAPManager) SearchByServerMatchers(ctx context.Context, matchers config.ServerMatchers) (map[string][]uint32, error) {
+func (m *IMAPSearchManager) SearchByServerMatchers(ctx context.Context, matchers config.ServerMatchers) (map[string][]uint32, error) {
 	if m.provider == nil {
 		return nil, errors.New("IMAP client is not connected")
 	}
@@ -265,4 +270,30 @@ func combineAnd(criteria []imap.SearchCriteria) *imap.SearchCriteria {
 		combined.And(&criteria[i])
 	}
 	return &combined
+}
+
+// SearchUIDsNewerThan returns UIDs greater than the provided last UID in the selected mailbox.
+func (m *IMAPSearchManager) SearchUIDsNewerThan(ctx context.Context, lastUID uint32) ([]uint32, error) {
+	if m.provider == nil {
+		return nil, errors.New("IMAP client is not connected")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	start := imap.UID(lastUID + 1)
+	var uidSet imap.UIDSet
+	uidSet.AddRange(start, 0)
+	criteria := &imap.SearchCriteria{
+		UID: []imap.UIDSet{uidSet},
+	}
+	data, err := m.provider().UIDSearch(criteria, nil).Wait()
+	if err != nil {
+		return nil, err
+	}
+	uids := data.AllUIDs()
+	out := make([]uint32, 0, len(uids))
+	for _, uid := range uids {
+		out = append(out, uint32(uid))
+	}
+	return out, nil
 }
