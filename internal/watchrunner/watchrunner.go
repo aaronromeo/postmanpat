@@ -7,13 +7,12 @@ import (
 	"strings"
 
 	"github.com/aaronromeo/postmanpat/internal/config"
-	"github.com/aaronromeo/postmanpat/internal/imap"
 	"github.com/aaronromeo/postmanpat/internal/matchers"
 )
 
 type Deps struct {
 	Ctx      context.Context
-	Client   *imap.Client
+	Client   WatchRunner
 	Rules    []config.Rule
 	Log      *slog.Logger
 	Announce func(string)

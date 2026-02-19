@@ -6,14 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/aaronromeo/postmanpat/internal/announcer"
 	"github.com/aaronromeo/postmanpat/internal/config"
 	"github.com/aaronromeo/postmanpat/internal/imap"
+	"github.com/aaronromeo/postmanpat/internal/imap/sessionmgr"
 	"github.com/aaronromeo/postmanpat/internal/matchers"
 	"github.com/aaronromeo/postmanpat/internal/watchrunner"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
@@ -102,13 +103,14 @@ var watchCmd = &cobra.Command{
 			tlsConfig = watchTLSConfigProvider()
 		}
 
-		client := &imap.Client{
-			Addr:                  fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
-			Username:              imapEnv.User,
-			Password:              imapEnv.Pass,
-			TLSConfig:             tlsConfig,
-			UnilateralDataHandler: handler,
-		}
+		var client watchrunner.WatchRunner = imap.New(
+			sessionmgr.WithAddr(
+				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
+			),
+			sessionmgr.WithCreds(imapEnv.User, imapEnv.Pass),
+			sessionmgr.WithTLSConfig(tlsConfig),
+			sessionmgr.WithUnilateralDataHandler(handler),
+		)
 		if err := client.Connect(); err != nil {
 			return err
 		}
@@ -135,19 +137,22 @@ var watchCmd = &cobra.Command{
 		}
 		logger.Info("watching mailbox", "mailbox", "INBOX", "messages", state.LastCount, "last_uid", state.LastUID)
 
+		var announcerService announcer.Service = announcer.New(
+			announcer.WithWebhookURL(os.Getenv("POSTMANPAT_WEBHOOK_URL")),
+		)
+
 		deps := watchrunner.Deps{
 			Ctx:    ctx,
 			Client: client,
 			Rules:  cfg.Rules,
 			Log:    logger,
 			Announce: func(ruleName string) {
-				if err := postWatchAnnouncement(ruleName); err != nil {
+				if err := announcerService.Do("Watch", ruleName, defaultMailbox, 1); err != nil {
 					logger.Error("reporting failed", "rule", ruleName, "error", err)
 				}
 			},
 		}
 
-		mailbox := "INBOX"
 		for {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -155,7 +160,7 @@ var watchCmd = &cobra.Command{
 			idleCmd, err := client.Idle()
 			if err != nil {
 				if watchrunner.IsBenignIdleError(err) {
-					if err := watchrunner.Reconnect(deps, state, mailbox); err != nil {
+					if err := watchrunner.Reconnect(deps, state, defaultMailbox); err != nil {
 						return err
 					}
 					continue
@@ -239,42 +244,7 @@ func validateWatchRules(cfg config.Config) error {
 	return nil
 }
 
-func postWatchAnnouncement(ruleName string) error {
-	if !config.ReportingEnabled() {
-		return nil
-	}
-	baseURL := strings.TrimSpace(os.Getenv("POSTMANPAT_WEBHOOK_URL"))
-	if baseURL == "" {
-		return nil
-	}
-	baseURL = strings.TrimRight(baseURL, "/")
-	message := ""
-	if strings.TrimSpace(ruleName) != "" {
-		message = fmt.Sprintf("rule %q matched", ruleName)
-	}
-	payload := fmt.Sprintf("{\"message\": %q}", message)
-	if message == "" {
-		return nil
-	}
-
-	req, err := http.NewRequest("POST", baseURL+webhookAnnouncePath, strings.NewReader(payload))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("reporting webhook returned status %s", resp.Status)
-	}
-	return nil
-}
-
-func runWatchTest(ctx context.Context, client *imap.Client, cfg config.Config, logger *slog.Logger, ruleName, mailbox string, limit int) error {
+func runWatchTest(ctx context.Context, client watchrunner.WatchRunner, cfg config.Config, logger *slog.Logger, ruleName, mailbox string, limit int) error {
 	if strings.TrimSpace(ruleName) == "" {
 		return errors.New("test rule name is required")
 	}
