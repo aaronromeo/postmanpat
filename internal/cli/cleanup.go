@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/aaronromeo/postmanpat/internal/announcer"
+	"github.com/aaronromeo/postmanpat/internal/cleanuprunner"
 	"github.com/aaronromeo/postmanpat/internal/config"
-	"github.com/aaronromeo/postmanpat/internal/imap"
 	"github.com/aaronromeo/postmanpat/internal/imap/sessionmgr"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
@@ -71,7 +71,7 @@ var cleanupCmd = &cobra.Command{
 			return err
 		}
 
-		var client imap.ServerRunner = imap.New(
+		var client cleanuprunner.ServerRunner = cleanuprunner.New(
 			sessionmgr.WithAddr(
 				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
 			),

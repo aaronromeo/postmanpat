@@ -7,6 +7,11 @@ import (
 	"strings"
 
 	"github.com/aaronromeo/postmanpat/internal/config"
+	"github.com/aaronromeo/postmanpat/internal/imap"
+	"github.com/aaronromeo/postmanpat/internal/imap/actions"
+	"github.com/aaronromeo/postmanpat/internal/imap/searches"
+	"github.com/aaronromeo/postmanpat/internal/imap/selectors"
+	"github.com/aaronromeo/postmanpat/internal/imap/sessionmgr"
 	"github.com/aaronromeo/postmanpat/internal/matchers"
 )
 
@@ -21,6 +26,17 @@ type Deps struct {
 type State struct {
 	LastUID   uint32
 	LastCount uint32
+}
+
+func New(opts ...sessionmgr.Option) *imap.Client {
+	session := sessionmgr.NewClientConnector(opts...)
+	client := &imap.Client{
+		IMAPConnector:       session,
+		IMAPSearchManager:   searches.New(session),
+		IMAPActionManager:   actions.New(session),
+		IMAPSelectorManager: selectors.New(session),
+	}
+	return client
 }
 
 func ProcessUIDs(deps Deps, state *State, uids []uint32) error {

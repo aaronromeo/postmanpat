@@ -14,14 +14,3 @@ type Client struct {
 	*actions.IMAPActionManager
 	*selectors.IMAPSelectorManager
 }
-
-func New(opts ...sessionmgr.Option) *Client {
-	session := sessionmgr.NewServerConnector(opts...)
-	client := &Client{
-		session,
-		searches.New(session),
-		actions.New(session),
-		selectors.New(session),
-	}
-	return client
-}

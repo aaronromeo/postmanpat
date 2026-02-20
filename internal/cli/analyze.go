@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aaronromeo/postmanpat/internal/cleanuprunner"
 	"github.com/aaronromeo/postmanpat/internal/config"
 	"github.com/aaronromeo/postmanpat/internal/foo"
-	"github.com/aaronromeo/postmanpat/internal/imap"
 	"github.com/aaronromeo/postmanpat/internal/imap/sessionmgr"
 	"github.com/spf13/cobra"
 )
@@ -59,7 +59,7 @@ var analyzeCmd = &cobra.Command{
 			ctx = context.Background()
 		}
 
-		client := imap.New(
+		client := cleanuprunner.New(
 			sessionmgr.WithAddr(
 				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
 			),

@@ -1,4 +1,4 @@
-package imap
+package cleanuprunner
 
 import (
 	"context"
@@ -12,9 +12,10 @@ import (
 
 	"github.com/aaronromeo/postmanpat/ftest"
 	"github.com/aaronromeo/postmanpat/internal/config"
+	"github.com/aaronromeo/postmanpat/internal/imap"
 	"github.com/aaronromeo/postmanpat/internal/imap/sessionmgr"
 	"github.com/aaronromeo/postmanpat/internal/matchers"
-	"github.com/emersion/go-imap/v2"
+	giimap "github.com/emersion/go-imap/v2"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 	"github.com/stretchr/testify/assert"
 )
@@ -124,13 +125,13 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 func TestDeleteUIDsLocalServer(t *testing.T) {
 	cases := []struct {
 		name string
-		caps imap.CapSet
+		caps giimap.CapSet
 	}{
 		{
 			name: "uidplus",
-			caps: imap.CapSet{
-				imap.CapIMAP4rev1: {},
-				imap.CapUIDPlus:   {},
+			caps: giimap.CapSet{
+				giimap.CapIMAP4rev1: {},
+				giimap.CapUIDPlus:   {},
 			},
 		},
 		{
@@ -176,7 +177,7 @@ func TestDeleteUIDsLocalServer(t *testing.T) {
 func TestMoveByMailboxLocalServer(t *testing.T) {
 	cases := []struct {
 		name            string
-		caps            imap.CapSet
+		caps            giimap.CapSet
 		destination     string
 		extraMailboxes  []string
 		expectError     bool
@@ -188,9 +189,9 @@ func TestMoveByMailboxLocalServer(t *testing.T) {
 			extraMailboxes: []string{
 				"Archive",
 			},
-			caps: imap.CapSet{
-				imap.CapIMAP4rev1: {},
-				imap.CapMove:      {},
+			caps: giimap.CapSet{
+				giimap.CapIMAP4rev1: {},
+				giimap.CapMove:      {},
 			},
 			expectInArchive: true,
 		},
@@ -315,7 +316,7 @@ func TestClientReuseAcrossOperations(t *testing.T) {
 	assert.Empty(t, matched["INBOX"], "expected no matches in INBOX after move")
 }
 
-func setupTestServer(t *testing.T, caps imap.CapSet, extraMailboxes []string, extraMessages []ftest.MailboxMessage) (*Client, ftest.MessageIDs, func()) {
+func setupTestServer(t *testing.T, caps giimap.CapSet, extraMailboxes []string, extraMessages []ftest.MailboxMessage) (*imap.Client, ftest.MessageIDs, func()) {
 	t.Helper()
 
 	addr, ids, cleanup := ftest.SetupIMAPServer(t, caps, extraMailboxes, extraMessages)
@@ -327,7 +328,7 @@ func setupTestServer(t *testing.T, caps imap.CapSet, extraMailboxes []string, ex
 	}
 }
 
-func mustConnectClient(t *testing.T, addr, username, password string, handler *giimapclient.UnilateralDataHandler) *Client {
+func mustConnectClient(t *testing.T, addr, username, password string, handler *giimapclient.UnilateralDataHandler) *imap.Client {
 	t.Helper()
 	opts := []sessionmgr.Option{
 		sessionmgr.WithAddr(addr),
@@ -472,7 +473,7 @@ func TestFetchSenderDataDoesNotSetSeen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetch flags before: %v", err)
 	}
-	if containsFlag(flagsBefore, imap.FlagSeen) {
+	if containsFlag(flagsBefore, giimap.FlagSeen) {
 		t.Fatalf("expected message to be unseen before fetch, got flags %v", flagsBefore)
 	}
 
@@ -485,7 +486,7 @@ func TestFetchSenderDataDoesNotSetSeen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetch flags after: %v", err)
 	}
-	if containsFlag(flagsAfter, imap.FlagSeen) {
+	if containsFlag(flagsAfter, giimap.FlagSeen) {
 		t.Fatalf("expected message to remain unseen after fetch, got flags %v", flagsAfter)
 	}
 }
@@ -683,13 +684,13 @@ rules:
 	}
 }
 
-func fetchMessageFlags(ctx context.Context, client *giimapclient.Client, uids []uint32) ([]imap.Flag, error) {
-	var uidSet imap.UIDSet
+func fetchMessageFlags(ctx context.Context, client *giimapclient.Client, uids []uint32) ([]giimap.Flag, error) {
+	var uidSet giimap.UIDSet
 	for _, uid := range uids {
-		uidSet.AddNum(imap.UID(uid))
+		uidSet.AddNum(giimap.UID(uid))
 	}
 
-	fetchOptions := &imap.FetchOptions{
+	fetchOptions := &giimap.FetchOptions{
 		Flags: true,
 	}
 
@@ -719,7 +720,7 @@ func fetchMessageFlags(ctx context.Context, client *giimapclient.Client, uids []
 	return nil, nil
 }
 
-func containsFlag(flags []imap.Flag, target imap.Flag) bool {
+func containsFlag(flags []giimap.Flag, target giimap.Flag) bool {
 	for _, flag := range flags {
 		if flag == target {
 			return true

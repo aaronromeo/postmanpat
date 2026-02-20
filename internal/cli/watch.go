@@ -13,7 +13,6 @@ import (
 
 	"github.com/aaronromeo/postmanpat/internal/announcer"
 	"github.com/aaronromeo/postmanpat/internal/config"
-	"github.com/aaronromeo/postmanpat/internal/imap"
 	"github.com/aaronromeo/postmanpat/internal/imap/sessionmgr"
 	"github.com/aaronromeo/postmanpat/internal/matchers"
 	"github.com/aaronromeo/postmanpat/internal/watchrunner"
@@ -103,7 +102,7 @@ var watchCmd = &cobra.Command{
 			tlsConfig = watchTLSConfigProvider()
 		}
 
-		var client watchrunner.WatchRunner = imap.New(
+		var client watchrunner.WatchRunner = watchrunner.New(
 			sessionmgr.WithAddr(
 				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
 			),

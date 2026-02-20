@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/aaronromeo/postmanpat/ftest"
+	"github.com/aaronromeo/postmanpat/internal/cleanuprunner"
 	"github.com/aaronromeo/postmanpat/internal/config"
 	"github.com/aaronromeo/postmanpat/internal/imap"
 	"github.com/aaronromeo/postmanpat/internal/imap/sessionmgr"
@@ -197,7 +198,7 @@ func setupWatchRunnerServer(t *testing.T, extraMailboxes []string) (*imap.Client
 		sessionmgr.WithTLSConfig(&tls.Config{InsecureSkipVerify: true}),
 	}
 
-	client := imap.New(
+	client := cleanuprunner.New(
 		opts...,
 	)
 
