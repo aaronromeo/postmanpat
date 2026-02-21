@@ -2,3 +2,6 @@
 tmp/
 .gocache
 .gomodcache
+config/config_analyze.yaml
+config/config_cleanup.yaml
+config/config_watch.yaml

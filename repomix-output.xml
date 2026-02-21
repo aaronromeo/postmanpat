@@ -1,0 +1,7060 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.github/
+  workflows/
+    ci.yml
+announcements/
+  .git
+  app.py
+  Dockerfile
+  README.md
+  requirements.txt
+announcer/
+  runner.go
+appconfig/
+  config_test.go
+  config.go
+bin/
+  postmanpat-convert-watch-to-cleanup.py
+  postmanpat-generate-rules.py
+  requirements.txt
+cli/
+  analyze_test.go
+  analyze.go
+  cleanup_test.go
+  cleanup.go
+  const.go
+  root.go
+  watch_test.go
+  watch.go
+cmd/
+  postmanpat/
+    main.go
+config/
+  config_example.yaml
+context/
+  overview.md
+  requirements_stage1.md
+  roles_and_constraints.md
+docker/
+  entrypoint.sh
+ftest/
+  serverrunner_integration_test.go
+  utils.go
+  watchrunner_integration_test.go
+imap/
+  internal/
+    actions/
+      manager.go
+    maildata/
+      types.go
+    searches/
+      manager_test.go
+      manager.go
+    selectors/
+      manager.go
+    sessionmgr/
+      manager.go
+  client.go
+serverrunner/
+  runner.go
+watchrunner/
+  internal/
+    matchers/
+      matcher_test.go
+      matcher.go
+  runner_test.go
+  runner.go
+  tester.go
+.gitignore
+.gitmodules
+.tool-versions
+AGENTS.md
+docker-compose.yml
+Dockerfile
+go.mod
+README.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="announcements/.git">
+gitdir: ../.git/modules/announcements
+</file>
+
+<file path="announcements/app.py">
+import os
+from typing import Any, Dict
+
+from flask import Flask, jsonify, request
+import requests
+
+
+def create_app() -> Flask:
+    app = Flask(__name__)
+
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
+    if not webhook_url:
+        app.logger.warning("DISCORD_WEBHOOK_URL is not set")
+
+    @app.get("/health")
+    def health() -> Any:
+        return jsonify({"status": "ok"})
+
+    @app.post("/announcements")
+    def announcements() -> Any:
+        if not webhook_url:
+            return jsonify({"error": "DISCORD_WEBHOOK_URL is not configured"}), 500
+
+        payload: Dict[str, Any] | None = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"error": "Expected JSON body"}), 400
+
+        message = payload.get("message") or payload.get("content") or payload.get("text")
+        if message and not payload.get("content"):
+            payload = {"content": str(message)}
+
+        if not payload.get("content"):
+            return jsonify({"error": "Missing message content"}), 400
+
+        try:
+            response = requests.post(webhook_url, json=payload, timeout=10)
+        except requests.RequestException:
+            app.logger.exception("Failed to post to Discord webhook")
+            return jsonify({"error": "Failed to reach Discord"}), 502
+
+        if response.status_code >= 400:
+            app.logger.error("Discord webhook error: %s", response.text)
+            return jsonify({"error": "Discord rejected the message"}), 502
+
+        return jsonify({"status": "sent"})
+
+    return app
+
+
+app = create_app()
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "8091")))
+</file>
+
+<file path="announcements/Dockerfile">
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY app.py .
+
+ENV PORT=8091
+EXPOSE 8091
+
+CMD ["gunicorn", "-b", "0.0.0.0:8091", "app:app"]
+</file>
+
+<file path="announcements/README.md">
+### Discord Announcements Forwarder
+- 📣 **Local POST endpoint** - `POST http://localhost:8091/announcements`
+- 🔗 **Discord webhook** - forwards JSON payloads to a Discord Incoming Webhook
+- 🧩 **Simple payloads** - accepts `message`, `content`, or `text`
+- 🧪 **Health check** - `GET /health`
+
+### Discord Announcements Forwarder
+
+This service exposes a local HTTP endpoint and forwards messages to a Discord Incoming Webhook.
+
+**Environment variable**
+- `DISCORD_WEBHOOK_URL`: Discord Incoming Webhook URL used to send messages
+
+**Endpoint**
+- `POST http://localhost:8091/announcements`
+- JSON body with `message`, `content`, or `text`
+
+**Examples**
+```bash
+curl -X POST http://localhost:8091/announcements \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "Hello from composeyourself"}'
+```
+
+Sample usage...
+
+1. Simple message
+   ```
+   curl -X POST http://localhost:8091/announcements \
+      -H 'Content-Type: application/json' \
+      -d '{"message":"Hello from composeyourself"}'
+   ```
+1. Explicit Discord payload (content)
+   ```
+   curl -X POST http://localhost:8091/announcements \
+      -H 'Content-Type: application/json' \
+      -d '{"content":"Deployment finished ✅"}'
+   ```
+1. Using jq to build JSON (useful for variable interpolation)
+   ```
+   msg="Backup completed on $(hostname)"
+   curl -X POST http://localhost:8091/announcements \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg message "$msg" '{message:$message}')"
+   ```
+1. Multi-line message with jq
+   ```
+   msg=$'Service restarted:\n- yt-dlp\n- announcements'
+   curl -X POST http://localhost:8091/announcements \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg message "$msg" '{message:$message}')"
+   ```
+
+**Code overview**
+- `services/announcements/app.py` defines a Flask app with `/announcements` and `/health`.
+- Incoming JSON is normalized to Discord's `content` field.
+- Requests are sent to the Discord webhook using `requests`, returning `{ "status": "sent" }` on success.
+</file>
+
+<file path="announcements/requirements.txt">
+flask==3.0.3
+requests==2.32.3
+gunicorn==23.0.0
+</file>
+
+<file path="announcer/runner.go">
+package announcer
+
+import (
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+)
+
+const webhookAnnouncePath = "/announcements"
+
+type Option func(*ppAnnoucer)
+
+type Service interface {
+	Do(action, ruleName, mailbox string, count int) error
+}
+
+func WithWebhookURL(webhookURL string) Option {
+	// opt := Option()
+	return func(ppa *ppAnnoucer) {
+		ppa.baseURL = strings.TrimSpace(webhookURL)
+	}
+}
+
+type ppAnnoucer struct {
+	baseURL string
+}
+
+func New(opts ...Option) *ppAnnoucer {
+	announcer := &ppAnnoucer{}
+	for _, opt := range opts {
+		opt(announcer)
+	}
+	return announcer
+}
+
+func (p *ppAnnoucer) Do(action, ruleName, mailbox string, count int) error {
+	if p.baseURL == "" {
+		return nil
+	}
+	baseURL := strings.TrimRight(p.baseURL, "/")
+	message := fmt.Sprintf("%s: Rule %q mailbox %q matched %d messages\n", action, ruleName, mailbox, count)
+	payload := fmt.Sprintf("{\"message\": %q}", message)
+	req, err := http.NewRequest("POST", baseURL+webhookAnnouncePath, strings.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("reporting webhook returned status %s", resp.Status)
+	}
+	return nil
+}
+</file>
+
+<file path="bin/postmanpat-convert-watch-to-cleanup.py">
+#!/usr/bin/env python3
+import argparse
+import re
+import sys
+from typing import Any, Dict, List
+
+try:
+    import yaml  # type: ignore
+except Exception as exc:  # pragma: no cover
+    print("error: PyYAML is required for this script (pip install pyyaml)", file=sys.stderr)
+    raise
+
+
+def yaml_quote(value: str) -> str:
+    if "\\" in value:
+        escaped = value.replace("'", "''")
+        return f"'{escaped}'"
+    escaped = value.replace("\\", "\\\\").replace('"', "\\\"")
+    return f"\"{escaped}\""
+
+
+def yaml_lines(value: Any, indent: int = 0) -> List[str]:
+    prefix = " " * indent
+    lines: List[str] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if item is None:
+                continue
+            if isinstance(item, (dict, list)):
+                lines.append(f"{prefix}{key}:")
+                lines.extend(yaml_lines(item, indent + 2))
+            else:
+                lines.append(f"{prefix}{key}: {yaml_quote(str(item))}")
+        return lines
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict):
+                if not item:
+                    lines.append(f"{prefix}- {{}}")
+                    continue
+                first_key = next(iter(item))
+                first_val = item[first_key]
+                rest = {k: v for k, v in item.items() if k != first_key}
+                if isinstance(first_val, (dict, list)):
+                    lines.append(f"{prefix}- {first_key}:")
+                    lines.extend(yaml_lines(first_val, indent + 2))
+                else:
+                    lines.append(f"{prefix}- {first_key}: {yaml_quote(str(first_val))}")
+                if rest:
+                    lines.extend(yaml_lines(rest, indent + 2))
+            else:
+                lines.append(f"{prefix}- {yaml_quote(str(item))}")
+        return lines
+    lines.append(f"{prefix}{yaml_quote(str(value))}")
+    return lines
+
+
+def write_yaml(path: str, data: Dict[str, Any]) -> None:
+    lines = yaml_lines(data)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines))
+        handle.write("\n")
+
+
+def regex_to_substring(pattern: str) -> str:
+    # Strip common regex escaping used for literal matches.
+    # This is intentionally simple and assumes the regex was built from a literal.
+    return re.sub(r"\\(.)", r"\1", pattern)
+
+
+def warn_if_regexy(original: str) -> None:
+    # Warn if the pattern still looks like a regex (wildcards/anchors/character classes).
+    if re.search(r"[\^\$\|\[\]\(\)\?\*\+]", original):
+        print(
+            f"warning: pattern looks like a regex; conversion is best-effort: {original}",
+            file=sys.stderr,
+        )
+
+
+def convert_rule(rule: Dict[str, Any], folders: List[str]) -> Dict[str, Any]:
+    name = rule.get("name", "")
+    client = rule.get("client") or {}
+    if not client:
+        raise ValueError(f"rule {name!r} has no client matchers")
+    if "server" in rule and rule["server"]:
+        raise ValueError(f"rule {name!r} already has server matchers")
+
+    server: Dict[str, Any] = {
+        "folders": folders,
+    }
+
+    def map_list(src_key: str, dest_key: str) -> None:
+        values = client.get(src_key) or []
+        if not values:
+            return
+        mapped: List[str] = []
+        for value in values:
+            if not isinstance(value, str):
+                continue
+            warn_if_regexy(value)
+            mapped.append(regex_to_substring(value))
+        if mapped:
+            server[dest_key] = mapped
+
+    map_list("list_id_regex", "list_id_substring")
+    map_list("sender_regex", "sender_substring")
+    map_list("replyto_regex", "replyto_substring")
+    map_list("recipients_regex", "recipients")
+
+    converted = {
+        "name": name,
+        "server": server,
+        "actions": rule.get("actions", []),
+    }
+    return converted
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Convert watch rules to cleanup rules.")
+    parser.add_argument("--watch", required=True, help="Path to watch YAML config")
+    parser.add_argument("--out", required=True, help="Path to write cleanup YAML")
+    parser.add_argument(
+        "--folders",
+        default="INBOX",
+        help="Comma-separated IMAP source folders for cleanup rules (default: INBOX)",
+    )
+    args = parser.parse_args()
+
+    with open(args.watch, "r", encoding="utf-8") as handle:
+        data = yaml.safe_load(handle)
+
+    if not isinstance(data, dict) or "rules" not in data:
+        print("error: watch config must include rules", file=sys.stderr)
+        return 1
+
+    folders = [item.strip() for item in args.folders.split(",") if item.strip()]
+    if not folders:
+        print("error: at least one folder is required", file=sys.stderr)
+        return 1
+
+    rules = data.get("rules") or []
+    converted_rules: List[Dict[str, Any]] = []
+    for rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        converted_rules.append(convert_rule(rule, folders))
+
+    write_yaml(args.out, {"rules": converted_rules})
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+</file>
+
+<file path="bin/requirements.txt">
+PyYAML==6.0.3
+</file>
+
+<file path="cli/const.go">
+package cli
+
+const configEnvVar = "POSTMANPAT_CONFIG"
+const defaultEnvFile = ".env"
+</file>
+
+<file path="cli/root.go">
+package cli
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/spf13/cobra"
+)
+
+var rootCmd = &cobra.Command{
+	Use:   "postmanpat",
+	Short: "postmanpat manages email cleanup and archiving",
+}
+
+// Execute runs the root command.
+func Execute() {
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func init() {
+	rootCmd.AddCommand(cleanupCmd)
+	rootCmd.AddCommand(analyzeCmd)
+	rootCmd.AddCommand(watchCmd)
+}
+</file>
+
+<file path="config/config_example.yaml">
+rules:
+  - name: "Archive newsletters"
+    server:
+      age_window:
+        max: "30d"
+      folders:
+        - "INBOX"
+      sender_substring:
+        - "example.com"
+      body_substring:
+        - "unsubscribe"
+    actions:
+      - type: "archive"
+      - type: "delete"
+    archive:
+      path_template: "{date}/{from_domain}"
+checkpoint:
+  path: "state/checkpoint.yaml"
+</file>
+
+<file path="context/overview.md">
+PostmanPat is a Go-based email processing and archival system that connects to IMAP email servers to automatically manage email messages. It provides automated email archival, cleanup and filtering.
+
+The consumer of the `postmanpat` application is myself. I use it to manage my personal email accounts and archive emails to DigitalOcean Spaces.
+
+The service has two main components:
+- A scheduled worker which processes emails in an IMAP account and moves them to the archive if required
+- A on-demand service which is processes received emails and moves them to the required location
+
+The application is deployed to DigitalOcean as a Docker container.
+</file>
+
+<file path="context/roles_and_constraints.md">
+* GEN-1: Two modes: Plan and Act
+* GEN-2: Plan mode: Define what to do, no code changes
+* GEN-3: Act mode: Make changes only per approved plan
+* GEN-4: Start in Plan mode
+* GEN-5: Switch to Act only on explicit `ACT` comment
+* GEN-6: Always revert to Plan mode after response
+* GEN-7: No changes in Plan mode
+* GEN-8: No changes without explicit `ACT` comment
+* GEN-9: Be opinionated 
+
+# TASK:
+* COM-1: Share plan before edits
+* COM-5: Ask if any instructions are unclear
+* COM-10: Prompt the user to understand the scope of the task
+* COM-15: Indicate mode in comments
+* COM-16: Remind if action is requested prematurely
+* COM-17: When running commands, display the output
+
+# PERMISSIONS:
+* PER-1: Do not ask permissions run commands which search for information
+* PER-2: Do not ask permissions for commands which only read information
+* PER-3: Ask permissions before running commands which change state
+</file>
+
+<file path="ftest/serverrunner_integration_test.go">
+package ftest
+
+import (
+	"context"
+	"crypto/tls"
+	"errors"
+	"net"
+	"os"
+	"path/filepath"
+	"regexp"
+	"testing"
+	"time"
+
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/imap"
+	"github.com/aaronromeo/postmanpat/serverrunner"
+	giimap "github.com/emersion/go-imap/v2"
+	giimapclient "github.com/emersion/go-imap/v2/imapclient"
+	"github.com/stretchr/testify/assert"
+)
+
+func TestSearchByMatchersLocalServer(t *testing.T) {
+	client, ids, cleanup := setupServerRunnerTestServer(t, nil, nil, nil)
+	t.Cleanup(cleanup)
+
+	cases := []struct {
+		name     string
+		matchers appconfig.ServerMatchers
+		wantUIDs []uint32
+	}{
+		{
+			name: "match body substrings require all",
+			matchers: appconfig.ServerMatchers{
+				Folders:       []string{"INBOX"},
+				BodySubstring: []string{"unsubscribe", "updates"},
+			},
+			wantUIDs: []uint32{ids.NewsUID},
+		},
+		{
+			name: "body substrings fail when missing",
+			matchers: appconfig.ServerMatchers{
+				Folders:       []string{"INBOX"},
+				BodySubstring: []string{"unsubscribe", "missing"},
+			},
+			wantUIDs: nil,
+		},
+		{
+			name: "match reply-to domain",
+			matchers: appconfig.ServerMatchers{
+				Folders:          []string{"INBOX"},
+				ReplyToSubstring: []string{"example.com"},
+			},
+			wantUIDs: []uint32{ids.NewsUID},
+		},
+		{
+			name: "match age window max",
+			matchers: appconfig.ServerMatchers{
+				Folders: []string{"INBOX"},
+				AgeWindow: &appconfig.AgeWindow{
+					Max: "1d",
+				},
+			},
+			wantUIDs: []uint32{ids.OtherUID},
+		},
+		{
+			name: "match age window min",
+			matchers: appconfig.ServerMatchers{
+				Folders: []string{"INBOX"},
+				AgeWindow: &appconfig.AgeWindow{
+					Min: "1d",
+				},
+			},
+			wantUIDs: []uint32{ids.NewsUID},
+		},
+		{
+			name: "match sender recipient body",
+			matchers: appconfig.ServerMatchers{
+				Folders:       []string{"INBOX"},
+				BodySubstring: []string{"unsubscribe"},
+			},
+			wantUIDs: []uint32{ids.NewsUID},
+		},
+		{
+			name: "match sender email",
+			matchers: appconfig.ServerMatchers{
+				Folders:         []string{"INBOX"},
+				SenderSubstring: []string{"example.com"},
+			},
+			wantUIDs: []uint32{ids.NewsUID},
+		},
+		{
+			name: "match recipients email",
+			matchers: appconfig.ServerMatchers{
+				Folders:    []string{"INBOX"},
+				Recipients: []string{"user@example.com"},
+			},
+			wantUIDs: []uint32{ids.NewsUID, ids.OtherUID},
+		},
+		{
+			name: "no matches",
+			matchers: appconfig.ServerMatchers{
+				Folders:         []string{"INBOX"},
+				SenderSubstring: []string{"nope"},
+				Recipients:      []string{"user@example.com"},
+				BodySubstring:   []string{"unsubscribe"},
+			},
+			wantUIDs: nil,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			t.Cleanup(cancel)
+
+			matched, err := client.SearchByServerMatchers(ctx, tc.matchers)
+			assert.NoError(t, err, "search error")
+			assert.ElementsMatch(t, tc.wantUIDs, matched["INBOX"], "unexpected UID set")
+		})
+	}
+}
+
+func TestDeleteUIDsLocalServer(t *testing.T) {
+	cases := []struct {
+		name string
+		caps giimap.CapSet
+	}{
+		{
+			name: "uidplus",
+			caps: giimap.CapSet{
+				giimap.CapIMAP4rev1: {},
+				giimap.CapUIDPlus:   {},
+			},
+		},
+		{
+			name: "expunge",
+			caps: nil,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client, ids, cleanup := setupServerRunnerTestServer(t, tc.caps, nil, nil)
+			t.Cleanup(cleanup)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			t.Cleanup(cancel)
+
+			target := appconfig.ServerMatchers{
+				Folders:         []string{"INBOX"},
+				SenderSubstring: []string{"example.com"},
+			}
+			matched, err := client.SearchByServerMatchers(ctx, target)
+			assert.NoError(t, err, "search error")
+			assert.ElementsMatch(t, []uint32{ids.NewsUID}, matched["INBOX"], "unexpected matches before delete")
+
+			err = client.DeleteByMailbox(ctx, matched, true)
+			assert.NoError(t, err, "delete error")
+
+			matched, err = client.SearchByServerMatchers(ctx, target)
+			assert.NoError(t, err, "search after delete")
+			assert.Empty(t, matched["INBOX"], "expected no matches after delete")
+
+			remaining := appconfig.ServerMatchers{
+				Folders:         []string{"INBOX"},
+				SenderSubstring: []string{"example.org"},
+			}
+			matched, err = client.SearchByServerMatchers(ctx, remaining)
+			assert.NoError(t, err, "search remaining")
+			assert.ElementsMatch(t, []uint32{ids.OtherUID}, matched["INBOX"], "unexpected remaining matches")
+		})
+	}
+}
+
+func TestMoveByMailboxLocalServer(t *testing.T) {
+	cases := []struct {
+		name            string
+		caps            giimap.CapSet
+		destination     string
+		extraMailboxes  []string
+		expectError     bool
+		expectInArchive bool
+	}{
+		{
+			name:        "move-capability",
+			destination: "Archive",
+			extraMailboxes: []string{
+				"Archive",
+			},
+			caps: giimap.CapSet{
+				giimap.CapIMAP4rev1: {},
+				giimap.CapMove:      {},
+			},
+			expectInArchive: true,
+		},
+		{
+			name:        "move-fallback",
+			destination: "Archive",
+			extraMailboxes: []string{
+				"Archive",
+			},
+			caps:            nil,
+			expectInArchive: true,
+		},
+		{
+			name:        "missing-destination",
+			destination: "DoesNotExist",
+			caps:        nil,
+			expectError: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client, ids, cleanup := setupServerRunnerTestServer(t, tc.caps, tc.extraMailboxes, nil)
+			t.Cleanup(cleanup)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			t.Cleanup(cancel)
+
+			_, err := client.SearchByServerMatchers(ctx, appconfig.ServerMatchers{
+				Folders: []string{"INBOX"},
+			})
+			assert.NoError(t, err, "select inbox before move")
+
+			err = client.MoveByMailbox(ctx, map[string][]uint32{"INBOX": {ids.NewsUID}}, tc.destination)
+			if tc.expectError {
+				assert.Error(t, err, "expected move error")
+				return
+			}
+			assert.NoError(t, err, "move error")
+
+			inboxMatchers := appconfig.ServerMatchers{
+				Folders:         []string{"INBOX"},
+				SenderSubstring: []string{"example.com"},
+			}
+			matched, err := client.SearchByServerMatchers(ctx, inboxMatchers)
+			assert.NoError(t, err, "search inbox after move")
+			assert.Empty(t, matched["INBOX"], "expected no matches in INBOX after move")
+
+			if tc.expectInArchive {
+				archiveClient := mustConnectServerRunnerClient(t, client.Addr, client.Username, client.Password, nil)
+				archiveMatchers := appconfig.ServerMatchers{
+					Folders:         []string{tc.destination},
+					SenderSubstring: []string{"example.com"},
+				}
+				matched, err = archiveClient.SearchByServerMatchers(ctx, archiveMatchers)
+				assert.NoError(t, err, "search archive after move")
+				assert.Len(t, matched[tc.destination], 1, "expected moved message in destination")
+			}
+		})
+	}
+}
+
+func TestSearchByMatchersMultipleFolders(t *testing.T) {
+	extraMessages := []MailboxMessage{
+		{
+			Mailbox: "Archive",
+			From:    "Archive <archive@example.net>",
+			To:      "User <user@example.com>",
+			ReplyTo: "Reply <reply@example.net>",
+			Subject: "Archive notice",
+			Body:    "Stored in archive.",
+		},
+	}
+	client, ids, cleanup := setupServerRunnerTestServer(t, nil, []string{"Archive"}, extraMessages)
+	t.Cleanup(cleanup)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	matchers := appconfig.ServerMatchers{
+		Folders:         []string{"INBOX", "Archive"},
+		SenderSubstring: []string{"example."},
+	}
+	matched, err := client.SearchByServerMatchers(ctx, matchers)
+	assert.NoError(t, err, "search error")
+	assert.ElementsMatch(t, []uint32{ids.NewsUID, ids.OtherUID}, matched["INBOX"], "unexpected INBOX matches")
+	assert.Len(t, matched["Archive"], 1, "expected one Archive match")
+}
+
+func TestClientReuseAcrossOperations(t *testing.T) {
+	client, ids, cleanup := setupServerRunnerTestServer(t, nil, []string{"Archive"}, nil)
+	t.Cleanup(cleanup)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	matched, err := client.SearchByServerMatchers(ctx, appconfig.ServerMatchers{
+		Folders:         []string{"INBOX"},
+		SenderSubstring: []string{"example.com"},
+	})
+	assert.NoError(t, err, "search initial sender")
+	assert.ElementsMatch(t, []uint32{ids.NewsUID}, matched["INBOX"], "unexpected initial sender matches")
+
+	err = client.DeleteUIDs(ctx, matched["INBOX"], true)
+	assert.NoError(t, err, "delete sender matches")
+
+	matched, err = client.SearchByServerMatchers(ctx, appconfig.ServerMatchers{
+		Folders:         []string{"INBOX"},
+		SenderSubstring: []string{"example.com"},
+	})
+	assert.NoError(t, err, "search after delete")
+	assert.Empty(t, matched["INBOX"], "expected no matches after delete")
+
+	err = client.MoveUIDs(ctx, []uint32{ids.OtherUID}, "Archive")
+	assert.NoError(t, err, "move other message")
+
+	matched, err = client.SearchByServerMatchers(ctx, appconfig.ServerMatchers{
+		Folders:         []string{"INBOX"},
+		SenderSubstring: []string{"example.org"},
+	})
+	assert.NoError(t, err, "search inbox after move")
+	assert.Empty(t, matched["INBOX"], "expected no matches in INBOX after move")
+}
+
+func TestListIDRegexEndToEnd(t *testing.T) {
+	addr, cleanup := SetupAnalyzeIMAPServer(t, []AnalyzeMessage{
+		{
+			From:    "News <news@example.com>",
+			To:      "User <user@example.com>",
+			Subject: "ROM list",
+			ListID:  "f7443300a7bb349db1e85fa6emc list <f7443300a7bb349db1e85fa6e.1520313.list-id.mcsv.net>",
+			Body:    "unsubscribe",
+			Time:    time.Now().Add(-2 * time.Hour),
+		},
+	})
+	t.Cleanup(cleanup)
+
+	client := mustConnectServerRunnerClient(t, addr, "user@example.com", "password", nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	if _, err := client.SelectMailbox(ctx, "INBOX"); err != nil {
+		t.Fatalf("select inbox: %v", err)
+	}
+
+	uids, err := client.SearchUIDsNewerThan(ctx, 0)
+	if err != nil {
+		t.Fatalf("search uids: %v", err)
+	}
+	if len(uids) != 1 {
+		t.Fatalf("expected 1 uid, got %d", len(uids))
+	}
+
+	data, err := client.FetchSenderData(ctx, uids)
+	if err != nil {
+		t.Fatalf("fetch data: %v", err)
+	}
+	if len(data) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(data))
+	}
+
+	re, err := regexp.Compile(`<f7443300a7bb349db1e85fa6e\.1520313\.list-id\.mcsv\.net>`)
+	if err != nil {
+		t.Fatalf("compile regex: %v", err)
+	}
+	ok := re.MatchString(data[0].ListID)
+	if !ok {
+		t.Fatal("expected list_id_regex to match ListID")
+	}
+}
+
+func TestFetchSenderDataReplyToRequiresHeader(t *testing.T) {
+	addr, cleanup := SetupAnalyzeIMAPServer(t, []AnalyzeMessage{
+		{
+			From:    "BandsInTown <updates@bandsintown.com>",
+			To:      "User <user@example.com>",
+			Subject: "Next Week",
+			ListID:  "",
+			Body:    "unsubscribe",
+			Time:    time.Now().Add(-2 * time.Hour),
+		},
+	})
+	t.Cleanup(cleanup)
+
+	client := mustConnectServerRunnerClient(t, addr, "user@example.com", "password", nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	if _, err := client.SelectMailbox(ctx, "INBOX"); err != nil {
+		t.Fatalf("select inbox: %v", err)
+	}
+
+	uids, err := client.SearchUIDsNewerThan(ctx, 0)
+	if err != nil {
+		t.Fatalf("search uids: %v", err)
+	}
+	if len(uids) != 1 {
+		t.Fatalf("expected 1 uid, got %d", len(uids))
+	}
+
+	data, err := client.FetchSenderData(ctx, uids)
+	if err != nil {
+		t.Fatalf("fetch data: %v", err)
+	}
+	if len(data) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(data))
+	}
+	if len(data[0].ReplyToDomains) != 0 {
+		t.Fatalf("expected no reply-to domains when header is missing, got %v", data[0].ReplyToDomains)
+	}
+}
+
+func TestFetchSenderDataDoesNotSetSeen(t *testing.T) {
+	addr, cleanup := SetupAnalyzeIMAPServer(t, []AnalyzeMessage{
+		{
+			From:    "News <news@example.com>",
+			To:      "User <user@example.com>",
+			Subject: "Peek test",
+			ListID:  "list.example.com",
+			Body:    "unsubscribe",
+			Time:    time.Now().Add(-2 * time.Hour),
+		},
+	})
+	t.Cleanup(cleanup)
+
+	client := mustConnectServerRunnerClient(t, addr, "user@example.com", "password", nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	if _, err := client.SelectMailbox(ctx, "INBOX"); err != nil {
+		t.Fatalf("select inbox: %v", err)
+	}
+
+	uids, err := client.SearchUIDsNewerThan(ctx, 0)
+	if err != nil {
+		t.Fatalf("search uids: %v", err)
+	}
+	if len(uids) != 1 {
+		t.Fatalf("expected 1 uid, got %d", len(uids))
+	}
+
+	flagsBefore, err := fetchServerRunnerMessageFlags(ctx, client.Client, uids)
+	if err != nil {
+		t.Fatalf("fetch flags before: %v", err)
+	}
+	if containsServerRunnerFlag(flagsBefore, giimap.FlagSeen) {
+		t.Fatalf("expected message to be unseen before fetch, got flags %v", flagsBefore)
+	}
+
+	_, err = client.FetchSenderData(ctx, uids)
+	if err != nil {
+		t.Fatalf("fetch data: %v", err)
+	}
+
+	flagsAfter, err := fetchServerRunnerMessageFlags(ctx, client.Client, uids)
+	if err != nil {
+		t.Fatalf("fetch flags after: %v", err)
+	}
+	if containsServerRunnerFlag(flagsAfter, giimap.FlagSeen) {
+		t.Fatalf("expected message to remain unseen after fetch, got flags %v", flagsAfter)
+	}
+}
+
+func TestFetchSenderDataMalformedHeaderDoesNotError(t *testing.T) {
+	raw := "From: News <news@example.com>\r\n" +
+		"To: User <user@example.com>\r\n" +
+		"BadHeader\r\n" +
+		"Subject: Hello\r\n" +
+		"\r\n" +
+		"Body\r\n"
+
+	addr, cleanup := SetupRawIMAPServer(t, nil, nil, []RawMessage{{
+		Mailbox: "INBOX",
+		Raw:     raw,
+		Time:    time.Now(),
+	}})
+	t.Cleanup(cleanup)
+
+	client := mustConnectServerRunnerClient(t, addr, DefaultUser, DefaultPass, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	if _, err := client.SelectMailbox(ctx, "INBOX"); err != nil {
+		t.Fatalf("select inbox: %v", err)
+	}
+
+	uids, err := client.SearchUIDsNewerThan(ctx, 0)
+	if err != nil {
+		t.Fatalf("search uids: %v", err)
+	}
+	if len(uids) != 1 {
+		t.Fatalf("expected 1 uid, got %d", len(uids))
+	}
+
+	data, err := client.FetchSenderData(ctx, uids)
+	if err != nil {
+		t.Fatalf("fetch data: %v", err)
+	}
+	if len(data) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(data))
+	}
+	if data[0].ListID != "" {
+		t.Fatalf("expected empty ListID for malformed header, got %q", data[0].ListID)
+	}
+}
+
+func TestFetchSenderDataReturnPathDomain(t *testing.T) {
+	addr, cleanup := SetupRawIMAPServer(t, nil, nil, []RawMessage{{
+		Mailbox: "INBOX",
+		Raw: "From: News <news@example.com>\r\n" +
+			"To: User <user@example.com>\r\n" +
+			"Return-Path: <SRS0=foo@SRS.MessagingEngine.com>\r\n" +
+			"Subject: Hello\r\n" +
+			"\r\n" +
+			"Body\r\n",
+		Time: time.Now(),
+	}})
+	t.Cleanup(cleanup)
+
+	client := mustConnectServerRunnerClient(t, addr, DefaultUser, DefaultPass, nil)
+
+	ctx := context.Background()
+	if _, err := client.SelectMailbox(ctx, "INBOX"); err != nil {
+		t.Fatalf("select inbox: %v", err)
+	}
+
+	uids, err := client.SearchUIDsNewerThan(ctx, 0)
+	if err != nil {
+		t.Fatalf("search uids: %v", err)
+	}
+	if len(uids) != 1 {
+		t.Fatalf("expected 1 uid, got %d", len(uids))
+	}
+
+	data, err := client.FetchSenderData(ctx, uids)
+	if err != nil {
+		t.Fatalf("fetch sender data: %v", err)
+	}
+	if len(data) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(data))
+	}
+	if data[0].ReturnPathDomain != "srs.messagingengine.com" {
+		t.Fatalf("expected return-path domain, got %q", data[0].ReturnPathDomain)
+	}
+}
+
+func TestFetchSenderDataReturnsErrorOnFetchFailure(t *testing.T) {
+	addr, cleanup := SetupAnalyzeIMAPServer(t, []AnalyzeMessage{
+		{
+			From:    "News <news@example.com>",
+			To:      "User <user@example.com>",
+			Subject: "Hello",
+			ListID:  "",
+			Body:    "Body",
+			Time:    time.Now().Add(-2 * time.Hour),
+		},
+	})
+	t.Cleanup(cleanup)
+
+	client := mustConnectServerRunnerClient(t, addr, "user@example.com", "password", nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	if _, err := client.SelectMailbox(ctx, "INBOX"); err != nil {
+		t.Fatalf("select inbox: %v", err)
+	}
+
+	uids, err := client.SearchUIDsNewerThan(ctx, 0)
+	if err != nil {
+		t.Fatalf("search uids: %v", err)
+	}
+	if len(uids) != 1 {
+		t.Fatalf("expected 1 uid, got %d", len(uids))
+	}
+
+	cleanup()
+	_, err = client.FetchSenderData(ctx, uids)
+	if err == nil {
+		t.Fatal("expected fetch error after server shutdown")
+	}
+}
+
+func TestAnalyzeAgeWindowEndToEnd(t *testing.T) {
+	addr, cleanup := SetupAnalyzeIMAPServer(t, []AnalyzeMessage{
+		{
+			From:    "News <news@example.com>",
+			To:      "User <user@example.com>",
+			Subject: "Recent",
+			ListID:  "list.recent.example.com",
+			Body:    "unsubscribe",
+			Time:    time.Now().Add(-48 * time.Hour),
+		},
+		{
+			From:    "Old <old@example.com>",
+			To:      "User <user@example.com>",
+			Subject: "Old",
+			ListID:  "list.old.example.com",
+			Body:    "unsubscribe",
+			Time:    time.Now().Add(-10 * 24 * time.Hour),
+		},
+	})
+	t.Cleanup(cleanup)
+
+	host, port, err := splitHostPort(addr)
+	if err != nil {
+		t.Fatalf("split addr: %v", err)
+	}
+	t.Setenv("POSTMANPAT_IMAP_HOST", host)
+	t.Setenv("POSTMANPAT_IMAP_PORT", port)
+	t.Setenv("POSTMANPAT_IMAP_USER", "user@example.com")
+	t.Setenv("POSTMANPAT_IMAP_PASS", "password")
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "appconfig.yaml")
+	if err := os.WriteFile(path, []byte(`
+rules:
+  - name: "Rule"
+    server:
+      age_window:
+        min: "24h"
+        max: "7d"
+      folders:
+        - "INBOX"
+      body_substring:
+        - "unsubscribe"
+    actions: []
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := appconfig.Load(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if err := appconfig.Validate(cfg); err != nil {
+		t.Fatalf("validate config: %v", err)
+	}
+
+	client := mustConnectServerRunnerClient(t, addr, "user@example.com", "password", nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	rule := cfg.Rules[0]
+	matched, err := client.SearchByServerMatchers(ctx, *rule.Server)
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	uids := matched["INBOX"]
+	if len(uids) != 1 {
+		t.Fatalf("expected 1 matched message, got %d", len(uids))
+	}
+}
+
+func setupServerRunnerTestServer(t *testing.T, caps giimap.CapSet, extraMailboxes []string, extraMessages []MailboxMessage) (*imap.Client, MessageIDs, func()) {
+	t.Helper()
+
+	addr, ids, cleanup := SetupIMAPServer(t, caps, extraMailboxes, extraMessages)
+	client := mustConnectServerRunnerClient(t, addr, DefaultUser, DefaultPass, nil)
+
+	return client, ids, func() {
+		cleanup()
+	}
+}
+
+func mustConnectServerRunnerClient(t *testing.T, addr, username, password string, handler *giimapclient.UnilateralDataHandler) *imap.Client {
+	t.Helper()
+	opts := []imap.Option{
+		imap.WithAddr(addr),
+		imap.WithCreds(username, password),
+		imap.WithTLSConfig(&tls.Config{InsecureSkipVerify: true}),
+	}
+	if handler != nil {
+		opts = append(opts, imap.WithUnilateralDataHandler(handler))
+	}
+	client := serverrunner.New(opts...)
+	if err := client.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+	return client
+}
+
+func fetchServerRunnerMessageFlags(ctx context.Context, client *giimapclient.Client, uids []uint32) ([]giimap.Flag, error) {
+	var uidSet giimap.UIDSet
+	for _, uid := range uids {
+		uidSet.AddNum(giimap.UID(uid))
+	}
+
+	fetchOptions := &giimap.FetchOptions{
+		Flags: true,
+	}
+
+	fetchCmd := client.Fetch(uidSet, fetchOptions)
+	for {
+		if err := ctx.Err(); err != nil {
+			_ = fetchCmd.Close()
+			return nil, err
+		}
+		msg := fetchCmd.Next()
+		if msg == nil {
+			break
+		}
+		for {
+			item := msg.Next()
+			if item == nil {
+				break
+			}
+			if data, ok := item.(giimapclient.FetchItemDataFlags); ok {
+				return data.Flags, nil
+			}
+		}
+	}
+	if err := fetchCmd.Close(); err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
+func containsServerRunnerFlag(flags []giimap.Flag, target giimap.Flag) bool {
+	for _, flag := range flags {
+		if flag == target {
+			return true
+		}
+	}
+	return false
+}
+
+type serverRunnerErrorLiteral struct{}
+
+func (serverRunnerErrorLiteral) Read([]byte) (int, error) {
+	return 0, errors.New("read failed")
+}
+
+func (serverRunnerErrorLiteral) Size() int64 {
+	return 0
+}
+
+func splitHostPort(addr string) (string, string, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", "", err
+	}
+	return host, port, nil
+}
+</file>
+
+<file path="ftest/utils.go">
+package ftest
+
+import (
+	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"math/big"
+	"net"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/emersion/go-imap/v2"
+	giimapserver "github.com/emersion/go-imap/v2/imapserver"
+	giimapmemserver "github.com/emersion/go-imap/v2/imapserver/imapmemserver"
+)
+
+const (
+	DefaultUser = "user@example.com"
+	DefaultPass = "password"
+)
+
+type MessageIDs struct {
+	NewsUID  uint32
+	OtherUID uint32
+}
+
+type MailboxMessage struct {
+	Mailbox string
+	From    string
+	To      string
+	ReplyTo string
+	Subject string
+	Body    string
+	Time    time.Time
+}
+
+type AnalyzeMessage struct {
+	From    string
+	To      string
+	Subject string
+	ListID  string
+	Body    string
+	Time    time.Time
+}
+
+type RawMessage struct {
+	Mailbox string
+	Raw     string
+	Time    time.Time
+}
+
+func SetupIMAPServer(t *testing.T, caps imap.CapSet, extraMailboxes []string, extraMessages []MailboxMessage) (string, MessageIDs, func()) {
+	t.Helper()
+
+	tlsConfig := testTLSConfig(t)
+	mem := giimapmemserver.New()
+	user := giimapmemserver.NewUser(DefaultUser, DefaultPass)
+	mem.AddUser(user)
+
+	if err := user.Create("INBOX", nil); err != nil {
+		t.Fatalf("create mailbox: %v", err)
+	}
+	for _, mailbox := range extraMailboxes {
+		if strings.TrimSpace(mailbox) == "" {
+			continue
+		}
+		if err := user.Create(mailbox, nil); err != nil {
+			t.Fatalf("create mailbox %q: %v", mailbox, err)
+		}
+	}
+
+	newsAppend, err := user.Append("INBOX", newLiteral(t, sampleMessageWithReplyTo(
+		"News <news@example.com>",
+		"User <user@example.com>",
+		"Reply <reply@example.com>",
+		"Hello",
+		"Please unsubscribe from these updates.",
+	)), &imap.AppendOptions{Time: time.Now().Add(-48 * time.Hour)})
+	if err != nil {
+		t.Fatalf("append message: %v", err)
+	}
+
+	otherAppend, err := user.Append("INBOX", newLiteral(t, sampleMessageWithReplyTo(
+		"Other <other@example.org>",
+		"User <user@example.com>",
+		"Reply <reply@example.org>",
+		"Hi",
+		"Nothing to see here.",
+	)), &imap.AppendOptions{Time: time.Now()})
+	if err != nil {
+		t.Fatalf("append message: %v", err)
+	}
+
+	for _, msg := range extraMessages {
+		mailbox := strings.TrimSpace(msg.Mailbox)
+		if mailbox == "" {
+			t.Fatalf("extra message mailbox is required")
+		}
+		appendTime := msg.Time
+		if appendTime.IsZero() {
+			appendTime = time.Now()
+		}
+		if _, err := user.Append(mailbox, newLiteral(t, sampleMessageWithReplyTo(
+			msg.From,
+			msg.To,
+			msg.ReplyTo,
+			msg.Subject,
+			msg.Body,
+		)), &imap.AppendOptions{Time: appendTime}); err != nil {
+			t.Fatalf("append extra message: %v", err)
+		}
+	}
+
+	server := giimapserver.New(&giimapserver.Options{
+		NewSession: func(*giimapserver.Conn) (giimapserver.Session, *giimapserver.GreetingData, error) {
+			return mem.NewSession(), nil, nil
+		},
+		Caps:         caps,
+		TLSConfig:    tlsConfig,
+		InsecureAuth: true,
+	})
+
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", tlsConfig)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.Serve(ln)
+	}()
+
+	cleanup := func() {
+		_ = server.Close()
+		_ = ln.Close()
+		select {
+		case <-errCh:
+		default:
+		}
+	}
+
+	ids := MessageIDs{
+		NewsUID:  uint32(newsAppend.UID),
+		OtherUID: uint32(otherAppend.UID),
+	}
+
+	return ln.Addr().String(), ids, cleanup
+}
+
+func SetupAnalyzeIMAPServer(t *testing.T, messages []AnalyzeMessage) (string, func()) {
+	t.Helper()
+
+	tlsConfig := testAnalyzeTLSConfig(t)
+	mem := giimapmemserver.New()
+	user := giimapmemserver.NewUser(DefaultUser, DefaultPass)
+	mem.AddUser(user)
+
+	if err := user.Create("INBOX", nil); err != nil {
+		t.Fatalf("create mailbox: %v", err)
+	}
+
+	for _, msg := range messages {
+		appendTime := msg.Time
+		if appendTime.IsZero() {
+			appendTime = time.Now()
+		}
+		if _, err := user.Append("INBOX", newAnalyzeLiteral(t, sampleAnalyzeMessage(
+			msg.From,
+			msg.To,
+			msg.Subject,
+			msg.ListID,
+			msg.Body,
+		)), &imap.AppendOptions{Time: appendTime}); err != nil {
+			t.Fatalf("append message: %v", err)
+		}
+	}
+
+	server := giimapserver.New(&giimapserver.Options{
+		NewSession: func(*giimapserver.Conn) (giimapserver.Session, *giimapserver.GreetingData, error) {
+			return mem.NewSession(), nil, nil
+		},
+		TLSConfig:    tlsConfig,
+		InsecureAuth: true,
+	})
+
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", tlsConfig)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.Serve(ln)
+	}()
+
+	cleanup := func() {
+		_ = server.Close()
+		_ = ln.Close()
+		select {
+		case <-errCh:
+		default:
+		}
+	}
+
+	return ln.Addr().String(), cleanup
+}
+
+func SetupRawIMAPServer(t *testing.T, caps imap.CapSet, extraMailboxes []string, messages []RawMessage) (string, func()) {
+	t.Helper()
+
+	tlsConfig := testTLSConfig(t)
+	mem := giimapmemserver.New()
+	user := giimapmemserver.NewUser(DefaultUser, DefaultPass)
+	mem.AddUser(user)
+
+	if err := user.Create("INBOX", nil); err != nil {
+		t.Fatalf("create mailbox: %v", err)
+	}
+	for _, mailbox := range extraMailboxes {
+		if strings.TrimSpace(mailbox) == "" {
+			continue
+		}
+		if err := user.Create(mailbox, nil); err != nil {
+			t.Fatalf("create mailbox %q: %v", mailbox, err)
+		}
+	}
+
+	for _, msg := range messages {
+		mailbox := strings.TrimSpace(msg.Mailbox)
+		if mailbox == "" {
+			mailbox = "INBOX"
+		}
+		appendTime := msg.Time
+		if appendTime.IsZero() {
+			appendTime = time.Now()
+		}
+		if _, err := user.Append(mailbox, newLiteral(t, msg.Raw), &imap.AppendOptions{Time: appendTime}); err != nil {
+			t.Fatalf("append raw message: %v", err)
+		}
+	}
+
+	server := giimapserver.New(&giimapserver.Options{
+		NewSession: func(*giimapserver.Conn) (giimapserver.Session, *giimapserver.GreetingData, error) {
+			return mem.NewSession(), nil, nil
+		},
+		Caps:         caps,
+		TLSConfig:    tlsConfig,
+		InsecureAuth: true,
+	})
+
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", tlsConfig)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.Serve(ln)
+	}()
+
+	cleanup := func() {
+		_ = server.Close()
+		_ = ln.Close()
+		select {
+		case <-errCh:
+		default:
+		}
+	}
+
+	return ln.Addr().String(), cleanup
+}
+
+type literalReader struct {
+	*bytes.Reader
+	size int64
+}
+
+func newLiteral(t *testing.T, raw string) imap.LiteralReader {
+	t.Helper()
+	buf := []byte(raw)
+	return &literalReader{
+		Reader: bytes.NewReader(buf),
+		size:   int64(len(buf)),
+	}
+}
+
+func (lr *literalReader) Size() int64 {
+	return lr.size
+}
+
+func sampleMessageWithReplyTo(from, to, replyTo, subject, body string) string {
+	builder := &strings.Builder{}
+	builder.WriteString("From: ")
+	builder.WriteString(from)
+	builder.WriteString("\r\n")
+	builder.WriteString("To: ")
+	builder.WriteString(to)
+	builder.WriteString("\r\n")
+	builder.WriteString("Reply-To: ")
+	builder.WriteString(replyTo)
+	builder.WriteString("\r\n")
+	builder.WriteString("Subject: ")
+	builder.WriteString(subject)
+	builder.WriteString("\r\n")
+	builder.WriteString("\r\n")
+	builder.WriteString(body)
+	builder.WriteString("\r\n")
+	return builder.String()
+}
+
+func sampleAnalyzeMessage(from, to, subject, listID, body string) string {
+	builder := &strings.Builder{}
+	builder.WriteString("From: ")
+	builder.WriteString(from)
+	builder.WriteString("\r\n")
+	builder.WriteString("To: ")
+	builder.WriteString(to)
+	builder.WriteString("\r\n")
+	if listID != "" {
+		builder.WriteString("List-ID: ")
+		builder.WriteString(listID)
+		builder.WriteString("\r\n")
+	}
+	builder.WriteString("Subject: ")
+	builder.WriteString(subject)
+	builder.WriteString("\r\n")
+	builder.WriteString("\r\n")
+	builder.WriteString(body)
+	builder.WriteString("\r\n")
+	return builder.String()
+}
+
+func newAnalyzeLiteral(t *testing.T, raw string) imap.LiteralReader {
+	return newLiteral(t, raw)
+}
+
+func testTLSConfig(t *testing.T) *tls.Config {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+
+	serial, err := rand.Int(rand.Reader, big.NewInt(1<<62))
+	if err != nil {
+		t.Fatalf("generate serial: %v", err)
+	}
+
+	template := x509.Certificate{
+		SerialNumber: serial,
+		Subject: pkix.Name{
+			CommonName: "localhost",
+		},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		DNSNames:              []string{"localhost"},
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("create cert: %v", err)
+	}
+
+	cert := tls.Certificate{
+		Certificate: [][]byte{der},
+		PrivateKey:  key,
+	}
+
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		NextProtos:   []string{"imap"},
+	}
+}
+
+func testAnalyzeTLSConfig(t *testing.T) *tls.Config {
+	return testTLSConfig(t)
+}
+</file>
+
+<file path="ftest/watchrunner_integration_test.go">
+package ftest
+
+import (
+	"context"
+	"crypto/tls"
+	"fmt"
+	"io"
+	"log/slog"
+	"testing"
+
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/imap"
+	"github.com/aaronromeo/postmanpat/watchrunner"
+)
+
+const watchSenderHostValue = "example.com"
+const watchSenderHostPattern = "example\\.com"
+
+func TestWatchProcessUIDsMove(t *testing.T) {
+	client, ids, cleanup := setupWatchRunnerServer(t, []string{"Archive"})
+	defer cleanup()
+
+	if _, err := client.SelectMailbox(context.Background(), "INBOX"); err != nil {
+		t.Fatalf("select inbox: %v", err)
+	}
+
+	rule := appconfig.Rule{
+		Name: "MoveRule",
+		Client: &appconfig.ClientMatchers{
+			SenderRegex: []string{watchSenderHostPattern},
+		},
+		Actions: []appconfig.Action{{
+			Type:        appconfig.MOVE,
+			Destination: "Archive",
+		}},
+	}
+
+	deps := watchrunner.Deps{
+		Ctx:   context.Background(),
+		Rules: []appconfig.Rule{rule},
+		Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	state := &watchrunner.State{}
+	if err := client.ProcessUIDs(deps, state, []uint32{ids.NewsUID}); err != nil {
+		t.Fatalf("process uids: %v", err)
+	}
+
+	if err := assertWatchMailboxCount(context.Background(), client, "INBOX", watchSenderHostValue, 0); err != nil {
+		t.Fatalf("inbox check: %v", err)
+	}
+	if err := assertWatchMailboxCount(context.Background(), client, "Archive", watchSenderHostValue, 1); err != nil {
+		t.Fatalf("archive check: %v", err)
+	}
+}
+
+func TestWatchProcessUIDsDelete(t *testing.T) {
+	client, ids, cleanup := setupWatchRunnerServer(t, nil)
+	defer cleanup()
+
+	if _, err := client.SelectMailbox(context.Background(), "INBOX"); err != nil {
+		t.Fatalf("select inbox: %v", err)
+	}
+
+	rule := appconfig.Rule{
+		Name: "DeleteRule",
+		Client: &appconfig.ClientMatchers{
+			SenderRegex: []string{watchSenderHostPattern},
+		},
+		Actions: []appconfig.Action{{
+			Type: appconfig.DELETE,
+		}},
+	}
+
+	deps := watchrunner.Deps{
+		Ctx:   context.Background(),
+		Rules: []appconfig.Rule{rule},
+		Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	state := &watchrunner.State{}
+	if err := client.ProcessUIDs(deps, state, []uint32{ids.NewsUID}); err != nil {
+		t.Fatalf("process uids: %v", err)
+	}
+
+	if err := assertWatchMailboxCount(context.Background(), client, "INBOX", watchSenderHostValue, 0); err != nil {
+		t.Fatalf("inbox check: %v", err)
+	}
+}
+
+func TestWatchProcessUIDsMoveMissingDestination(t *testing.T) {
+	client, ids, cleanup := setupWatchRunnerServer(t, nil)
+	defer cleanup()
+
+	if _, err := client.SelectMailbox(context.Background(), "INBOX"); err != nil {
+		t.Fatalf("select inbox: %v", err)
+	}
+
+	rule := appconfig.Rule{
+		Name: "MoveRule",
+		Client: &appconfig.ClientMatchers{
+			SenderRegex: []string{watchSenderHostPattern},
+		},
+		Actions: []appconfig.Action{{
+			Type:        appconfig.MOVE,
+			Destination: "MissingFolder",
+		}},
+	}
+
+	deps := watchrunner.Deps{
+		Ctx:   context.Background(),
+		Rules: []appconfig.Rule{rule},
+		Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	state := &watchrunner.State{}
+	if err := client.ProcessUIDs(deps, state, []uint32{ids.NewsUID}); err == nil {
+		t.Fatal("expected move to missing destination to fail")
+	}
+}
+
+func TestWatchProcessUIDsUnsupportedAction(t *testing.T) {
+	client, ids, cleanup := setupWatchRunnerServer(t, nil)
+	defer cleanup()
+
+	if _, err := client.SelectMailbox(context.Background(), "INBOX"); err != nil {
+		t.Fatalf("select inbox: %v", err)
+	}
+
+	rule := appconfig.Rule{
+		Name: "UnsupportedRule",
+		Client: &appconfig.ClientMatchers{
+			SenderRegex: []string{watchSenderHostPattern},
+		},
+		Actions: []appconfig.Action{{
+			Type: appconfig.ActionName("archive"),
+		}},
+	}
+
+	deps := watchrunner.Deps{
+		Ctx:   context.Background(),
+		Rules: []appconfig.Rule{rule},
+		Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	state := &watchrunner.State{}
+	if err := client.ProcessUIDs(deps, state, []uint32{ids.NewsUID}); err == nil {
+		t.Fatal("expected unsupported action to fail")
+	}
+}
+
+func assertWatchMailboxCount(ctx context.Context, client *watchrunner.Client, mailbox, senderHost string, expected int) error {
+	matchers := appconfig.ServerMatchers{
+		Folders:         []string{mailbox},
+		SenderSubstring: []string{senderHost},
+	}
+	matched, err := client.SearchByServerMatchers(ctx, matchers)
+	if err != nil {
+		return err
+	}
+	if len(matched[mailbox]) != expected {
+		return fmt.Errorf("expected %d messages in %s, got %d", expected, mailbox, len(matched[mailbox]))
+	}
+	return nil
+}
+
+func setupWatchRunnerServer(t *testing.T, extraMailboxes []string) (*watchrunner.Client, MessageIDs, func()) {
+	t.Helper()
+
+	addr, ids, cleanup := SetupIMAPServer(t, nil, extraMailboxes, nil)
+	opts := []imap.Option{
+		imap.WithAddr(addr),
+		imap.WithCreds(DefaultUser, DefaultPass),
+		imap.WithTLSConfig(&tls.Config{InsecureSkipVerify: true}),
+	}
+
+	client := watchrunner.New(opts...)
+
+	if err := client.Connect(); err != nil {
+		cleanup()
+		t.Fatalf("connect: %v", err)
+	}
+
+	combinedCleanup := func() {
+		_ = client.Close()
+		cleanup()
+	}
+	return client, ids, combinedCleanup
+}
+</file>
+
+<file path="imap/internal/actions/manager.go">
+package actions
+
+import (
+	"context"
+	"errors"
+	"strings"
+
+	"github.com/emersion/go-imap/v2"
+	giimapclient "github.com/emersion/go-imap/v2/imapclient"
+)
+
+type Actions interface {
+	MoveByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32, destination string) error
+	DeleteByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32, expunge bool) error
+	MoveUIDs(ctx context.Context, uids []uint32, destination string) error
+	DeleteUIDs(ctx context.Context, uids []uint32, expunge bool) error
+}
+
+// Interface to initialize the manager
+type ClientProvider interface {
+	IMAPClient() *giimapclient.Client
+}
+
+type IMAPActionManager struct {
+	provider func() *giimapclient.Client
+}
+
+func New(provider ClientProvider) *IMAPActionManager {
+	return &IMAPActionManager{provider: provider.IMAPClient}
+}
+
+// MoveUIDs move messages to a different destination folder.
+func (c *IMAPActionManager) MoveUIDs(ctx context.Context, uids []uint32, destination string) error {
+	if c.provider == nil || c.provider() == nil {
+		return errors.New("IMAP client is not connected")
+	}
+	if len(uids) == 0 {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(destination) == "" {
+		return errors.New("destination mailbox is required")
+	}
+
+	var uidSet imap.UIDSet
+	for _, uid := range uids {
+		uidSet.AddNum(imap.UID(uid))
+	}
+
+	if _, err := c.provider().Move(uidSet, destination).Wait(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MoveByMailbox moves messages for each mailbox to a destination folder.
+func (c *IMAPActionManager) MoveByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32, destination string) error {
+	if c.provider == nil || c.provider() == nil {
+		return errors.New("IMAP client is not connected")
+	}
+	if len(uidsByMailbox) == 0 {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(destination) == "" {
+		return errors.New("destination mailbox is required")
+	}
+
+	for mailbox, uids := range uidsByMailbox {
+		mailbox = strings.TrimSpace(mailbox)
+		if mailbox == "" {
+			return errors.New("mailbox is required")
+		}
+		if _, err := c.provider().Select(mailbox, nil).Wait(); err != nil {
+			return err
+		}
+		if err := c.MoveUIDs(ctx, uids, destination); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// DeleteUIDs marks messages as deleted and optionally expunges them.
+func (c *IMAPActionManager) DeleteUIDs(ctx context.Context, uids []uint32, expunge bool) error {
+	if c.provider == nil || c.provider() == nil {
+		return errors.New("IMAP client is not connected")
+	}
+	if len(uids) == 0 {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	var uidSet imap.UIDSet
+	for _, uid := range uids {
+		uidSet.AddNum(imap.UID(uid))
+	}
+
+	store := imap.StoreFlags{
+		Op:     imap.StoreFlagsAdd,
+		Silent: true,
+		Flags:  []imap.Flag{imap.FlagDeleted},
+	}
+	if err := c.provider().Store(uidSet, &store, nil).Close(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	if !expunge {
+		return nil
+	}
+	if c.provider().Caps().Has(imap.CapUIDPlus) {
+		_, err := c.provider().UIDExpunge(uidSet).Collect()
+		return err
+	}
+
+	_, err := c.provider().Expunge().Collect()
+	return err
+}
+
+// DeleteByMailbox marks messages as deleted and optionally expunges them per mailbox.
+func (c *IMAPActionManager) DeleteByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32, expunge bool) error {
+	if c.provider == nil || c.provider() == nil {
+		return errors.New("IMAP client is not connected")
+	}
+	if len(uidsByMailbox) == 0 {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	for mailbox, uids := range uidsByMailbox {
+		mailbox = strings.TrimSpace(mailbox)
+		if mailbox == "" {
+			return errors.New("mailbox is required")
+		}
+		if _, err := c.provider().Select(mailbox, nil).Wait(); err != nil {
+			return err
+		}
+		if err := c.DeleteUIDs(ctx, uids, expunge); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+</file>
+
+<file path="imap/internal/maildata/types.go">
+package foo
+
+import "time"
+
+type MailData struct {
+	UID                    uint32
+	ReplyToDomains         []string
+	SenderDomains          []string
+	From                   []string
+	ReturnPathDomain       string
+	Recipients             []string
+	Cc                     []string
+	RecipientTags          []string
+	Body                   string
+	ListID                 string
+	ListUnsubscribe        bool
+	ListUnsubscribeTargets string
+	PrecedenceRaw          string
+	PrecedenceCategory     string
+	XMailer                string
+	UserAgent              string
+	SubjectRaw             string
+	SubjectNormalized      string
+	MessageDate            time.Time
+}
+</file>
+
+<file path="imap/internal/selectors/manager.go">
+package selectors
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	netmail "net/mail"
+	"regexp"
+	"sort"
+	"strings"
+
+	"github.com/aaronromeo/postmanpat/imap/internal/maildata"
+	"github.com/emersion/go-imap/v2"
+	giimap "github.com/emersion/go-imap/v2"
+	giimapclient "github.com/emersion/go-imap/v2/imapclient"
+	"github.com/emersion/go-message"
+	"github.com/emersion/go-message/mail"
+	"github.com/emersion/go-message/textproto"
+)
+
+var (
+	subjectDatePatterns = []*regexp.Regexp{
+		regexp.MustCompile(`\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b`),
+		regexp.MustCompile(`\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b`),
+	}
+	subjectCounterPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`\(\s*\d+\s*\)`),
+		regexp.MustCompile(`#\d+`),
+	}
+	subjectMonthPattern  = regexp.MustCompile(`\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b`)
+	subjectNumberPattern = regexp.MustCompile(`\d+`)
+
+	recipientTagPattern = regexp.MustCompile(`[^a-z0-9]`)
+)
+
+type ClientSelectors interface {
+	SelectMailbox(ctx context.Context, mailbox string) (*giimap.SelectData, error)
+	FetchSenderData(ctx context.Context, uids []uint32) ([]foo.MailData, error)
+}
+
+// Interface to initialize the manager
+type ClientProvider interface {
+	IMAPClient() *giimapclient.Client
+}
+
+type IMAPSelectorManager struct {
+	provider func() *giimapclient.Client
+}
+
+func New(provider ClientProvider) *IMAPSelectorManager {
+	return &IMAPSelectorManager{provider: provider.IMAPClient}
+}
+
+// SelectMailbox selects a mailbox and returns its metadata.
+func (c *IMAPSelectorManager) SelectMailbox(ctx context.Context, mailbox string) (*imap.SelectData, error) {
+	if c.provider == nil || c.provider() == nil {
+		return nil, errors.New("IMAP client is not connected")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(mailbox) == "" {
+		return nil, errors.New("mailbox is required")
+	}
+	return c.provider().Select(mailbox, nil).Wait()
+}
+
+// FetchSenderDataByMailbox returns sender data per mailbox for the provided UIDs.
+func (c *IMAPSelectorManager) FetchSenderDataByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32) (map[string][]foo.MailData, error) {
+	if c.provider == nil || c.provider() == nil {
+		return nil, errors.New("IMAP client is not connected")
+	}
+	if len(uidsByMailbox) == 0 {
+		return map[string][]foo.MailData{}, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	results := make(map[string][]foo.MailData)
+	for mailbox, uids := range uidsByMailbox {
+		mailbox = strings.TrimSpace(mailbox)
+		if mailbox == "" {
+			return nil, errors.New("mailbox is required")
+		}
+		if _, err := c.provider().Select(mailbox, nil).Wait(); err != nil {
+			return nil, err
+		}
+
+		data, err := c.FetchSenderData(ctx, uids)
+		if err != nil {
+			return nil, err
+		}
+		results[mailbox] = data
+	}
+
+	return results, nil
+}
+
+// FetchSenderData returns sender data for the provided UIDs.
+func (c *IMAPSelectorManager) FetchSenderData(ctx context.Context, uids []uint32) ([]foo.MailData, error) {
+	if c.provider == nil || c.provider() == nil {
+		return nil, errors.New("IMAP client is not connected")
+	}
+	if len(uids) == 0 {
+		return []foo.MailData{}, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	var uidSet imap.UIDSet
+	for _, uid := range uids {
+		uidSet.AddNum(imap.UID(uid))
+	}
+
+	headerSection := &imap.FetchItemBodySection{
+		Specifier:    imap.PartSpecifierHeader,
+		HeaderFields: []string{"List-ID", "List-Unsubscribe", "Precedence", "X-Mailer", "User-Agent", "Reply-To", "Return-Path"},
+		Peek:         true,
+	}
+	bodySection := &imap.FetchItemBodySection{
+		Specifier: imap.PartSpecifierText,
+		Peek:      true,
+	}
+	fetchOptions := &imap.FetchOptions{
+		Envelope:    true,
+		UID:         true,
+		BodySection: []*imap.FetchItemBodySection{headerSection, bodySection},
+	}
+
+	fetchCmd := c.provider().Fetch(uidSet, fetchOptions)
+	rows := make([]foo.MailData, 0, len(uids))
+	for {
+		if err := ctx.Err(); err != nil {
+			_ = fetchCmd.Close()
+			return nil, err
+		}
+
+		msg := fetchCmd.Next()
+		if msg == nil {
+			break
+		}
+
+		var envelope *imap.Envelope
+		var header *mail.Header
+		var body string
+		var uid uint32
+		for {
+			item := msg.Next()
+			if item == nil {
+				break
+			}
+			if data, ok := item.(giimapclient.FetchItemDataEnvelope); ok {
+				envelope = data.Envelope
+				continue
+			}
+			if data, ok := item.(giimapclient.FetchItemDataUID); ok {
+				uid = uint32(data.UID)
+				continue
+			}
+			if data, ok := item.(giimapclient.FetchItemDataBodySection); ok {
+				if data.Literal == nil {
+					continue
+				}
+				if data.MatchCommand(headerSection) {
+					parsedHeader, err := readHeader(data.Literal)
+					if err == nil {
+						header = parsedHeader
+					}
+					continue
+				}
+				if data.MatchCommand(bodySection) {
+					raw, err := io.ReadAll(data.Literal)
+					if err == nil {
+						body = string(raw)
+					}
+					continue
+				}
+				_, _ = io.Copy(io.Discard, data.Literal)
+			}
+		}
+		if envelope == nil {
+			continue
+		}
+
+		replyToHosts := parseReplyToDomains(header)
+
+		fromHosts := []string{}
+		for _, addr := range envelope.From {
+			host := strings.ToLower(strings.TrimSpace(addr.Host))
+			if host == "" {
+				continue
+			}
+			fromHosts = append(fromHosts, host)
+		}
+
+		recipients := []string{}
+		recipientTags := []string{}
+		for _, addr := range envelope.To {
+			recipients = append(recipients, addr.Addr())
+			recipientTags = append(recipientTags, recipientTag(addr.Addr()))
+		}
+		ccRecipients := []string{}
+		for _, addr := range envelope.Cc {
+			ccRecipients = append(ccRecipients, addr.Addr())
+		}
+		from := []string{}
+		for _, addr := range envelope.From {
+			from = append(from, addr.Addr())
+		}
+
+		data := foo.MailData{
+			UID:               uid,
+			ReplyToDomains:    replyToHosts,
+			From:              from,
+			SenderDomains:     fromHosts,
+			ReturnPathDomain:  parseReturnPathDomain(header),
+			Recipients:        recipients,
+			Cc:                ccRecipients,
+			RecipientTags:     recipientTags,
+			Body:              body,
+			ListID:            headerText(header, "List-ID"),
+			PrecedenceRaw:     headerText(header, "Precedence"),
+			XMailer:           headerText(header, "X-Mailer"),
+			UserAgent:         headerText(header, "User-Agent"),
+			SubjectRaw:        strings.TrimSpace(envelope.Subject),
+			SubjectNormalized: normalizeSubject(envelope.Subject),
+			MessageDate:       envelope.Date,
+		}
+
+		listUnsubscribeTargets := parseListUnsubscribeTargets(header)
+		data.ListUnsubscribe = len(listUnsubscribeTargets) > 0
+		data.ListUnsubscribeTargets = strings.Join(listUnsubscribeTargets, ",")
+		data.PrecedenceCategory = normalizePrecedence(data.PrecedenceRaw)
+
+		rows = append(rows, data)
+	}
+
+	if err := fetchCmd.Close(); err != nil {
+		return nil, err
+	}
+
+	return rows, nil
+}
+
+func readHeader(literal imap.LiteralReader) (*mail.Header, error) {
+	if literal == nil {
+		return nil, errors.New("missing header literal")
+	}
+	raw, err := io.ReadAll(literal)
+	if err != nil {
+		return nil, err
+	}
+	tpHeader, err := textproto.ReadHeader(bufio.NewReader(bytes.NewReader(raw)))
+	if err != nil {
+		return nil, err
+	}
+	msgHeader := message.Header{Header: tpHeader}
+	header := mail.Header{Header: msgHeader}
+	return &header, nil
+}
+
+func parseReplyToDomains(header *mail.Header) []string {
+	raw := headerText(header, "Reply-To")
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	addresses, err := netmail.ParseAddressList(raw)
+	if err != nil {
+		return nil
+	}
+	hosts := make(map[string]struct{})
+	for _, addr := range addresses {
+		parts := strings.Split(addr.Address, "@")
+		if len(parts) != 2 {
+			continue
+		}
+		host := strings.ToLower(strings.TrimSpace(parts[1]))
+		if host == "" {
+			continue
+		}
+		hosts[host] = struct{}{}
+	}
+	if len(hosts) == 0 {
+		return nil
+	}
+	sorted := make([]string, 0, len(hosts))
+	for host := range hosts {
+		sorted = append(sorted, host)
+	}
+	sort.Strings(sorted)
+	return sorted
+}
+
+func parseReturnPathDomain(header *mail.Header) string {
+	raw := headerText(header, "Return-Path")
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	raw = strings.TrimPrefix(raw, "<")
+	raw = strings.TrimSuffix(raw, ">")
+	parts := strings.Split(raw, "@")
+	if len(parts) != 2 {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(parts[1]))
+}
+
+func normalizeSubject(subject string) string {
+	normalized := strings.TrimSpace(subject)
+	if normalized == "" {
+		return ""
+	}
+	normalized = strings.ToLower(normalized)
+	for _, pattern := range subjectDatePatterns {
+		normalized = pattern.ReplaceAllString(normalized, "")
+	}
+	normalized = subjectMonthPattern.ReplaceAllString(normalized, "{{mm}}")
+	for _, pattern := range subjectCounterPatterns {
+		normalized = pattern.ReplaceAllString(normalized, "")
+	}
+	normalized = subjectNumberPattern.ReplaceAllString(normalized, "{{n}}")
+	normalized = strings.Join(strings.Fields(normalized), " ")
+	return normalized
+}
+
+func headerText(header *mail.Header, key string) string {
+	if header == nil {
+		return ""
+	}
+	value, err := header.Text(key)
+	if err != nil {
+		return strings.TrimSpace(header.Get(key))
+	}
+	return strings.TrimSpace(value)
+}
+
+func recipientTag(recipient string) string {
+	return recipientTagPattern.ReplaceAllString(strings.ToLower(recipient), "_")
+}
+
+func parseListUnsubscribeTargets(header *mail.Header) []string {
+	if header == nil {
+		return nil
+	}
+	fields := header.FieldsByKey("List-Unsubscribe")
+	if fields.Len() == 0 {
+		return nil
+	}
+
+	targets := make(map[string]struct{})
+	for fields.Next() {
+		value, err := fields.Text()
+		if err != nil {
+			value = fields.Value()
+		}
+		for _, token := range strings.Split(value, ",") {
+			target := strings.TrimSpace(token)
+			target = strings.TrimPrefix(target, "<")
+			target = strings.TrimSuffix(target, ">")
+			if target == "" {
+				continue
+			}
+			targets[target] = struct{}{}
+		}
+	}
+
+	sorted := make([]string, 0, len(targets))
+	for target := range targets {
+		sorted = append(sorted, target)
+	}
+	sort.Strings(sorted)
+	return sorted
+}
+
+func normalizePrecedence(raw string) string {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	switch normalized {
+	case "bulk", "list":
+		return normalized
+	default:
+		return ""
+	}
+}
+</file>
+
+<file path="imap/internal/sessionmgr/manager.go">
+package sessionmgr
+
+import (
+	"crypto/tls"
+	"errors"
+	"strings"
+
+	giimapclient "github.com/emersion/go-imap/v2/imapclient"
+)
+
+type Option func(*IMAPConnector)
+
+type ServerConnector interface {
+	Connect() error
+	Close() error
+
+	IMAPClient() *giimapclient.Client
+}
+
+type ClientConnector interface {
+	ServerConnector
+
+	Idle() (*giimapclient.IdleCommand, error)
+}
+
+type IMAPConnector struct {
+	Addr                  string
+	Username              string
+	Password              string
+	TLSConfig             *tls.Config
+	UnilateralDataHandler *giimapclient.UnilateralDataHandler
+	Client                *giimapclient.Client
+}
+
+func WithAddr(a string) Option {
+	return func(c *IMAPConnector) {
+		c.Addr = a
+	}
+}
+
+func WithCreds(username string, password string) Option {
+	return func(c *IMAPConnector) {
+		c.Username = username
+		c.Password = password
+	}
+}
+
+func WithTLSConfig(config *tls.Config) Option {
+	return func(state *IMAPConnector) {
+		state.TLSConfig = config
+	}
+}
+
+func WithUnilateralDataHandler(handler *giimapclient.UnilateralDataHandler) Option {
+	return func(state *IMAPConnector) {
+		state.UnilateralDataHandler = handler
+	}
+}
+
+func NewServerConnector(opts ...Option) *IMAPConnector {
+	c := &IMAPConnector{}
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	return c
+}
+
+func NewClientConnector(opts ...Option) *IMAPConnector {
+	c := &IMAPConnector{}
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	return c
+}
+
+func (c *IMAPConnector) IMAPClient() *giimapclient.Client {
+	return c.Client
+}
+
+// Connect establishes the IMAP connection, logs in, and selects the mailbox.
+func (c *IMAPConnector) Connect() error {
+	if err := validateDeps(c); err != nil {
+		return err
+	}
+
+	var options *giimapclient.Options
+	if c.TLSConfig != nil || c.UnilateralDataHandler != nil {
+		options = &giimapclient.Options{
+			TLSConfig:             c.TLSConfig,
+			UnilateralDataHandler: c.UnilateralDataHandler,
+		}
+	}
+
+	client, err := giimapclient.DialTLS(c.Addr, options)
+	if err != nil {
+		return err
+	}
+
+	if err := client.Login(c.Username, c.Password).Wait(); err != nil {
+		_ = client.Logout().Wait()
+		return err
+	}
+
+	c.Client = client
+	return nil
+}
+
+// Idle starts an IMAP IDLE command.
+func (c *IMAPConnector) Idle() (*giimapclient.IdleCommand, error) {
+	if c.Client == nil {
+		return nil, errors.New("IMAP client is not connected")
+	}
+	return c.Client.Idle()
+}
+
+// Close logs out and clears the connection.
+func (c *IMAPConnector) Close() error {
+	if c.Client == nil {
+		return nil
+	}
+	err := c.Client.Logout().Wait()
+	c.Client = nil
+	return err
+}
+
+func validateDeps(state *IMAPConnector) error {
+	if strings.TrimSpace(state.Addr) == "" {
+		return errors.New("IMAP address is required")
+	}
+	if strings.TrimSpace(state.Username) == "" || strings.TrimSpace(state.Password) == "" {
+		return errors.New("IMAP credentials are required")
+	}
+
+	return nil
+}
+</file>
+
+<file path="imap/client.go">
+package imap
+
+import (
+	"crypto/tls"
+
+	"github.com/aaronromeo/postmanpat/imap/internal/actions"
+	foo "github.com/aaronromeo/postmanpat/imap/internal/maildata"
+	"github.com/aaronromeo/postmanpat/imap/internal/searches"
+	"github.com/aaronromeo/postmanpat/imap/internal/selectors"
+	"github.com/aaronromeo/postmanpat/imap/internal/sessionmgr"
+	giimapclient "github.com/emersion/go-imap/v2/imapclient"
+)
+
+type MailData = foo.MailData
+type Option = sessionmgr.Option
+
+func WithAddr(addr string) Option {
+	return sessionmgr.WithAddr(addr)
+}
+
+func WithCreds(username, password string) Option {
+	return sessionmgr.WithCreds(username, password)
+}
+
+func WithTLSConfig(config *tls.Config) Option {
+	return sessionmgr.WithTLSConfig(config)
+}
+
+func WithUnilateralDataHandler(handler *giimapclient.UnilateralDataHandler) Option {
+	return sessionmgr.WithUnilateralDataHandler(handler)
+}
+
+// Client encapsulates an IMAP connection for search operations.
+type Client struct {
+	*sessionmgr.IMAPConnector
+	*searches.IMAPSearchManager
+	*actions.IMAPActionManager
+	*selectors.IMAPSelectorManager
+}
+
+func NewServer(opts ...Option) *Client {
+	session := sessionmgr.NewServerConnector(opts...)
+	return &Client{
+		IMAPConnector:       session,
+		IMAPSearchManager:   searches.New(session),
+		IMAPActionManager:   actions.New(session),
+		IMAPSelectorManager: selectors.New(session),
+	}
+}
+
+func NewWatch(opts ...Option) *Client {
+	session := sessionmgr.NewClientConnector(opts...)
+	return &Client{
+		IMAPConnector:       session,
+		IMAPSearchManager:   searches.New(session),
+		IMAPActionManager:   actions.New(session),
+		IMAPSelectorManager: selectors.New(session),
+	}
+}
+</file>
+
+<file path="serverrunner/runner.go">
+package serverrunner
+
+import (
+	"context"
+
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/imap"
+)
+
+type ServerRunner interface {
+	Connect() error
+	Close() error
+	SearchByServerMatchers(ctx context.Context, matchers appconfig.ServerMatchers) (map[string][]uint32, error)
+	MoveByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32, destination string) error
+	DeleteByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32, expunge bool) error
+}
+
+func New(opts ...imap.Option) *imap.Client {
+	return imap.NewServer(opts...)
+}
+</file>
+
+<file path=".gitmodules">
+[submodule "announcements"]
+	path = announcements
+	url = git@github.com:aaronromeo/announcements.git
+</file>
+
+<file path="appconfig/config_test.go">
+package appconfig
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestValidateEnvMissing(t *testing.T) {
+	t.Setenv(envIMAPHost, "")
+	t.Setenv(envIMAPPort, "")
+	t.Setenv(envIMAPUser, "")
+	t.Setenv(envIMAPPass, "")
+	t.Setenv(envS3Endpoint, "")
+	t.Setenv(envS3Region, "")
+	t.Setenv(envS3Bucket, "")
+	t.Setenv(envS3Key, "")
+	t.Setenv(envS3Secret, "")
+	t.Setenv(envWebhookURL, "")
+
+	if err := ValidateEnv(); err == nil {
+		t.Fatalf("expected error for missing environment variables")
+	} else if err != nil && !strings.Contains(err.Error(), "missing required environment variables") {
+		t.Fatalf("expected missing env var error, got: %v", err)
+	}
+}
+
+func TestLoadInvalidYAML(t *testing.T) {
+	path := writeTempFile(t, "not: [valid_yaml")
+	if _, err := Load(path); err == nil {
+		t.Fatalf("expected error for invalid YAML")
+	}
+}
+
+func TestValidateMissingRules(t *testing.T) {
+	path := writeTempFile(t, `
+rules: []
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("expected config to load, got error: %v", err)
+	}
+
+	if err := Validate(cfg); err == nil {
+		t.Fatalf("expected validation error for missing rules")
+	}
+}
+
+func TestValidateMissingServerFolders(t *testing.T) {
+	path := writeTempFile(t, `
+rules:
+  - name: "Rule"
+    server: {}
+    actions: []
+    archive:
+      path_template: "archive/{date}"
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("expected config to load, got error: %v", err)
+	}
+
+	if err := Validate(cfg); err == nil {
+		t.Fatalf("expected validation error for missing server.folders")
+	} else if !strings.Contains(err.Error(), "server.folders") {
+		t.Fatalf("expected server.folders error, got: %v", err)
+	}
+}
+
+func TestHappyPath(t *testing.T) {
+	t.Setenv(envIMAPHost, "imap.example.com")
+	t.Setenv(envIMAPPort, "993")
+	t.Setenv(envIMAPUser, "user@example.com")
+	t.Setenv(envIMAPPass, "password")
+	t.Setenv(envS3Endpoint, "https://nyc3.digitaloceanspaces.com")
+	t.Setenv(envS3Region, "nyc3")
+	t.Setenv(envS3Bucket, "postmanpat-archive")
+	t.Setenv(envS3Key, "key")
+	t.Setenv(envS3Secret, "secret")
+	t.Setenv(envWebhookURL, "https://example.com/webhook")
+
+	path := writeTempFile(t, `
+rules:
+  - name: "Rule"
+    server:
+      folders:
+        - "INBOX"
+    actions: []
+    archive:
+      path_template: "archive/{date}"
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("expected config to load, got error: %v", err)
+	}
+
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("expected config to validate, got error: %v", err)
+	}
+
+	if err := ValidateEnv(); err != nil {
+		t.Fatalf("expected env validation to pass, got error: %v", err)
+	}
+}
+
+func writeTempFile(t *testing.T, contents string) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "appconfig.yaml")
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+	return path
+}
+</file>
+
+<file path="appconfig/config.go">
+package appconfig
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"gopkg.in/yaml.v3"
+)
+
+const (
+	envIMAPHost   = "POSTMANPAT_IMAP_HOST"
+	envIMAPPort   = "POSTMANPAT_IMAP_PORT"
+	envIMAPUser   = "POSTMANPAT_IMAP_USER"
+	envIMAPPass   = "POSTMANPAT_IMAP_PASS"
+	envS3Endpoint = "POSTMANPAT_S3_ENDPOINT"
+	envS3Region   = "POSTMANPAT_S3_REGION"
+	envS3Bucket   = "POSTMANPAT_S3_BUCKET"
+	envS3Key      = "POSTMANPAT_S3_KEY"
+	envS3Secret   = "POSTMANPAT_S3_SECRET"
+	envWebhookURL = "POSTMANPAT_WEBHOOK_URL"
+)
+
+// Config holds non-secret configuration loaded from YAML.
+type Config struct {
+	Rules      []Rule     `yaml:"rules"`
+	Checkpoint Checkpoint `yaml:"checkpoint"`
+}
+
+// IMAPEnv holds the IMAP connection details from environment variables.
+type IMAPEnv struct {
+	Host string
+	Port int
+	User string
+	Pass string
+}
+
+// Rule describes a single cleanup rule.
+type Rule struct {
+	Name      string            `yaml:"name"`
+	Actions   []Action          `yaml:"actions"`
+	Variables map[string]string `yaml:"variables"`
+	Server    *ServerMatchers   `yaml:"server"`
+	Client    *ClientMatchers   `yaml:"client"`
+}
+
+type ClientMatchers struct {
+	SubjectRegex      []string `yaml:"subject_regex"`
+	BodyRegex         []string `yaml:"body_regex"`
+	SenderRegex       []string `yaml:"sender_regex"`
+	RecipientsRegex   []string `yaml:"recipients_regex"`
+	CcRegex           []string `yaml:"cc_regex"`
+	ReturnPathRegex   []string `yaml:"returnpath_regex"`
+	ReplyToRegex      []string `yaml:"replyto_regex"`
+	ListIDRegex       []string `yaml:"list_id_regex"`
+	RecipientTagRegex []string `yaml:"recipient_tag_regex"`
+	ListUnsubscribe   *bool    `yaml:"list_unsubscribe"`
+}
+
+func (m *ClientMatchers) IsEmpty() bool {
+	if m == nil {
+		return true
+	}
+	return len(m.SubjectRegex) == 0 &&
+		len(m.BodyRegex) == 0 &&
+		len(m.SenderRegex) == 0 &&
+		len(m.RecipientsRegex) == 0 &&
+		len(m.CcRegex) == 0 &&
+		len(m.ReturnPathRegex) == 0 &&
+		len(m.ReplyToRegex) == 0 &&
+		len(m.ListIDRegex) == 0 &&
+		len(m.RecipientTagRegex) == 0 &&
+		m.ListUnsubscribe == nil
+}
+
+type AgeWindow struct {
+	Min string `yaml:"min"`
+	Max string `yaml:"max"`
+}
+
+func (a *AgeWindow) IsEmpty() bool {
+	if a == nil {
+		return true
+	}
+	return strings.TrimSpace(a.Min) == "" && strings.TrimSpace(a.Max) == ""
+}
+
+// ServerMatchers define the matching criteria for a rule.
+type ServerMatchers struct {
+	AgeWindow           *AgeWindow `yaml:"age_window"`
+	SenderSubstring     []string   `yaml:"sender_substring"`
+	Recipients          []string   `yaml:"recipients"`
+	CcSubstring         []string   `yaml:"cc_substring"`
+	ReturnPathSubstring []string   `yaml:"returnpath_substring"`
+	BodySubstring       []string   `yaml:"body_substring"`
+	ReplyToSubstring    []string   `yaml:"replyto_substring"`
+	ListIDSubstring     []string   `yaml:"list_id_substring"`
+	Folders             []string   `yaml:"folders"`
+	Seen                *bool      `yaml:"seen"`
+	ListUnsubscribe     *bool      `yaml:"list_unsubscribe"`
+}
+
+func ParseRelativeDuration(value string) (time.Duration, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return 0, nil
+	}
+	if strings.HasSuffix(trimmed, "d") {
+		daysValue := strings.TrimSuffix(trimmed, "d")
+		days, err := strconv.ParseFloat(strings.TrimSpace(daysValue), 64)
+		if err != nil {
+			return 0, err
+		}
+		if days < 0 {
+			return 0, errors.New("duration must be positive")
+		}
+		return time.Duration(days * float64(24*time.Hour)), nil
+	}
+	dur, err := time.ParseDuration(trimmed)
+	if err != nil {
+		return 0, err
+	}
+	if dur < 0 {
+		return 0, errors.New("duration must be positive")
+	}
+	return dur, nil
+}
+
+func AgeWindowBounds(now time.Time, window *AgeWindow) (string, string, error) {
+	after := now.Format(time.RFC3339)
+	before := ""
+	if window == nil {
+		return after, before, nil
+	}
+	if strings.TrimSpace(window.Max) != "" {
+		dur, err := ParseRelativeDuration(window.Max)
+		if err != nil {
+			return "", "", fmt.Errorf("invalid age_window.max: %w", err)
+		}
+		after = now.Add(-dur).Format(time.RFC3339)
+	}
+	if strings.TrimSpace(window.Min) != "" {
+		dur, err := ParseRelativeDuration(window.Min)
+		if err != nil {
+			return "", "", fmt.Errorf("invalid age_window.min: %w", err)
+		}
+		before = now.Add(-dur).Format(time.RFC3339)
+	}
+	return after, before, nil
+}
+
+type ActionName string
+
+const (
+	DELETE  ActionName = "delete"
+	MOVE    ActionName = "move"
+	UNKNOWN ActionName = ""
+)
+
+// Action defines an operation to apply when a rule matches.
+type Action struct {
+	Type               ActionName `yaml:"type"`
+	Destination        string     `yaml:"destination"`
+	ExpungeAfterDelete *bool      `yaml:"expunge_after_delete"`
+}
+
+// Checkpoint configures checkpoint storage.
+type Checkpoint struct {
+	Path string `yaml:"path"`
+}
+
+// Load reads configuration from a YAML file.
+func Load(path string) (Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Config{}, err
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return Config{}, err
+	}
+
+	return cfg, nil
+}
+
+// ValidateEnv ensures required environment variables are set.
+func ValidateEnv() error {
+	missing := []string{}
+	for _, name := range requiredEnvVars() {
+		if strings.TrimSpace(os.Getenv(name)) == "" {
+			missing = append(missing, name)
+		}
+	}
+
+	if len(missing) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
+}
+
+// IMAPEnvFromEnv loads IMAP connection details and validates required entries.
+func IMAPEnvFromEnv() (IMAPEnv, error) {
+	missing := []string{}
+
+	host := strings.TrimSpace(os.Getenv(envIMAPHost))
+	if host == "" {
+		missing = append(missing, envIMAPHost)
+	}
+
+	portRaw := strings.TrimSpace(os.Getenv(envIMAPPort))
+	if portRaw == "" {
+		missing = append(missing, envIMAPPort)
+	}
+
+	user := strings.TrimSpace(os.Getenv(envIMAPUser))
+	if user == "" {
+		missing = append(missing, envIMAPUser)
+	}
+
+	pass := strings.TrimSpace(os.Getenv(envIMAPPass))
+	if pass == "" {
+		missing = append(missing, envIMAPPass)
+	}
+
+	if len(missing) > 0 {
+		return IMAPEnv{}, fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
+	}
+
+	port, err := strconv.Atoi(portRaw)
+	if err != nil {
+		return IMAPEnv{}, fmt.Errorf("invalid %s: %w", envIMAPPort, err)
+	}
+
+	return IMAPEnv{
+		Host: host,
+		Port: port,
+		User: user,
+		Pass: pass,
+	}, nil
+}
+
+// Summary returns a concise config summary for validation runs.
+func Summary(cfg Config) string {
+	reportingStatus := "disabled"
+	if ReportingEnabled() {
+		reportingStatus = "enabled"
+	}
+	return fmt.Sprintf(
+		"Config summary\n"+
+			"- rules: %d\n"+
+			"- reporting webhook: %s\n"+
+			"- checkpoint path: %s",
+		len(cfg.Rules),
+		reportingStatus,
+		defaultIfEmpty(cfg.Checkpoint.Path, "(not set)"),
+	)
+}
+
+// ReportingEnabled returns true when a webhook URL is configured via env var.
+func ReportingEnabled() bool {
+	return strings.TrimSpace(os.Getenv(envWebhookURL)) != ""
+}
+
+func requiredEnvVars() []string {
+	return []string{
+		envIMAPHost,
+		envIMAPPort,
+		envIMAPUser,
+		envIMAPPass,
+		envS3Endpoint,
+		envS3Region,
+		envS3Bucket,
+		envS3Key,
+		envS3Secret,
+	}
+}
+
+func defaultIfEmpty(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
+// Validate performs basic validation on non-secret appconfig.
+func Validate(cfg Config) error {
+	if len(cfg.Rules) == 0 {
+		return errors.New("config must define at least one rule")
+	}
+	for i, rule := range cfg.Rules {
+		if rule.Server == nil && rule.Client == nil {
+			return fmt.Errorf("rule %d must define server or client", i+1)
+		}
+		if rule.Server != nil && len(rule.Server.Folders) == 0 {
+			return fmt.Errorf("rule %d must define server.folders", i+1)
+		}
+	}
+	return nil
+}
+</file>
+
+<file path="cli/analyze_test.go">
+package cli
+
+import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/imap"
+)
+
+func TestBuildAnalyzeReportJSON(t *testing.T) {
+	now := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+	ageWindow := &appconfig.AgeWindow{
+		Min: "48h",
+	}
+	data := []imap.MailData{
+		{
+			SenderDomains:          []string{"example.com"},
+			ReplyToDomains:         []string{"reply.example.com"},
+			ReturnPathDomain:       "srs.messagingengine.com",
+			Recipients:             []string{"me@example.com"},
+			ListID:                 "list.example.com",
+			ListUnsubscribe:        true,
+			ListUnsubscribeTargets: "mailto:unsubscribe@example.com",
+			PrecedenceRaw:          "bulk",
+			PrecedenceCategory:     "bulk",
+			XMailer:                "Mailer",
+			UserAgent:              "Agent",
+			SubjectRaw:             "Hello 2024",
+			SubjectNormalized:      "hello {{n}}",
+			MessageDate:            time.Date(2024, 1, 10, 12, 0, 0, 0, time.UTC),
+		},
+	}
+
+	report, err := buildAnalyzeReport(data, analyzeReportParams{
+		Mailbox:   "INBOX",
+		Account:   "user@example.com",
+		Generated: now,
+		AgeWindow: ageWindow,
+		Options: analyzeOptions{
+			Top:      100,
+			Examples: 20,
+			MinCount: 1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build report: %v", err)
+	}
+
+	path, err := writeAnalyzeReport(report)
+	if err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Remove(path)
+	})
+
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read report: %v", err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("unmarshal report: %v", err)
+	}
+
+	if decoded["generated_at"] == "" {
+		t.Fatal("missing generated_at")
+	}
+
+	source, ok := decoded["source"].(map[string]any)
+	if !ok {
+		t.Fatal("source is not an object")
+	}
+	if source["mailbox"] != "INBOX" {
+		t.Fatalf("unexpected mailbox: %v", source["mailbox"])
+	}
+
+	timeWindow, ok := source["time_window"].(map[string]any)
+	if !ok {
+		t.Fatal("time_window is not an object")
+	}
+	if timeWindow["after"] == "" || timeWindow["before"] == "" {
+		t.Fatal("time_window missing after or before")
+	}
+
+	stats, ok := decoded["stats"].(map[string]any)
+	if !ok {
+		t.Fatal("stats is not an object")
+	}
+	if stats["total_messages_scanned"] == nil {
+		t.Fatal("missing total_messages_scanned")
+	}
+
+	indexes, ok := decoded["indexes"].(map[string]any)
+	if !ok {
+		t.Fatal("indexes is not an object")
+	}
+	// raw, ok := indexes["raw"].([]any)
+	// if !ok {
+	// 	t.Fatal("indexes.raw is not an array")
+	// }
+	// if len(raw) != 1 {
+	// 	t.Fatalf("expected 1 raw record, got %d", len(raw))
+	// }
+
+	listLens, ok := indexes["list_lens"].(map[string]any)
+	if !ok {
+		t.Fatal("indexes.list_lens is not an object")
+	}
+	if listLens["key_fields"] == nil {
+		t.Fatal("list_lens.key_fields is missing")
+	}
+	if listLens["clusters"] == nil {
+		t.Fatal("list_lens.clusters is missing")
+	}
+	clusters, ok := listLens["clusters"].([]any)
+	if !ok || len(clusters) == 0 {
+		t.Fatal("list_lens.clusters is empty or invalid")
+	}
+	cluster, ok := clusters[0].(map[string]any)
+	if !ok {
+		t.Fatal("list_lens cluster is not an object")
+	}
+	if cluster["latest_date"] != "2024-01-10T12:00:00Z" {
+		t.Fatalf("unexpected latest_date: %v", cluster["latest_date"])
+	}
+	if indexes["sender_unsub_lens"] == nil {
+		t.Fatal("indexes.sender_unsub_lens is missing")
+	}
+	if indexes["template_lens"] == nil {
+		t.Fatal("indexes.template_lens is missing")
+	}
+	if indexes["recipient_tag_lens"] == nil {
+		t.Fatal("indexes.recipient_tag_lens is missing")
+	}
+
+	// record, ok := raw[0].(map[string]any)
+	// if !ok {
+	// 	t.Fatal("raw record is not an object")
+	// }
+	// if record["SenderDomains"] != "example.com" {
+	// 	t.Fatalf("unexpected SenderDomains: %v", record["SenderDomains"])
+	// }
+	// if record["SubjectNormalized"] != "hello {{n}}" {
+	// 	t.Fatalf("unexpected SubjectNormalized: %v", record["SubjectNormalized"])
+	// }
+}
+
+func TestBuildTimeWindow(t *testing.T) {
+	now := time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)
+
+	window, err := buildTimeWindow(now, &appconfig.AgeWindow{Min: "0h"})
+	if err != nil {
+		t.Fatalf("build time window: %v", err)
+	}
+	if window.Before == "" {
+		t.Fatal("expected before timestamp")
+	}
+	if window.After == "" {
+		t.Fatal("expected after timestamp with age_window set")
+	}
+
+	window, err = buildTimeWindow(now, nil)
+	if err != nil {
+		t.Fatalf("build time window: %v", err)
+	}
+	if window.Before == "" {
+		t.Fatal("expected before timestamp")
+	}
+	if window.After == "" {
+		t.Fatal("expected default after when age_window is nil")
+	}
+}
+
+func TestBuildTimeWindowMax(t *testing.T) {
+	now := time.Date(2024, 2, 1, 12, 0, 0, 0, time.UTC)
+
+	window, err := buildTimeWindow(now, &appconfig.AgeWindow{Max: "24h"})
+	if err != nil {
+		t.Fatalf("build time window: %v", err)
+	}
+	if window.After == "" {
+		t.Fatal("expected default after when only max is set")
+	}
+	if window.Before != "2024-02-01T12:00:00Z" {
+		t.Fatalf("unexpected before value: %q", window.Before)
+	}
+}
+
+func TestBuildTimeWindowMin(t *testing.T) {
+	now := time.Date(2024, 2, 1, 12, 0, 0, 0, time.UTC)
+
+	window, err := buildTimeWindow(now, &appconfig.AgeWindow{Min: "6h"})
+	if err != nil {
+		t.Fatalf("build time window: %v", err)
+	}
+	if window.Before == "" {
+		t.Fatal("expected before timestamp")
+	}
+	if window.After != "2024-02-01T12:00:00Z" {
+		t.Fatalf("unexpected after value: %q", window.After)
+	}
+}
+
+func TestAnalyzeRejectsClientMatchers(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "appconfig.yaml")
+	if err := os.WriteFile(path, []byte(`
+rules:
+  - name: "Rule"
+    server:
+      folders:
+        - "INBOX"
+    client:
+      subject_regex:
+        - "hello"
+    actions: []
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	rootCmd.SetArgs([]string{"analyze", "--config", path})
+	var output bytes.Buffer
+	rootCmd.SetOut(&output)
+	rootCmd.SetErr(&output)
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected analyze to fail with client matchers")
+	}
+	if !strings.Contains(err.Error(), "client matchers") {
+		t.Fatalf("expected client matchers error, got: %v", err)
+	}
+}
+</file>
+
+<file path="cli/analyze.go">
+package cli
+
+import (
+	"context"
+	"crypto/sha1"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+	"sort"
+	"strings"
+	"time"
+
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/imap"
+	"github.com/aaronromeo/postmanpat/serverrunner"
+	"github.com/spf13/cobra"
+)
+
+var analyzeCmd = &cobra.Command{
+	Use:   "analyze",
+	Short: "Analyze IMAP folders and report unique sender domains",
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		cfgPath, err := resolveConfigPath(cmd)
+		if err != nil {
+			return err
+		}
+
+		if err := loadEnvFile(); err != nil {
+			return err
+		}
+
+		cfg, err := appconfig.Load(cfgPath)
+		if err != nil {
+			return err
+		}
+
+		if err := appconfig.Validate(cfg); err != nil {
+			return err
+		}
+
+		for _, rule := range cfg.Rules {
+			if rule.Client != nil {
+				return fmt.Errorf("rule %q defines client matchers, which are not supported by analyze", rule.Name)
+			}
+			if rule.Server == nil {
+				return fmt.Errorf("rule %q must define server matchers for analyze", rule.Name)
+			}
+		}
+
+		imapEnv, err := appconfig.IMAPEnvFromEnv()
+		if err != nil {
+			return err
+		}
+
+		ctx := cmd.Context()
+		if ctx == nil {
+			ctx = context.Background()
+		}
+
+		client := serverrunner.New(
+			imap.WithAddr(
+				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
+			),
+			imap.WithCreds(imapEnv.User, imapEnv.Pass),
+		)
+		if err := client.Connect(); err != nil {
+			return err
+		}
+		defer client.Close()
+
+		topN, err := cmd.Flags().GetInt("top")
+		if err != nil {
+			return err
+		}
+		examplesN, err := cmd.Flags().GetInt("examples")
+		if err != nil {
+			return err
+		}
+		minCount, err := cmd.Flags().GetInt("min-count")
+		if err != nil {
+			return err
+		}
+		options := analyzeOptions{
+			Top:      topN,
+			Examples: examplesN,
+			MinCount: minCount,
+		}
+
+		for _, rule := range cfg.Rules {
+			if rule.Client != nil {
+				return fmt.Errorf("rule %q defines client matchers, which are not supported by analyze", rule.Name)
+			}
+			if rule.Server == nil {
+				return fmt.Errorf("rule %q must define server matchers for analyze", rule.Name)
+			}
+			mailbox := rule.Server.Folders[0]
+
+			matched, err := client.SearchByServerMatchers(ctx, *rule.Server)
+			if err != nil {
+				_ = client.Close()
+				return err
+			}
+
+			dataByMailbox, err := client.FetchSenderDataByMailbox(ctx, matched)
+			if err != nil {
+				return err
+			}
+
+			data := dataByMailbox[mailbox]
+			report, err := buildAnalyzeReport(data, analyzeReportParams{
+				Mailbox:   mailbox,
+				Account:   imapEnv.User,
+				Generated: time.Now().UTC(),
+				AgeWindow: rule.Server.AgeWindow,
+				Options:   options,
+			})
+			if err != nil {
+				return err
+			}
+
+			path, err := writeAnalyzeReport(report)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), path)
+		}
+
+		return nil
+	},
+}
+
+func init() {
+	analyzeCmd.Flags().String("config", "", "Path to YAML config file (or set POSTMANPAT_CONFIG)")
+	analyzeCmd.Flags().Bool("verbose", false, "Enable verbose logging")
+	analyzeCmd.Flags().Int("top", 100, "Maximum clusters per lens")
+	analyzeCmd.Flags().Int("examples", 20, "Maximum examples per field")
+	analyzeCmd.Flags().Int("min-count", 2, "Minimum cluster count to include")
+}
+
+type analyzeReportParams struct {
+	Mailbox   string
+	Account   string
+	Generated time.Time
+	AgeWindow *appconfig.AgeWindow
+	Options   analyzeOptions
+}
+
+type analyzeOptions struct {
+	Top      int
+	Examples int
+	MinCount int
+}
+
+type analyzeTimeWindow struct {
+	After  string `json:"after"`
+	Before string `json:"before"`
+}
+
+type analyzeSource struct {
+	Mailbox    string            `json:"mailbox"`
+	Account    string            `json:"account"`
+	TimeWindow analyzeTimeWindow `json:"time_window"`
+}
+
+type analyzeStats struct {
+	TotalMessagesScanned int `json:"total_messages_scanned"`
+}
+
+// type analyzeRawRecord struct {
+// 	SenderDomains          []string `json:"SenderDomains"`
+// 	ReplyToDomains         []string `json:"ReplyToDomains"`
+// 	Recipients             []string `json:"Recipients"`
+// 	RecipientTags          []string `json:"RecipientTags"`
+// 	ListID                 string   `json:"ListID"`
+// 	ListUnsubscribe        bool     `json:"ListUnsubscribe"`
+// 	ListUnsubscribeTargets string   `json:"ListUnsubscribeTargets"`
+// 	PrecedenceRaw          string   `json:"PrecedenceRaw"`
+// 	PrecedenceCategory     string   `json:"PrecedenceCategory"`
+// 	XMailer                string   `json:"XMailer"`
+// 	UserAgent              string   `json:"UserAgent"`
+// 	SubjectRaw             string   `json:"SubjectRaw"`
+// 	SubjectNormalized      string   `json:"SubjectNormalized"`
+// }
+
+type analyzeIndexes struct {
+	// Raw              []analyzeRawRecord `json:"raw"`
+	ListLens         analyzeLens `json:"list_lens"`
+	SenderLens       analyzeLens `json:"sender_unsub_lens"`
+	TemplateLens     analyzeLens `json:"template_lens"`
+	RecipientTagLens analyzeLens `json:"recipient_tag_lens"`
+}
+
+type analyzeLens struct {
+	KeyFields []string         `json:"key_fields"`
+	Clusters  []analyzeCluster `json:"clusters"`
+}
+
+type analyzeCluster struct {
+	ClusterID  string                 `json:"cluster_id"`
+	Count      int                    `json:"count"`
+	LatestDate time.Time              `json:"latest_date"`
+	Keys       map[string]any         `json:"keys"`
+	Signals    analyzeClusterSignals  `json:"signals"`
+	Examples   analyzeClusterExamples `json:"examples"`
+}
+
+type analyzeClusterSignals struct {
+	HasListID            bool           `json:"has_list_id"`
+	HasListUnsubscribe   bool           `json:"has_list_unsubscribe"`
+	PrecedenceCategories map[string]int `json:"precedence_categories"`
+}
+
+type analyzeClusterExamples struct {
+	SubjectRaw             []string `json:"subject_raw"`
+	Recipients             []string `json:"recipients"`
+	ReplyToDomains         []string `json:"reply_to_domains"`
+	SenderDomains          []string `json:"sender_domains"`
+	ReturnPathDomains      []string `json:"returnpath_domains"`
+	ListUnsubscribeTargets []string `json:"list_unsubscribe_targets"`
+}
+
+type analyzeReport struct {
+	GeneratedAt string         `json:"generated_at"`
+	Source      analyzeSource  `json:"source"`
+	Stats       analyzeStats   `json:"stats"`
+	Indexes     analyzeIndexes `json:"indexes"`
+}
+
+type timeWindow struct {
+	After  string
+	Before string
+}
+
+type clusterAccumulator struct {
+	count          int
+	keys           map[string]any
+	hasListID      bool
+	hasUnsubscribe bool
+	precedence     map[string]int
+	latestDate     time.Time
+	examples       analyzeClusterExamples
+	exampleSets    map[string]map[string]struct{}
+}
+
+const (
+	ExampleKeySubjectRaw             = "subject_raw"
+	ExampleKeyRecipients             = "recipients"
+	ExampleKeyReplyToDomains         = "reply_to_domains"
+	ExampleKeySenderDomains          = "sender_domains"
+	ExampleKeyReturnPathDomains      = "returnpath_domains"
+	ExampleKeyListUnsubscribeTargets = "list_unsubscribe_targets"
+)
+
+func buildTimeWindow(now time.Time, window *appconfig.AgeWindow) (timeWindow, error) {
+	after, before, err := appconfig.AgeWindowBounds(now, window)
+	if err != nil {
+		return timeWindow{}, err
+	}
+	if before == "" {
+		before = now.Format(time.RFC3339)
+	}
+	return timeWindow{After: after, Before: before}, nil
+}
+
+func buildAnalyzeReport(data []imap.MailData, params analyzeReportParams) (analyzeReport, error) {
+	window, err := buildTimeWindow(params.Generated, params.AgeWindow)
+	if err != nil {
+		return analyzeReport{}, err
+	}
+	// raw := make([]analyzeRawRecord, 0, len(data))
+	// for _, item := range data {
+	// 	raw = append(raw, analyzeRawRecord{
+	// 		SenderDomains:          item.SenderDomains,
+	// 		ReplyToDomains:         item.ReplyToDomains,
+	// 		Recipients:             item.Recipients,
+	// 		RecipientTags:          item.RecipientTags,
+	// 		ListID:                 item.ListID,
+	// 		ListUnsubscribe:        item.ListUnsubscribe,
+	// 		ListUnsubscribeTargets: item.ListUnsubscribeTargets,
+	// 		PrecedenceRaw:          item.PrecedenceRaw,
+	// 		PrecedenceCategory:     item.PrecedenceCategory,
+	// 		XMailer:                item.XMailer,
+	// 		UserAgent:              item.UserAgent,
+	// 		SubjectRaw:             item.SubjectRaw,
+	// 		SubjectNormalized:      item.SubjectNormalized,
+	// 	})
+	// }
+
+	options := params.Options
+	listLens := buildListLens(data, options)
+	senderLens := buildSenderUnsubLens(data, options)
+	templateLens := buildTemplateLens(data, options)
+	recipientTagLens := buildRecipientTagLens(data, options)
+
+	return analyzeReport{
+		GeneratedAt: params.Generated.Format(time.RFC3339),
+		Source: analyzeSource{
+			Mailbox: params.Mailbox,
+			Account: params.Account,
+			TimeWindow: analyzeTimeWindow{
+				After:  window.After,
+				Before: window.Before,
+			},
+		},
+		Stats: analyzeStats{
+			TotalMessagesScanned: len(data),
+		},
+		Indexes: analyzeIndexes{
+			// Raw:              raw,
+			ListLens:         listLens,
+			SenderLens:       senderLens,
+			TemplateLens:     templateLens,
+			RecipientTagLens: recipientTagLens,
+		},
+	}, nil
+}
+
+func writeAnalyzeReport(report analyzeReport) (string, error) {
+	tmpFile, err := os.CreateTemp("", "postmanpat-analyze-*.json")
+	if err != nil {
+		return "", err
+	}
+	path := tmpFile.Name()
+	encoder := json.NewEncoder(tmpFile)
+	encoder.SetIndent("", "  ")
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(report); err != nil {
+		_ = tmpFile.Close()
+		return "", err
+	}
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		return "", err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func buildListLens(data []imap.MailData, options analyzeOptions) analyzeLens {
+	clusters := make(map[string]*clusterAccumulator)
+	for _, item := range data {
+		listID := normalizeListID(item.ListID)
+		if listID == "" {
+			continue
+		}
+		keyString := fmt.Sprintf("ListID=%s", listID)
+		clusterID := makeClusterID("list_lens", keyString)
+		acc := ensureClusterAccumulator(clusters, clusterID, map[string]any{
+			"ListID": listID,
+		})
+		accumulateCluster(acc, item, true, options.Examples)
+	}
+
+	return analyzeLens{
+		KeyFields: []string{"ListID"},
+		Clusters:  finalizeClusters(clusters, options),
+	}
+}
+
+func buildSenderUnsubLens(data []imap.MailData, options analyzeOptions) analyzeLens {
+	clusters := make(map[string]*clusterAccumulator)
+	for _, item := range data {
+		senderDomains := normalizeDomains(item.SenderDomains)
+		if len(senderDomains) == 1 && strings.TrimSpace(senderDomains[0]) == "" {
+			continue
+		}
+		hasUnsub := item.ListUnsubscribe
+		keyString := fmt.Sprintf("SenderDomains=%s|HasListUnsubscribe=%s", strings.Join(senderDomains, ","), boolString(hasUnsub))
+		clusterID := makeClusterID("sender_unsub_lens", keyString)
+		acc := ensureClusterAccumulator(clusters, clusterID, map[string]any{
+			"SenderDomains":      senderDomains,
+			"HasListUnsubscribe": hasUnsub,
+			"FromList":           item.From,
+		})
+		accumulateCluster(acc, item, item.ListID != "", options.Examples)
+	}
+
+	return analyzeLens{
+		KeyFields: []string{"SenderDomains", "HasListUnsubscribe"},
+		Clusters:  finalizeClusters(clusters, options),
+	}
+}
+
+func buildTemplateLens(data []imap.MailData, options analyzeOptions) analyzeLens {
+	clusters := make(map[string]*clusterAccumulator)
+	for _, item := range data {
+		senderDomains := normalizeDomains(item.SenderDomains)
+		subject := strings.TrimSpace(item.SubjectNormalized)
+		keyString := fmt.Sprintf("SenderDomains=%s|SubjectNormalized=%s", strings.Join(senderDomains, ","), subject)
+		clusterID := makeClusterID("template_lens", keyString)
+		acc := ensureClusterAccumulator(clusters, clusterID, map[string]any{
+			"SenderDomains":     senderDomains,
+			"SubjectNormalized": subject,
+		})
+		accumulateCluster(acc, item, item.ListID != "", options.Examples)
+	}
+
+	return analyzeLens{
+		KeyFields: []string{"SenderDomains", "SubjectNormalized"},
+		Clusters:  finalizeClusters(clusters, options),
+	}
+}
+
+func buildRecipientTagLens(data []imap.MailData, options analyzeOptions) analyzeLens {
+	clusters := make(map[string]*clusterAccumulator)
+	for _, item := range data {
+		tags := normalizeRecipientTags(item.RecipientTags)
+		if len(tags) == 0 {
+			continue
+		}
+		joined := strings.Join(tags, ",")
+		keyString := fmt.Sprintf("recipient_tag=%s", joined)
+		clusterID := makeClusterID("recipient_tag_lens", keyString)
+		acc := ensureClusterAccumulator(clusters, clusterID, map[string]any{
+			"recipient_tag": joined,
+		})
+		accumulateCluster(acc, item, item.ListID != "", options.Examples)
+	}
+
+	return analyzeLens{
+		KeyFields: []string{"recipient_tag"},
+		Clusters:  finalizeClusters(clusters, options),
+	}
+}
+
+func normalizeListID(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func normalizeDomains(domains []string) []string {
+	seen := make(map[string]struct{})
+	for _, part := range domains {
+		normalized := strings.ToLower(strings.TrimSpace(part))
+		if normalized == "" {
+			continue
+		}
+		seen[normalized] = struct{}{}
+	}
+	if len(seen) == 0 {
+		return []string{""}
+	}
+	normalized := make([]string, 0, len(seen))
+	for value := range seen {
+		normalized = append(normalized, value)
+	}
+	sort.Strings(normalized)
+	return normalized
+}
+
+func normalizeRecipientTags(tags []string) []string {
+	seen := make(map[string]struct{})
+	for _, tag := range tags {
+		normalized := strings.ToLower(strings.TrimSpace(tag))
+		if normalized == "" {
+			continue
+		}
+		seen[normalized] = struct{}{}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	normalized := make([]string, 0, len(seen))
+	for value := range seen {
+		normalized = append(normalized, value)
+	}
+	sort.Strings(normalized)
+	return normalized
+}
+
+func makeClusterID(lens, keyString string) string {
+	hash := sha1.Sum([]byte(keyString))
+	return fmt.Sprintf("%s:%s", lens, hex.EncodeToString(hash[:]))
+}
+
+func ensureClusterAccumulator(clusters map[string]*clusterAccumulator, clusterID string, keys map[string]any) *clusterAccumulator {
+	acc, ok := clusters[clusterID]
+	if ok {
+		return acc
+	}
+	acc = &clusterAccumulator{
+		count:          0,
+		keys:           keys,
+		hasListID:      true,
+		hasUnsubscribe: true,
+		precedence:     make(map[string]int),
+		examples: analyzeClusterExamples{
+			SubjectRaw:             []string{},
+			Recipients:             []string{},
+			ReplyToDomains:         []string{},
+			ListUnsubscribeTargets: []string{},
+		},
+		exampleSets: map[string]map[string]struct{}{
+			ExampleKeySubjectRaw:             {},
+			ExampleKeyRecipients:             {},
+			ExampleKeyReplyToDomains:         {},
+			ExampleKeySenderDomains:          {},
+			ExampleKeyReturnPathDomains:      {},
+			ExampleKeyListUnsubscribeTargets: {},
+		},
+	}
+	clusters[clusterID] = acc
+	return acc
+}
+
+func accumulateCluster(acc *clusterAccumulator, item imap.MailData, hasListID bool, maxExamples int) {
+	acc.count++
+	if !hasListID {
+		acc.hasListID = false
+	}
+	if !item.ListUnsubscribe {
+		acc.hasUnsubscribe = false
+	}
+	if !item.MessageDate.IsZero() && (acc.latestDate.IsZero() || item.MessageDate.After(acc.latestDate)) {
+		acc.latestDate = item.MessageDate
+	}
+
+	precedence := normalizePrecedenceCategory(item.PrecedenceCategory)
+	acc.precedence[precedence]++
+
+	addExample(acc, ExampleKeySubjectRaw, strings.TrimSpace(item.SubjectRaw), maxExamples)
+	for _, recipient := range item.Recipients {
+		addExample(acc, ExampleKeyRecipients, recipient, maxExamples)
+	}
+	for _, replyTo := range item.ReplyToDomains {
+		addExample(acc, ExampleKeyReplyToDomains, replyTo, maxExamples)
+	}
+	for _, senderDomain := range item.SenderDomains {
+		addExample(acc, ExampleKeySenderDomains, senderDomain, maxExamples)
+	}
+	if strings.TrimSpace(item.ReturnPathDomain) != "" {
+		addExample(acc, ExampleKeyReturnPathDomains, item.ReturnPathDomain, maxExamples)
+	}
+	for _, target := range splitAndTrim(item.ListUnsubscribeTargets) {
+		addExample(acc, ExampleKeyListUnsubscribeTargets, target, maxExamples)
+	}
+}
+
+func normalizePrecedenceCategory(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	switch normalized {
+	case "bulk", "list", "junk", "first-class":
+		return normalized
+	default:
+		return "unknown"
+	}
+}
+
+func boolString(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
+}
+
+func splitAndTrim(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	return out
+}
+
+func addExample(acc *clusterAccumulator, key, value string, maxExamples int) {
+	if value == "" || maxExamples <= 0 {
+		return
+	}
+	seen := acc.exampleSets[key]
+	if _, ok := seen[value]; ok {
+		return
+	}
+	if len(seen) >= maxExamples {
+		return
+	}
+	seen[value] = struct{}{}
+	switch key {
+	case ExampleKeySubjectRaw:
+		acc.examples.SubjectRaw = append(acc.examples.SubjectRaw, value)
+	case ExampleKeyRecipients:
+		acc.examples.Recipients = append(acc.examples.Recipients, value)
+	case ExampleKeySenderDomains:
+		acc.examples.SenderDomains = append(acc.examples.SenderDomains, value)
+	case ExampleKeyReplyToDomains:
+		acc.examples.ReplyToDomains = append(acc.examples.ReplyToDomains, value)
+	case ExampleKeyListUnsubscribeTargets:
+		acc.examples.ListUnsubscribeTargets = append(acc.examples.ListUnsubscribeTargets, value)
+	}
+}
+
+func finalizeClusters(clusters map[string]*clusterAccumulator, options analyzeOptions) []analyzeCluster {
+	minCount := options.MinCount
+	if minCount <= 0 {
+		minCount = 1
+	}
+	all := make([]analyzeCluster, 0, len(clusters))
+	for clusterID, acc := range clusters {
+		if acc.count < minCount {
+			continue
+		}
+		all = append(all, analyzeCluster{
+			ClusterID:  clusterID,
+			Count:      acc.count,
+			LatestDate: acc.latestDate,
+			Keys:       acc.keys,
+			Signals: analyzeClusterSignals{
+				HasListID:            acc.hasListID,
+				HasListUnsubscribe:   acc.hasUnsubscribe,
+				PrecedenceCategories: acc.precedence,
+			},
+			Examples: acc.examples,
+		})
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].Count != all[j].Count {
+			return all[i].Count > all[j].Count
+		}
+		return all[i].ClusterID < all[j].ClusterID
+	})
+	if options.Top > 0 && len(all) > options.Top {
+		return all[:options.Top]
+	}
+	return all
+}
+</file>
+
+<file path="cli/cleanup_test.go">
+package cli
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestCleanupRejectsClientMatchers(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "appconfig.yaml")
+	if err := os.WriteFile(path, []byte(`
+rules:
+  - name: "Rule"
+    server:
+      folders:
+        - "INBOX"
+    client:
+      subject_regex:
+        - "hello"
+    actions: []
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	rootCmd.SetArgs([]string{"cleanup", "--config", path})
+	var output bytes.Buffer
+	rootCmd.SetOut(&output)
+	rootCmd.SetErr(&output)
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected cleanup to fail with client matchers")
+	}
+	if !strings.Contains(err.Error(), "client matchers") {
+		t.Fatalf("expected client matchers error, got: %v", err)
+	}
+}
+</file>
+
+<file path="cli/cleanup.go">
+package cli
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"os"
+	"strings"
+
+	"github.com/aaronromeo/postmanpat/announcer"
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/imap"
+	"github.com/aaronromeo/postmanpat/serverrunner"
+	"github.com/joho/godotenv"
+	"github.com/spf13/cobra"
+)
+
+var cleanupCmd = &cobra.Command{
+	Use:   "cleanup",
+	Short: "Process IMAP folders based on configured rules",
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		cfgPath, err := resolveConfigPath(cmd)
+		if err != nil {
+			return err
+		}
+
+		if err := loadEnvFile(); err != nil {
+			return err
+		}
+
+		cfg, err := appconfig.Load(cfgPath)
+		if err != nil {
+			return err
+		}
+
+		if err := appconfig.Validate(cfg); err != nil {
+			return err
+		}
+
+		for _, rule := range cfg.Rules {
+			if rule.Client != nil {
+				return fmt.Errorf("rule %q defines client matchers, which are not supported by cleanup", rule.Name)
+			}
+			if rule.Server == nil {
+				return fmt.Errorf("rule %q must define server matchers for cleanup", rule.Name)
+			}
+		}
+
+		if err := appconfig.ValidateEnv(); err != nil {
+			return err
+		}
+
+		cfgSummary := appconfig.Summary(cfg)
+		out := cmd.OutOrStdout()
+		logger := slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		logger.Info("config summary", "summary", cfgSummary)
+
+		imapEnv, err := appconfig.IMAPEnvFromEnv()
+		if err != nil {
+			return err
+		}
+
+		ctx := cmd.Context()
+		if ctx == nil {
+			ctx = context.Background()
+		}
+
+		dryRun, err := cmd.Flags().GetBool("dry-run")
+		if err != nil {
+			return err
+		}
+
+		var client serverrunner.ServerRunner = serverrunner.New(
+			imap.WithAddr(
+				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
+			),
+			imap.WithCreds(imapEnv.User, imapEnv.Pass),
+		)
+
+		var announcerService announcer.Service = announcer.New(
+			announcer.WithWebhookURL(os.Getenv("POSTMANPAT_WEBHOOK_URL")),
+		)
+
+		if err := client.Connect(); err != nil {
+			return err
+		}
+		defer client.Close()
+
+		for _, rule := range cfg.Rules {
+			mailbox := rule.Server.Folders[0]
+			matched, err := client.SearchByServerMatchers(ctx, *rule.Server)
+			if err != nil {
+				return err
+			}
+			uids := matched[mailbox]
+
+			logger.Info("rule matched", "rule", rule.Name, "mailbox", mailbox, "messages", len(uids))
+			if len(uids) > 0 {
+				if err := announcerService.Do("Cleanup", rule.Name, mailbox, len(uids)); err != nil {
+					logger.Error("reporting failed", "rule", rule.Name, "mailbox", mailbox, "error", err)
+				}
+			}
+
+			for _, action := range rule.Actions {
+				switch action.Type {
+				case appconfig.DELETE:
+					if dryRun {
+						logger.Info("dry run delete", "rule", rule.Name, "messages", len(uids))
+						continue
+					}
+					expungeAfterDelete := true
+					if action.ExpungeAfterDelete != nil {
+						expungeAfterDelete = *action.ExpungeAfterDelete
+					}
+					if err := client.DeleteByMailbox(ctx, matched, expungeAfterDelete); err != nil {
+						return err
+					}
+				case appconfig.MOVE:
+					if strings.TrimSpace(action.Destination) == "" {
+						return fmt.Errorf("Action move missing destination: %s", rule.Name)
+					}
+					if dryRun {
+						logger.Info("dry run move", "rule", rule.Name, "messages", len(uids))
+						continue
+					}
+					if err := client.MoveByMailbox(ctx, matched, strings.TrimSpace(action.Destination)); err != nil {
+						return err
+					}
+				default:
+					return fmt.Errorf("unsupported action type %q for rule %q", action.Type, rule.Name)
+				}
+			}
+		}
+		return nil
+	},
+}
+
+func init() {
+	cleanupCmd.Flags().String("config", "", "Path to YAML config file (or set POSTMANPAT_CONFIG)")
+	cleanupCmd.Flags().Bool("dry-run", false, "Validate and report actions without making changes")
+}
+
+func resolveConfigPath(cmd *cobra.Command) (string, error) {
+	cfgPath, err := cmd.Flags().GetString("config")
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(cfgPath) == "" {
+		cfgPath = os.Getenv(configEnvVar)
+	}
+	if strings.TrimSpace(cfgPath) == "" {
+		return "", errors.New("config path is required via --config or POSTMANPAT_CONFIG")
+	}
+	return cfgPath, nil
+}
+
+func loadEnvFile() error {
+	if _, err := os.Stat(defaultEnvFile); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	return godotenv.Load(defaultEnvFile)
+}
+</file>
+
+<file path="cli/watch_test.go">
+package cli
+
+import (
+	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"math/big"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/emersion/go-imap/v2"
+	giimapserver "github.com/emersion/go-imap/v2/imapserver"
+	giimapmemserver "github.com/emersion/go-imap/v2/imapserver/imapmemserver"
+)
+
+func TestWatchRejectsServerMatchers(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "appconfig.yaml")
+	if err := os.WriteFile(path, []byte(`
+rules:
+  - name: "Rule"
+    server:
+      folders:
+        - "INBOX"
+    actions: []
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	rootCmd.SetArgs([]string{"watch", "--config", path})
+	var output bytes.Buffer
+	rootCmd.SetOut(&output)
+	rootCmd.SetErr(&output)
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected watch to fail with server matchers")
+	}
+	if !strings.Contains(err.Error(), "server matchers") {
+		t.Fatalf("expected server matchers error, got: %v", err)
+	}
+}
+
+func TestWatchAcceptsClientMatchers(t *testing.T) {
+	cfg := appconfig.Config{
+		Rules: []appconfig.Rule{
+			{
+				Name: "Rule",
+				Client: &appconfig.ClientMatchers{
+					SubjectRegex: []string{"hello"},
+				},
+			},
+		},
+	}
+
+	if err := validateWatchRules(cfg); err != nil {
+		t.Fatalf("expected client matchers to be accepted, got: %v", err)
+	}
+}
+
+func TestWatchTestHappyPath(t *testing.T) {
+	addr, cleanup := setupWatchTestServer(t, defaultMailbox, sampleWatchTestMessage(
+		"News <news@example.com>",
+		"User <user@example.com>",
+		"ROM list",
+		"f7443300a7bb349db1e85fa6emc list <f7443300a7bb349db1e85fa6e.1520313.list-id.mcsv.net>",
+	))
+	t.Cleanup(cleanup)
+
+	host, port, err := splitHostPort(addr)
+	if err != nil {
+		t.Fatalf("split addr: %v", err)
+	}
+	t.Setenv("POSTMANPAT_IMAP_HOST", host)
+	t.Setenv("POSTMANPAT_IMAP_PORT", port)
+	t.Setenv("POSTMANPAT_IMAP_USER", "user@example.com")
+	t.Setenv("POSTMANPAT_IMAP_PASS", "password")
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "appconfig.yaml")
+	if err := os.WriteFile(path, []byte(`
+rules:
+  - name: "ROM"
+    client:
+      list_id_regex:
+        - '<f7443300a7bb349db1e85fa6e\.1520313\.list-id\.mcsv\.net>'
+    actions: []
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	rootCmd.SetArgs([]string{"watch", "--test", "ROM", "--config", path, "--limit", "10"})
+	var output bytes.Buffer
+	rootCmd.SetOut(&output)
+	rootCmd.SetErr(&output)
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("watch test failed: %v", err)
+	}
+
+	out := output.String()
+	if !strings.Contains(out, "test match") {
+		t.Fatalf("expected test match output, got: %s", out)
+	}
+	if !strings.Contains(out, "watch test complete") || !strings.Contains(out, "matches=1") {
+		t.Fatalf("expected watch test completion with matches=1, got: %s", out)
+	}
+}
+
+func TestWatchTestNoMatches(t *testing.T) {
+	addr, cleanup := setupWatchTestServer(t, defaultMailbox, sampleWatchTestMessage(
+		"News <news@example.com>",
+		"User <user@example.com>",
+		"ROM list",
+		"f7443300a7bb349db1e85fa6emc list <f7443300a7bb349db1e85fa6e.1520313.list-id.mcsv.net>",
+	))
+	t.Cleanup(cleanup)
+
+	host, port, err := splitHostPort(addr)
+	if err != nil {
+		t.Fatalf("split addr: %v", err)
+	}
+	t.Setenv("POSTMANPAT_IMAP_HOST", host)
+	t.Setenv("POSTMANPAT_IMAP_PORT", port)
+	t.Setenv("POSTMANPAT_IMAP_USER", "user@example.com")
+	t.Setenv("POSTMANPAT_IMAP_PASS", "password")
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "appconfig.yaml")
+	if err := os.WriteFile(path, []byte(`
+rules:
+  - name: "ROM"
+    client:
+      list_id_regex:
+        - "<not-a-match>"
+    actions: []
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	rootCmd.SetArgs([]string{"watch", "--test", "ROM", "--config", path, "--limit", "10"})
+	var output bytes.Buffer
+	rootCmd.SetOut(&output)
+	rootCmd.SetErr(&output)
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("watch test failed: %v", err)
+	}
+
+	out := output.String()
+	if !strings.Contains(out, "watch test complete") || !strings.Contains(out, "matches=0") {
+		t.Fatalf("expected watch test completion with matches=0, got: %s", out)
+	}
+}
+
+func TestWatchTestMailboxOverride(t *testing.T) {
+	addr, cleanup := setupWatchTestServer(t, "Archive", sampleWatchTestMessage(
+		"News <news@example.com>",
+		"User <user@example.com>",
+		"ROM list",
+		"f7443300a7bb349db1e85fa6emc list <f7443300a7bb349db1e85fa6e.1520313.list-id.mcsv.net>",
+	))
+	t.Cleanup(cleanup)
+
+	host, port, err := splitHostPort(addr)
+	if err != nil {
+		t.Fatalf("split addr: %v", err)
+	}
+	t.Setenv("POSTMANPAT_IMAP_HOST", host)
+	t.Setenv("POSTMANPAT_IMAP_PORT", port)
+	t.Setenv("POSTMANPAT_IMAP_USER", "user@example.com")
+	t.Setenv("POSTMANPAT_IMAP_PASS", "password")
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "appconfig.yaml")
+	if err := os.WriteFile(path, []byte(`
+rules:
+  - name: "ROM"
+    client:
+      list_id_regex:
+        - '<f7443300a7bb349db1e85fa6e\.1520313\.list-id\.mcsv\.net>'
+    actions: []
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	rootCmd.SetArgs([]string{"watch", "--test", "ROM", "--config", path, "--limit", "10", "--mailbox", "Archive"})
+	var output bytes.Buffer
+	rootCmd.SetOut(&output)
+	rootCmd.SetErr(&output)
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("watch test failed: %v", err)
+	}
+
+	out := output.String()
+	if !strings.Contains(out, "test match") {
+		t.Fatalf("expected test match output, got: %s", out)
+	}
+	if !strings.Contains(out, "watch test complete") || !strings.Contains(out, "matches=1") {
+		t.Fatalf("expected watch test completion with matches=1, got: %s", out)
+	}
+}
+
+func setupWatchTestServer(t *testing.T, mailbox string, raw string) (string, func()) {
+	t.Helper()
+
+	tlsConfig, rootCAs := testWatchTLSConfig(t)
+	mem := giimapmemserver.New()
+	user := giimapmemserver.NewUser("user@example.com", "password")
+	mem.AddUser(user)
+
+	if err := user.Create(mailbox, nil); err != nil {
+		t.Fatalf("create mailbox: %v", err)
+	}
+
+	if _, err := user.Append(mailbox, newWatchLiteral(t, raw), &imap.AppendOptions{Time: time.Now()}); err != nil {
+		t.Fatalf("append message: %v", err)
+	}
+
+	server := giimapserver.New(&giimapserver.Options{
+		NewSession: func(*giimapserver.Conn) (giimapserver.Session, *giimapserver.GreetingData, error) {
+			return mem.NewSession(), nil, nil
+		},
+		TLSConfig:    tlsConfig,
+		InsecureAuth: true,
+	})
+
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", tlsConfig)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.Serve(ln)
+	}()
+
+	watchTLSConfigProvider = func() *tls.Config {
+		return &tls.Config{
+			RootCAs:    rootCAs,
+			ServerName: "localhost",
+		}
+	}
+
+	cleanup := func() {
+		_ = server.Close()
+		_ = ln.Close()
+		watchTLSConfigProvider = nil
+		select {
+		case <-errCh:
+		default:
+		}
+	}
+
+	return ln.Addr().String(), cleanup
+}
+
+type watchLiteralReader struct {
+	*bytes.Reader
+	size int64
+}
+
+func newWatchLiteral(t *testing.T, raw string) imap.LiteralReader {
+	t.Helper()
+	buf := []byte(raw)
+	return &watchLiteralReader{
+		Reader: bytes.NewReader(buf),
+		size:   int64(len(buf)),
+	}
+}
+
+func (lr *watchLiteralReader) Size() int64 {
+	return lr.size
+}
+
+func sampleWatchTestMessage(from, to, subject, listID string) string {
+	builder := &strings.Builder{}
+	builder.WriteString("From: ")
+	builder.WriteString(from)
+	builder.WriteString("\r\n")
+	builder.WriteString("To: ")
+	builder.WriteString(to)
+	builder.WriteString("\r\n")
+	if strings.TrimSpace(listID) != "" {
+		builder.WriteString("List-ID: ")
+		builder.WriteString(listID)
+		builder.WriteString("\r\n")
+	}
+	builder.WriteString("Subject: ")
+	builder.WriteString(subject)
+	builder.WriteString("\r\n")
+	builder.WriteString("\r\n")
+	builder.WriteString("Body")
+	builder.WriteString("\r\n")
+	return builder.String()
+}
+
+func testWatchTLSConfig(t *testing.T) (*tls.Config, *x509.CertPool) {
+	t.Helper()
+	caKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+
+	caSerial, err := rand.Int(rand.Reader, big.NewInt(1<<62))
+	if err != nil {
+		t.Fatalf("generate serial: %v", err)
+	}
+
+	caTemplate := x509.Certificate{
+		SerialNumber: caSerial,
+		Subject: pkix.Name{
+			CommonName: "postmanpat-test-ca",
+		},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+
+	caDER, err := x509.CreateCertificate(rand.Reader, &caTemplate, &caTemplate, &caKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("create CA cert: %v", err)
+	}
+
+	caCert, err := x509.ParseCertificate(caDER)
+	if err != nil {
+		t.Fatalf("parse CA cert: %v", err)
+	}
+
+	serverKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate server key: %v", err)
+	}
+
+	serverSerial, err := rand.Int(rand.Reader, big.NewInt(1<<62))
+	if err != nil {
+		t.Fatalf("generate server serial: %v", err)
+	}
+
+	serverTemplate := x509.Certificate{
+		SerialNumber: serverSerial,
+		Subject: pkix.Name{
+			CommonName: "localhost",
+		},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		DNSNames:              []string{"localhost"},
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+
+	serverDER, err := x509.CreateCertificate(rand.Reader, &serverTemplate, caCert, &serverKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("create server cert: %v", err)
+	}
+
+	cert := tls.Certificate{
+		Certificate: [][]byte{serverDER, caDER},
+		PrivateKey:  serverKey,
+	}
+
+	rootPool := x509.NewCertPool()
+	rootPool.AddCert(caCert)
+
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	}, rootPool
+}
+
+func splitHostPort(addr string) (string, string, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", "", err
+	}
+	return host, port, nil
+}
+</file>
+
+<file path="cli/watch.go">
+package cli
+
+import (
+	"context"
+	"crypto/tls"
+	"errors"
+	"fmt"
+	"log/slog"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/aaronromeo/postmanpat/announcer"
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/imap"
+	"github.com/aaronromeo/postmanpat/watchrunner"
+	giimapclient "github.com/emersion/go-imap/v2/imapclient"
+	"github.com/spf13/cobra"
+)
+
+const defaultMailbox = "INBOX"
+
+var watchTLSConfigProvider func() *tls.Config
+
+var watchCmd = &cobra.Command{
+	Use:   "watch",
+	Short: "Watch the inbox for new mail (IDLE)",
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		cfgPath, err := resolveConfigPath(cmd)
+		if err != nil {
+			return err
+		}
+
+		if err := loadEnvFile(); err != nil {
+			return err
+		}
+
+		cfg, err := appconfig.Load(cfgPath)
+		if err != nil {
+			return err
+		}
+
+		if err := appconfig.Validate(cfg); err != nil {
+			return err
+		}
+		if err := validateWatchRules(cfg); err != nil {
+			return err
+		}
+
+		testRuleName, err := cmd.Flags().GetString("test")
+		if err != nil {
+			return err
+		}
+		limit, err := cmd.Flags().GetInt("limit")
+		if err != nil {
+			return err
+		}
+		testMailbox, err := cmd.Flags().GetString("mailbox")
+		if err != nil {
+			return err
+		}
+
+		verbose, err := cmd.Flags().GetBool("verbose")
+		if err != nil {
+			return err
+		}
+		logLevel := slog.LevelInfo
+		if verbose {
+			logLevel = slog.LevelDebug
+		}
+
+		reloadTicker := time.NewTicker(5 * time.Minute)
+		defer reloadTicker.Stop()
+
+		imapEnv, err := appconfig.IMAPEnvFromEnv()
+		if err != nil {
+			return err
+		}
+
+		ctx := cmd.Context()
+		if ctx == nil {
+			ctx = context.Background()
+		}
+
+		updateCh := make(chan uint32, 1)
+		handler := &giimapclient.UnilateralDataHandler{
+			Mailbox: func(data *giimapclient.UnilateralDataMailbox) {
+				if data.NumMessages == nil {
+					return
+				}
+				select {
+				case updateCh <- *data.NumMessages:
+				default:
+				}
+			},
+		}
+
+		var tlsConfig *tls.Config
+		if watchTLSConfigProvider != nil {
+			tlsConfig = watchTLSConfigProvider()
+		}
+
+		client := watchrunner.New(
+			imap.WithAddr(
+				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
+			),
+			imap.WithCreds(imapEnv.User, imapEnv.Pass),
+			imap.WithTLSConfig(tlsConfig),
+			imap.WithUnilateralDataHandler(handler),
+		)
+		if err := client.Connect(); err != nil {
+			return err
+		}
+		defer client.Close()
+
+		out := cmd.OutOrStdout()
+		logger := slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: logLevel}))
+
+		if strings.TrimSpace(testRuleName) != "" {
+			if err := runWatchTest(cmd.Context(), client, cfg, logger, testRuleName, testMailbox, limit); err != nil {
+				return err
+			}
+			return nil
+		}
+
+		selection, err := client.SelectMailbox(ctx, defaultMailbox)
+		if err != nil {
+			return err
+		}
+
+		state := &watchrunner.State{LastCount: selection.NumMessages}
+		if selection.UIDNext > 0 {
+			state.LastUID = uint32(selection.UIDNext - 1)
+		}
+		logger.Info("watching mailbox", "mailbox", "INBOX", "messages", state.LastCount, "last_uid", state.LastUID)
+
+		var announcerService announcer.Service = announcer.New(
+			announcer.WithWebhookURL(os.Getenv("POSTMANPAT_WEBHOOK_URL")),
+		)
+
+		deps := watchrunner.Deps{
+			Ctx:   ctx,
+			Rules: cfg.Rules,
+			Log:   logger,
+			Announce: func(ruleName string) {
+				if err := announcerService.Do("Watch", ruleName, defaultMailbox, 1); err != nil {
+					logger.Error("reporting failed", "rule", ruleName, "error", err)
+				}
+			},
+		}
+
+		for {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			idleCmd, err := client.Idle()
+			if err != nil {
+				if watchrunner.IsBenignIdleError(err) {
+					if err := client.Reconnect(deps, state, defaultMailbox); err != nil {
+						return err
+					}
+					continue
+				}
+				return err
+			}
+			select {
+			case newCount := <-updateCh:
+				logger.Debug("idle update received", "messages", newCount, "last_messages", state.LastCount)
+				_ = idleCmd.Close()
+				if err := idleCmd.Wait(); err != nil {
+					if !watchrunner.IsBenignIdleError(err) {
+						return err
+					}
+				}
+				if newCount > state.LastCount {
+					logger.Info("new mail detected", "messages", newCount)
+					uids, err := client.SearchUIDsNewerThan(ctx, state.LastUID)
+					if err != nil {
+						return err
+					}
+					if err := client.ProcessUIDs(deps, state, uids); err != nil {
+						return err
+					}
+				}
+				state.LastCount = newCount
+				logger.Info("ready for next update")
+			case <-ctx.Done():
+				if err := idleCmd.Close(); err != nil {
+					logger.Error("idle close error", "error", err)
+					continue
+				}
+				if err := idleCmd.Wait(); err != nil {
+					logger.Error("idle wait error", "error", err)
+					continue
+				}
+				return ctx.Err()
+			case <-reloadTicker.C:
+				logger.Debug("reload timer fired")
+				_ = idleCmd.Close()
+				if err := idleCmd.Wait(); err != nil {
+					if !watchrunner.IsBenignIdleError(err) {
+						logger.Error("watch idle close failed", "error", err)
+					}
+				}
+				updated, err := appconfig.Load(cfgPath)
+				if err != nil {
+					logger.Error("watch config reload failed", "error", err)
+					continue
+				}
+				if err := appconfig.Validate(updated); err != nil {
+					logger.Error("watch config reload failed", "error", err)
+					continue
+				}
+				if err := validateWatchRules(updated); err != nil {
+					logger.Error("watch config reload failed", "error", err)
+					continue
+				}
+				cfg = updated
+				deps.Rules = updated.Rules
+				logger.Info("watch config reloaded")
+			}
+		}
+	},
+}
+
+func init() {
+	watchCmd.Flags().String("config", "", "Path to YAML config file (or set POSTMANPAT_CONFIG)")
+	watchCmd.Flags().Bool("verbose", false, "Enable verbose logging")
+	watchCmd.Flags().String("test", "", "Run a one-off test for the named rule and exit")
+	watchCmd.Flags().Int("limit", 10, "Maximum matches to return when using --test")
+	watchCmd.Flags().String("mailbox", defaultMailbox, "Mailbox to scan when using --test")
+}
+
+func validateWatchRules(cfg appconfig.Config) error {
+	for _, rule := range cfg.Rules {
+		if rule.Server != nil {
+			return fmt.Errorf("rule %q defines server matchers, which are not supported by watch", rule.Name)
+		}
+	}
+	return nil
+}
+
+func runWatchTest(ctx context.Context, client watchrunner.WatchRunner, cfg appconfig.Config, logger *slog.Logger, ruleName, mailbox string, limit int) error {
+	if strings.TrimSpace(ruleName) == "" {
+		return errors.New("test rule name is required")
+	}
+	rule, err := findRuleByName(cfg, ruleName)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(mailbox) == "" {
+		mailbox = defaultMailbox
+	}
+
+	matches, err := watchrunner.RunRuleTest(ctx, client, *rule, mailbox, limit)
+	if err != nil {
+		return err
+	}
+	if len(matches) == 0 {
+		logger.Info("no messages found", "mailbox", mailbox)
+	}
+
+	logger.Info("running watch test", "rule", rule.Name, "mailbox", mailbox)
+	for _, match := range matches {
+		logger.Info(
+			"test match",
+			"rule", rule.Name,
+			"date", match.MessageDate,
+			"subject", match.SubjectRaw,
+			"list_id", match.ListID,
+			"reply_to_domains", match.ReplyToDomains,
+			"sender_domains", match.SenderDomains,
+			"recipients", match.Recipients,
+		)
+	}
+	logger.Info("watch test complete", "rule", rule.Name, "matches", len(matches))
+	return nil
+}
+
+func findRuleByName(cfg appconfig.Config, ruleName string) (*appconfig.Rule, error) {
+	for i := range cfg.Rules {
+		if cfg.Rules[i].Name == ruleName {
+			return &cfg.Rules[i], nil
+		}
+	}
+	return nil, fmt.Errorf("rule %q not found", ruleName)
+}
+</file>
+
+<file path="context/requirements_stage1.md">
+# Stage 1 Requirements: Cleanup CLI
+
+## Scope
+- Provide a scheduled CLI command `postmanpat cleanup` to process all IMAP folders.
+- Operate from a YAML config file (no database).
+- Target Gmail and other IMAP providers; Gmail labels are treated as folders.
+- Support large initial runs (tens of thousands of emails).
+
+## CLI Behavior
+- Scheduled via cron or similar.
+- Support `--dry-run` and `--verbose` flags.
+- Non-idempotent by nature (messages may be deleted).
+
+## Configuration (YAML)
+- Non-secret configuration only (rules, archive path templates, reporting channel, checkpoint path).
+- Secrets and credentials are provided via environment variables.
+- Rule list with server/client matchers, actions, and archive path template.
+- Reporting configuration for Discord webhook (channel only).
+- Checkpoint file location (separate from main config).
+
+## Required Environment Variables
+- IMAP: `POSTMANPAT_IMAP_HOST`, `POSTMANPAT_IMAP_PORT`, `POSTMANPAT_IMAP_USER`, `POSTMANPAT_IMAP_PASS`
+- S3-compatible storage: `POSTMANPAT_S3_ENDPOINT`, `POSTMANPAT_S3_REGION`, `POSTMANPAT_S3_BUCKET`, `POSTMANPAT_S3_KEY`, `POSTMANPAT_S3_SECRET`
+- Reporting: `POSTMANPAT_WEBHOOK_URL` (Discord)
+
+## Rules and Actions
+- Rules are ordered and **apply-all**.
+- Each rule includes folder selection criteria.
+- Matchers:
+  - Server (IMAP search): age, sender/domain substrings, recipients, body substrings, reply-to substrings, list-id substrings, folders
+  - Client (post-fetch): regex-capable matchers for subject/body/sender/recipient/reply-to/list-id
+- Actions:
+  - Archive to Spaces
+  - Move to folder
+  - Delete
+- Action sequences (per rule):
+  - archive then delete
+  - move then delete
+  - archive then move
+  - delete
+
+## Archival Format
+- Store full raw message as `.eml`.
+- Store decoded `.txt` and `.html` versions for search.
+- Extract attachments.
+- Naming:
+  - Email: `<message-id>.eml`
+  - Attachments: `<message-id>/<attachment-name>.<ext>`
+- Archive destination path is defined by a template in each rule.
+
+## Dedupe
+- Deduplicate archived content across folders per run using a hash of the raw `.eml`.
+
+## Checkpointing
+- Store per-folder last processed UID in a separate local file.
+- Allow reset/ignore to force a full rescan.
+
+## Reporting
+- Emit per-rule stats and error list to Slack or Discord via webhook.
+
+## Implementation Decisions
+- IMAP client: `github.com/emersion/go-imap/v2`.
+- JMAP is out of scope for stage 1.
+
+## Open Decisions
+- Define archive path template variables and examples.
+- Define checkpoint file schema and default location.
+- Define reporting payload format for Slack/Discord.
+</file>
+
+<file path="imap/internal/searches/manager_test.go">
+package searches
+
+import (
+	"testing"
+
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/emersion/go-imap/v2"
+)
+
+func TestBuildSearchCriteriaListIDSubstring(t *testing.T) {
+	matchers := appconfig.ServerMatchers{
+		ListIDSubstring: []string{"list.example.com"},
+	}
+
+	criteria, err := buildSearchCriteria(matchers)
+	if err != nil {
+		t.Fatalf("build criteria: %v", err)
+	}
+	if criteria == nil {
+		t.Fatal("expected criteria")
+	}
+	if len(criteria.Header) != 1 {
+		t.Fatalf("expected 1 header criteria, got %d", len(criteria.Header))
+	}
+	if criteria.Header[0].Key != "List-ID" {
+		t.Fatalf("expected List-ID header key, got %q", criteria.Header[0].Key)
+	}
+	if criteria.Header[0].Value != "list.example.com" {
+		t.Fatalf("expected List-ID header value, got %q", criteria.Header[0].Value)
+	}
+}
+
+func TestBuildSearchCriteriaListIDSubstringSkipsEmpty(t *testing.T) {
+	matchers := appconfig.ServerMatchers{
+		ListIDSubstring: []string{"", "   "},
+	}
+
+	criteria, err := buildSearchCriteria(matchers)
+	if err != nil {
+		t.Fatalf("build criteria: %v", err)
+	}
+	if criteria == nil {
+		t.Fatal("expected criteria")
+	}
+	if len(criteria.Header) != 0 {
+		t.Fatalf("expected no header criteria, got %d", len(criteria.Header))
+	}
+}
+
+func TestBuildSearchCriteriaReturnPathSubstring(t *testing.T) {
+	matchers := appconfig.ServerMatchers{
+		ReturnPathSubstring: []string{"srs.messagingengine.com"},
+	}
+
+	criteria, err := buildSearchCriteria(matchers)
+	if err != nil {
+		t.Fatalf("build criteria: %v", err)
+	}
+	if criteria == nil {
+		t.Fatal("expected criteria")
+	}
+	if len(criteria.Header) != 1 {
+		t.Fatalf("expected 1 header criteria, got %d", len(criteria.Header))
+	}
+	if criteria.Header[0].Key != "Return-Path" {
+		t.Fatalf("expected Return-Path header key, got %q", criteria.Header[0].Key)
+	}
+	if criteria.Header[0].Value != "srs.messagingengine.com" {
+		t.Fatalf("expected Return-Path header value, got %q", criteria.Header[0].Value)
+	}
+}
+
+func TestBuildSearchCriteriaSeenTrue(t *testing.T) {
+	seen := true
+	matchers := appconfig.ServerMatchers{
+		Seen: &seen,
+	}
+
+	criteria, err := buildSearchCriteria(matchers)
+	if err != nil {
+		t.Fatalf("build criteria: %v", err)
+	}
+	if criteria == nil {
+		t.Fatal("expected criteria")
+	}
+	found := false
+	for _, flag := range criteria.Flag {
+		if flag == imap.FlagSeen {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected \\Seen flag to be included")
+	}
+}
+
+func TestBuildSearchCriteriaListUnsubscribeTrue(t *testing.T) {
+	listUnsub := true
+	matchers := appconfig.ServerMatchers{
+		ListUnsubscribe: &listUnsub,
+	}
+
+	criteria, err := buildSearchCriteria(matchers)
+	if err != nil {
+		t.Fatalf("build criteria: %v", err)
+	}
+	if criteria == nil {
+		t.Fatal("expected criteria")
+	}
+	if len(criteria.Header) != 1 {
+		t.Fatalf("expected 1 header criteria, got %d", len(criteria.Header))
+	}
+	if criteria.Header[0].Key != "List-Unsubscribe" {
+		t.Fatalf("expected List-Unsubscribe header key, got %q", criteria.Header[0].Key)
+	}
+}
+
+func TestBuildSearchCriteriaListUnsubscribeFalse(t *testing.T) {
+	listUnsub := false
+	matchers := appconfig.ServerMatchers{
+		ListUnsubscribe: &listUnsub,
+	}
+
+	criteria, err := buildSearchCriteria(matchers)
+	if err != nil {
+		t.Fatalf("build criteria: %v", err)
+	}
+	if criteria == nil {
+		t.Fatal("expected criteria")
+	}
+	if len(criteria.Not) != 1 {
+		t.Fatalf("expected 1 NOT criteria, got %d", len(criteria.Not))
+	}
+	if len(criteria.Not[0].Header) != 1 {
+		t.Fatalf("expected 1 NOT header criteria, got %d", len(criteria.Not[0].Header))
+	}
+	if criteria.Not[0].Header[0].Key != "List-Unsubscribe" {
+		t.Fatalf("expected List-Unsubscribe header key, got %q", criteria.Not[0].Header[0].Key)
+	}
+}
+
+func TestBuildSearchCriteriaSeenFalse(t *testing.T) {
+	seen := false
+	matchers := appconfig.ServerMatchers{
+		Seen: &seen,
+	}
+
+	criteria, err := buildSearchCriteria(matchers)
+	if err != nil {
+		t.Fatalf("build criteria: %v", err)
+	}
+	if criteria == nil {
+		t.Fatal("expected criteria")
+	}
+	found := false
+	for _, flag := range criteria.NotFlag {
+		if flag == imap.FlagSeen {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected \\Seen to be included in NotFlag")
+	}
+}
+
+func TestBuildSearchCriteriaExcludesDeleted(t *testing.T) {
+	criteria, err := buildSearchCriteria(appconfig.ServerMatchers{})
+	if err != nil {
+		t.Fatalf("build criteria: %v", err)
+	}
+	if criteria == nil {
+		t.Fatal("expected criteria")
+	}
+	if len(criteria.NotFlag) == 0 {
+		t.Fatal("expected NotFlag to include \\Deleted")
+	}
+	found := false
+	for _, flag := range criteria.NotFlag {
+		if flag == imap.FlagDeleted {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected NotFlag to include \\Deleted")
+	}
+}
+</file>
+
+<file path="imap/internal/searches/manager.go">
+package searches
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/emersion/go-imap/v2"
+	giimapclient "github.com/emersion/go-imap/v2/imapclient"
+)
+
+type ServerSearcher interface {
+	SearchByServerMatchers(ctx context.Context, matchers appconfig.ServerMatchers) (map[string][]uint32, error)
+}
+
+type ClientSearcher interface {
+	SearchUIDsNewerThan(ctx context.Context, lastUID uint32) ([]uint32, error)
+}
+
+// Interface to initialize the manager
+type ClientProvider interface {
+	IMAPClient() *giimapclient.Client
+}
+
+type IMAPSearchManager struct {
+	provider func() *giimapclient.Client
+}
+
+func New(provider ClientProvider) *IMAPSearchManager {
+	return &IMAPSearchManager{provider: provider.IMAPClient}
+}
+
+// SearchByServerMatchers returns UIDs for messages matching the provided matchers via IMAP SEARCH.
+// Results are grouped by mailbox to avoid UID collisions across folders.
+func (m *IMAPSearchManager) SearchByServerMatchers(ctx context.Context, matchers appconfig.ServerMatchers) (map[string][]uint32, error) {
+	if m.provider == nil {
+		return nil, errors.New("IMAP client is not connected")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(matchers.Folders) == 0 {
+		return nil, errors.New("matcher Folders is required")
+	}
+
+	matches := make(map[string][]uint32)
+	for _, folder := range matchers.Folders {
+		folder = strings.TrimSpace(folder)
+		if folder == "" {
+			return nil, errors.New("matcher Folder is required")
+		}
+
+		if _, err := m.provider().Select(folder, nil).Wait(); err != nil {
+			return nil, err
+		}
+
+		criteria, err := buildSearchCriteria(matchers)
+		if err != nil {
+			return nil, err
+		}
+
+		data, err := m.provider().UIDSearch(criteria, nil).Wait()
+		if err != nil {
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		uids := data.AllUIDs()
+		if len(uids) == 0 {
+			continue
+		}
+		mailboxUIDs := make([]uint32, 0, len(uids))
+		for _, uid := range uids {
+			mailboxUIDs = append(mailboxUIDs, uint32(uid))
+		}
+		matches[folder] = mailboxUIDs
+	}
+
+	return matches, nil
+}
+
+func buildSearchCriteria(matchers appconfig.ServerMatchers) (*imap.SearchCriteria, error) {
+	criteria := &imap.SearchCriteria{}
+	criteria.NotFlag = append(criteria.NotFlag, imap.FlagDeleted)
+
+	if matchers.AgeWindow != nil && !matchers.AgeWindow.IsEmpty() {
+		if strings.TrimSpace(matchers.AgeWindow.Max) != "" {
+			dur, err := appconfig.ParseRelativeDuration(matchers.AgeWindow.Max)
+			if err != nil {
+				return nil, fmt.Errorf("invalid age_window.max: %w", err)
+			}
+			criteria.Since = time.Now().Add(-dur)
+		}
+		if strings.TrimSpace(matchers.AgeWindow.Min) != "" {
+			dur, err := appconfig.ParseRelativeDuration(matchers.AgeWindow.Min)
+			if err != nil {
+				return nil, fmt.Errorf("invalid age_window.min: %w", err)
+			}
+			criteria.Before = time.Now().Add(-dur)
+		}
+	}
+
+	if len(matchers.SenderSubstring) > 0 {
+		senderCriteria := make([]imap.SearchCriteria, 0, len(matchers.SenderSubstring))
+		for _, value := range matchers.SenderSubstring {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			senderCriteria = append(senderCriteria, imap.SearchCriteria{
+				Header: []imap.SearchCriteriaHeaderField{{
+					Key:   "From",
+					Value: value,
+				}},
+			})
+		}
+		if combined := combineAnd(senderCriteria); combined != nil {
+			criteria.And(combined)
+		}
+	}
+
+	if len(matchers.Recipients) > 0 {
+		recipientCriteria := make([]imap.SearchCriteria, 0, len(matchers.Recipients))
+		for _, value := range matchers.Recipients {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			to := imap.SearchCriteria{
+				Header: []imap.SearchCriteriaHeaderField{{
+					Key:   "To",
+					Value: value,
+				}},
+			}
+			cc := imap.SearchCriteria{
+				Header: []imap.SearchCriteriaHeaderField{{
+					Key:   "Cc",
+					Value: value,
+				}},
+			}
+			recipientCriteria = append(recipientCriteria, imap.SearchCriteria{
+				Or: [][2]imap.SearchCriteria{{to, cc}},
+			})
+		}
+		if combined := combineAnd(recipientCriteria); combined != nil {
+			criteria.And(combined)
+		}
+	}
+
+	if len(matchers.CcSubstring) > 0 {
+		ccCriteria := make([]imap.SearchCriteria, 0, len(matchers.CcSubstring))
+		for _, value := range matchers.CcSubstring {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			ccCriteria = append(ccCriteria, imap.SearchCriteria{
+				Header: []imap.SearchCriteriaHeaderField{{
+					Key:   "Cc",
+					Value: value,
+				}},
+			})
+		}
+		if combined := combineAnd(ccCriteria); combined != nil {
+			criteria.And(combined)
+		}
+	}
+
+	if len(matchers.ReturnPathSubstring) > 0 {
+		returnPathCriteria := make([]imap.SearchCriteria, 0, len(matchers.ReturnPathSubstring))
+		for _, value := range matchers.ReturnPathSubstring {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			returnPathCriteria = append(returnPathCriteria, imap.SearchCriteria{
+				Header: []imap.SearchCriteriaHeaderField{{
+					Key:   "Return-Path",
+					Value: value,
+				}},
+			})
+		}
+		if combined := combineAnd(returnPathCriteria); combined != nil {
+			criteria.And(combined)
+		}
+	}
+
+	if len(matchers.BodySubstring) > 0 {
+		bodyCriteria := make([]imap.SearchCriteria, 0, len(matchers.BodySubstring))
+		for _, value := range matchers.BodySubstring {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			bodyCriteria = append(bodyCriteria, imap.SearchCriteria{
+				Body: []string{value},
+			})
+		}
+		if combined := combineAnd(bodyCriteria); combined != nil {
+			criteria.And(combined)
+		}
+	}
+
+	if len(matchers.ReplyToSubstring) > 0 {
+		replyToCriteria := make([]imap.SearchCriteria, 0, len(matchers.ReplyToSubstring))
+		for _, value := range matchers.ReplyToSubstring {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			replyToCriteria = append(replyToCriteria, imap.SearchCriteria{
+				Header: []imap.SearchCriteriaHeaderField{{
+					Key:   "Reply-To",
+					Value: value,
+				}},
+			})
+		}
+		if combined := combineAnd(replyToCriteria); combined != nil {
+			criteria.And(combined)
+		}
+	}
+
+	if len(matchers.ListIDSubstring) > 0 {
+		listIDCriteria := make([]imap.SearchCriteria, 0, len(matchers.ListIDSubstring))
+		for _, value := range matchers.ListIDSubstring {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			listIDCriteria = append(listIDCriteria, imap.SearchCriteria{
+				Header: []imap.SearchCriteriaHeaderField{{
+					Key:   "List-ID",
+					Value: value,
+				}},
+			})
+		}
+		if combined := combineAnd(listIDCriteria); combined != nil {
+			criteria.And(combined)
+		}
+	}
+
+	if matchers.Seen != nil {
+		if *matchers.Seen {
+			criteria.Flag = append(criteria.Flag, imap.FlagSeen)
+		} else {
+			criteria.NotFlag = append(criteria.NotFlag, imap.FlagSeen)
+		}
+	}
+	if matchers.ListUnsubscribe != nil {
+		listUnsubscribeCriteria := &imap.SearchCriteria{
+			Header: []imap.SearchCriteriaHeaderField{{
+				Key:   "List-Unsubscribe",
+				Value: "",
+			}},
+		}
+		if *matchers.ListUnsubscribe {
+			criteria.And(listUnsubscribeCriteria)
+		} else {
+			criteria.Not = append(criteria.Not, *listUnsubscribeCriteria)
+		}
+	}
+
+	return criteria, nil
+}
+
+func combineAnd(criteria []imap.SearchCriteria) *imap.SearchCriteria {
+	if len(criteria) == 0 {
+		return nil
+	}
+	combined := criteria[0]
+	for i := 1; i < len(criteria); i++ {
+		combined.And(&criteria[i])
+	}
+	return &combined
+}
+
+// SearchUIDsNewerThan returns UIDs greater than the provided last UID in the selected mailbox.
+func (m *IMAPSearchManager) SearchUIDsNewerThan(ctx context.Context, lastUID uint32) ([]uint32, error) {
+	if m.provider == nil {
+		return nil, errors.New("IMAP client is not connected")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	start := imap.UID(lastUID + 1)
+	var uidSet imap.UIDSet
+	uidSet.AddRange(start, 0)
+	criteria := &imap.SearchCriteria{
+		UID: []imap.UIDSet{uidSet},
+	}
+	data, err := m.provider().UIDSearch(criteria, nil).Wait()
+	if err != nil {
+		return nil, err
+	}
+	uids := data.AllUIDs()
+	out := make([]uint32, 0, len(uids))
+	for _, uid := range uids {
+		out = append(out, uint32(uid))
+	}
+	return out, nil
+}
+</file>
+
+<file path="watchrunner/internal/matchers/matcher_test.go">
+package matchers
+
+import (
+	"testing"
+
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+)
+
+func TestMatchesClientListIDRegex(t *testing.T) {
+	matchers := &appconfig.ClientMatchers{
+		ListIDRegex: []string{`<f7443300a7bb349db1e85fa6e\.1520313\.list-id\.mcsv\.net>`},
+	}
+	data := ClientMessage{
+		ListID: "f7443300a7bb349db1e85fa6emc list <f7443300a7bb349db1e85fa6e.1520313.list-id.mcsv.net>",
+	}
+
+	ok, err := data.Match(matchers)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected list_id_regex to match ListID")
+	}
+}
+
+func TestMatchesClientListIDRegexNoMatch(t *testing.T) {
+	matchers := &appconfig.ClientMatchers{
+		ListIDRegex: []string{`<not-a-match>`},
+	}
+	data := ClientMessage{
+		ListID: "f7443300a7bb349db1e85fa6emc list <f7443300a7bb349db1e85fa6e.1520313.list-id.mcsv.net>",
+	}
+
+	ok, err := data.Match(matchers)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if ok {
+		t.Fatal("expected list_id_regex to not match ListID")
+	}
+}
+
+func TestMatchesClientSenderAndReplyToRegex(t *testing.T) {
+	matchers := &appconfig.ClientMatchers{
+		SenderRegex:  []string{`ghost\.io`},
+		ReplyToRegex: []string{`404media\.co`},
+	}
+	data := ClientMessage{
+		SenderDomains:  []string{"news.ghost.io"},
+		ReplyToDomains: []string{"404media.co"},
+	}
+
+	ok, err := data.Match(matchers)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected sender_regex and replyto_regex to both match")
+	}
+}
+
+func TestMatchesClientSenderAndReplyToRegexRequiresBoth(t *testing.T) {
+	matchers := &appconfig.ClientMatchers{
+		SenderRegex:  []string{`ghost\.io`},
+		ReplyToRegex: []string{`404media\.co`},
+	}
+	data := ClientMessage{
+		SenderDomains:  []string{"news.ghost.io"},
+		ReplyToDomains: []string{"example.com"},
+	}
+
+	ok, err := data.Match(matchers)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if ok {
+		t.Fatal("expected sender_regex and replyto_regex to require both matches")
+	}
+}
+
+func TestMatchesClientSubjectRegex(t *testing.T) {
+	matchers := &appconfig.ClientMatchers{
+		SubjectRegex: []string{`(?i)welcome`},
+	}
+	data := ClientMessage{
+		SubjectRaw: "Welcome to the list",
+	}
+
+	ok, err := data.Match(matchers)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected subject_regex to match subject")
+	}
+}
+
+func TestMatchesClientRecipientsRegex(t *testing.T) {
+	matchers := &appconfig.ClientMatchers{
+		RecipientsRegex: []string{`user@example\.com`},
+	}
+	data := ClientMessage{
+		Recipients: []string{"user@example.com"},
+	}
+
+	ok, err := data.Match(matchers)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected recipients_regex to match recipient")
+	}
+}
+
+func TestMatchesClientCcRegex(t *testing.T) {
+	matchers := &appconfig.ClientMatchers{
+		CcRegex: []string{`cc@example\.com`},
+	}
+	data := ClientMessage{
+		Cc: []string{"cc@example.com"},
+	}
+
+	ok, err := data.Match(matchers)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected cc_regex to match cc recipient")
+	}
+}
+
+func TestMatchesClientCcRegexNoMatch(t *testing.T) {
+	matchers := &appconfig.ClientMatchers{
+		CcRegex: []string{`cc@example\.com`},
+	}
+	data := ClientMessage{
+		Cc: []string{"other@example.com"},
+	}
+
+	ok, err := data.Match(matchers)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if ok {
+		t.Fatal("expected cc_regex to not match cc recipient")
+	}
+}
+
+func TestMatchesClientReturnPathRegex(t *testing.T) {
+	matchers := &appconfig.ClientMatchers{
+		ReturnPathRegex: []string{`srs\.messagingengine\.com`},
+	}
+	data := ClientMessage{
+		ReturnPathDomain: "srs.messagingengine.com",
+	}
+
+	ok, err := data.Match(matchers)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected returnpath_regex to match return-path domain")
+	}
+}
+
+func TestMatchesClientReturnPathRegexNoMatch(t *testing.T) {
+	matchers := &appconfig.ClientMatchers{
+		ReturnPathRegex: []string{`srs\.messagingengine\.com`},
+	}
+	data := ClientMessage{
+		ReturnPathDomain: "example.com",
+	}
+
+	ok, err := data.Match(matchers)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if ok {
+		t.Fatal("expected returnpath_regex to not match return-path domain")
+	}
+}
+
+func TestMatchesClientBodyRegex(t *testing.T) {
+	matchers := &appconfig.ClientMatchers{
+		BodyRegex: []string{`unsubscribe`},
+	}
+	data := ClientMessage{
+		Body: "Click here to unsubscribe.",
+	}
+
+	ok, err := data.Match(matchers)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected body_regex to match body")
+	}
+}
+
+func TestMatchesClientListUnsubscribeTrue(t *testing.T) {
+	listUnsub := true
+	matchers := &appconfig.ClientMatchers{
+		ListUnsubscribe: &listUnsub,
+	}
+	data := ClientMessage{
+		ListUnsubscribe: true,
+	}
+
+	ok, err := data.Match(matchers)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected list_unsubscribe true to match")
+	}
+}
+
+func TestMatchesClientListUnsubscribeFalse(t *testing.T) {
+	listUnsub := false
+	matchers := &appconfig.ClientMatchers{
+		ListUnsubscribe: &listUnsub,
+	}
+	data := ClientMessage{
+		ListUnsubscribe: true,
+	}
+
+	ok, err := data.Match(matchers)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if ok {
+		t.Fatal("expected list_unsubscribe false to not match")
+	}
+}
+
+func TestMatchesClientBodyRegexNoMatch(t *testing.T) {
+	matchers := &appconfig.ClientMatchers{
+		BodyRegex: []string{`unsubscribe`},
+	}
+	data := ClientMessage{
+		Body: "Welcome to the list.",
+	}
+
+	ok, err := data.Match(matchers)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if ok {
+		t.Fatal("expected body_regex to not match body")
+	}
+}
+
+func TestMatchesClientRecipientTagRegex(t *testing.T) {
+	matchers := &appconfig.ClientMatchers{
+		RecipientTagRegex: []string{`news`},
+	}
+	data := ClientMessage{
+		RecipientTags: []string{"news", "alerts"},
+	}
+
+	ok, err := data.Match(matchers)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected recipient_tag_regex to match recipient tags")
+	}
+}
+
+func TestMatchesClientRecipientTagRegexNoMatch(t *testing.T) {
+	matchers := &appconfig.ClientMatchers{
+		RecipientTagRegex: []string{`events`},
+	}
+	data := ClientMessage{
+		RecipientTags: []string{"news", "alerts"},
+	}
+
+	ok, err := data.Match(matchers)
+	if err != nil {
+		t.Fatalf("match client: %v", err)
+	}
+	if ok {
+		t.Fatal("expected recipient_tag_regex to not match recipient tags")
+	}
+}
+</file>
+
+<file path="watchrunner/internal/matchers/matcher.go">
+package matchers
+
+import (
+	"fmt"
+	"regexp"
+	"strings"
+
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+)
+
+type MessageMatcher interface {
+	Match(matchers *appconfig.ClientMatchers) (bool, error)
+}
+
+type ClientMessage struct {
+	ListID           string
+	SenderDomains    []string
+	ReplyToDomains   []string
+	SubjectRaw       string
+	Recipients       []string
+	RecipientTags    []string
+	Body             string
+	Cc               []string
+	ReturnPathDomain string
+	ListUnsubscribe  bool
+}
+
+// Match returns true if the message satisfies all configured client matchers.
+func (data ClientMessage) Match(matchers *appconfig.ClientMatchers) (bool, error) {
+	if matchers == nil || matchers.IsEmpty() {
+		return true, nil
+	}
+	if len(matchers.ListIDRegex) > 0 {
+		ok, err := matchAnyRegex(matchers.ListIDRegex, data.ListID)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+	}
+	if len(matchers.SubjectRegex) > 0 {
+		ok, err := matchAnyRegex(matchers.SubjectRegex, data.SubjectRaw)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+	}
+	if len(matchers.RecipientsRegex) > 0 {
+		ok, err := matchAnyRegexInList(matchers.RecipientsRegex, data.Recipients)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+	}
+	if len(matchers.CcRegex) > 0 {
+		ok, err := matchAnyRegexInList(matchers.CcRegex, data.Cc)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+	}
+	if len(matchers.ReturnPathRegex) > 0 {
+		ok, err := matchAnyRegex(matchers.ReturnPathRegex, data.ReturnPathDomain)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+	}
+	if len(matchers.SenderRegex) > 0 {
+		ok, err := matchAnyRegexInList(matchers.SenderRegex, data.SenderDomains)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+	}
+	if len(matchers.ReplyToRegex) > 0 {
+		ok, err := matchAnyRegexInList(matchers.ReplyToRegex, data.ReplyToDomains)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+	}
+	if len(matchers.BodyRegex) > 0 {
+		ok, err := matchAnyRegex(matchers.BodyRegex, data.Body)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+	}
+	if len(matchers.RecipientTagRegex) > 0 {
+		ok, err := matchAnyRegexInList(matchers.RecipientTagRegex, data.RecipientTags)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+	}
+	if matchers.ListUnsubscribe != nil {
+		if data.ListUnsubscribe != *matchers.ListUnsubscribe {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func matchAnyRegex(patterns []string, value string) (bool, error) {
+	for _, pattern := range patterns {
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
+		}
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return false, fmt.Errorf("invalid regex %q: %w", pattern, err)
+		}
+		if re.MatchString(value) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func matchAnyRegexInList(patterns []string, values []string) (bool, error) {
+	if len(values) == 0 {
+		return false, nil
+	}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		ok, err := matchAnyRegex(patterns, value)
+		if err != nil {
+			return false, err
+		}
+		if ok {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+</file>
+
+<file path="watchrunner/runner.go">
+package watchrunner
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"strings"
+
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/imap"
+	"github.com/aaronromeo/postmanpat/watchrunner/internal/matchers"
+	giimap "github.com/emersion/go-imap/v2"
+	giimapclient "github.com/emersion/go-imap/v2/imapclient"
+)
+
+type WatchRunner interface {
+	Connect() error
+	Close() error
+	Idle() (*giimapclient.IdleCommand, error)
+	SelectMailbox(ctx context.Context, mailbox string) (*giimap.SelectData, error)
+	FetchSenderData(ctx context.Context, uids []uint32) ([]imap.MailData, error)
+	SearchUIDsNewerThan(ctx context.Context, lastUID uint32) ([]uint32, error)
+	MoveUIDs(ctx context.Context, uids []uint32, destination string) error
+	DeleteUIDs(ctx context.Context, uids []uint32, expunge bool) error
+}
+
+type Client struct {
+	*imap.Client
+}
+
+type Deps struct {
+	Ctx      context.Context
+	Rules    []appconfig.Rule
+	Log      *slog.Logger
+	Announce func(string)
+}
+
+type State struct {
+	LastUID   uint32
+	LastCount uint32
+}
+
+func New(opts ...imap.Option) *Client {
+	return &Client{Client: imap.NewWatch(opts...)}
+}
+
+func (c *Client) ProcessUIDs(deps Deps, state *State, uids []uint32) error {
+	deps.Log.Debug("search newer than uid", "last_uid", state.LastUID, "uids", len(uids))
+	if len(uids) == 0 {
+		return nil
+	}
+	data, err := c.FetchSenderData(deps.Ctx, uids)
+	if err != nil {
+		return err
+	}
+	deps.Log.Debug("fetched messages for processing", "messages", len(data))
+	for _, message := range data {
+		matchedAny := false
+		for _, rule := range deps.Rules {
+			ok, err := (matchers.ClientMessage{
+				ListID:           message.ListID,
+				SenderDomains:    message.SenderDomains,
+				ReplyToDomains:   message.ReplyToDomains,
+				SubjectRaw:       message.SubjectRaw,
+				Recipients:       message.Recipients,
+				RecipientTags:    message.RecipientTags,
+				Body:             message.Body,
+				Cc:               message.Cc,
+				ReturnPathDomain: message.ReturnPathDomain,
+				ListUnsubscribe:  message.ListUnsubscribe,
+			}).Match(rule.Client)
+			if err != nil {
+				return err
+			}
+			if ok {
+				matchedAny = true
+				deps.Log.Info("rule matched", "rule", rule.Name, "list_id", message.ListID)
+				if deps.Announce != nil {
+					deps.Announce(rule.Name)
+				}
+				if err := applyActions(c, deps, rule, message.UID); err != nil {
+					return err
+				}
+			}
+		}
+		if !matchedAny {
+			deps.Log.Info("no rule matched")
+			if deps.Announce != nil {
+				deps.Announce("")
+			}
+		}
+	}
+	state.LastUID = maxUID(state.LastUID, uids)
+	deps.Log.Debug("updated last uid", "last_uid", state.LastUID)
+	return nil
+}
+
+func (c *Client) Reconnect(deps Deps, state *State, mailbox string) error {
+	_ = c.Close()
+	if err := c.Connect(); err != nil {
+		return err
+	}
+	selection, err := c.SelectMailbox(deps.Ctx, mailbox)
+	if err != nil {
+		return err
+	}
+	deps.Log.Info("reconnected", "mailbox", mailbox, "messages", selection.NumMessages)
+	uids, err := c.SearchUIDsNewerThan(deps.Ctx, state.LastUID)
+	if err != nil {
+		return err
+	}
+	if err := c.ProcessUIDs(deps, state, uids); err != nil {
+		return err
+	}
+	state.LastCount = selection.NumMessages
+	return nil
+}
+
+func IsBenignIdleError(err error) bool {
+	if err == nil {
+		return true
+	}
+	return strings.Contains(err.Error(), "use of closed network connection")
+}
+
+func maxUID(current uint32, uids []uint32) uint32 {
+	max := current
+	for _, uid := range uids {
+		if uid > max {
+			max = uid
+		}
+	}
+	return max
+}
+
+func applyActions(client WatchRunner, deps Deps, rule appconfig.Rule, uid uint32) error {
+	if uid == 0 {
+		return nil
+	}
+	for _, action := range rule.Actions {
+		switch action.Type {
+		case appconfig.DELETE:
+			expungeAfterDelete := true
+			if action.ExpungeAfterDelete != nil {
+				expungeAfterDelete = *action.ExpungeAfterDelete
+			}
+			if err := client.DeleteUIDs(deps.Ctx, []uint32{uid}, expungeAfterDelete); err != nil {
+				return err
+			}
+		case appconfig.MOVE:
+			destination := strings.TrimSpace(action.Destination)
+			if destination == "" {
+				return fmt.Errorf("Action move missing destination for rule %q", rule.Name)
+			}
+			if err := client.MoveUIDs(deps.Ctx, []uint32{uid}, destination); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unsupported action type %q for rule %q", action.Type, rule.Name)
+		}
+	}
+	return nil
+}
+</file>
+
+<file path="watchrunner/tester.go">
+package watchrunner
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
+	"time"
+
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/watchrunner/internal/matchers"
+)
+
+type TestMatch struct {
+	MessageDate    time.Time
+	SubjectRaw     string
+	ListID         string
+	ReplyToDomains []string
+	SenderDomains  []string
+	Recipients     []string
+}
+
+func RunRuleTest(ctx context.Context, client WatchRunner, rule appconfig.Rule, mailbox string, limit int) ([]TestMatch, error) {
+	if rule.Client == nil {
+		return nil, fmt.Errorf("rule %q does not define client matchers", rule.Name)
+	}
+	if strings.TrimSpace(mailbox) == "" {
+		return nil, errors.New("mailbox is required")
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+
+	if _, err := client.SelectMailbox(ctx, mailbox); err != nil {
+		return nil, err
+	}
+
+	uids, err := client.SearchUIDsNewerThan(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	if len(uids) == 0 {
+		return nil, nil
+	}
+
+	out := make([]TestMatch, 0, limit)
+	chunkSize := 200
+	for end := len(uids); end > 0 && len(out) < limit; end -= chunkSize {
+		start := end - chunkSize
+		if start < 0 {
+			start = 0
+		}
+		batch := uids[start:end]
+		data, err := client.FetchSenderData(ctx, batch)
+		if err != nil {
+			return nil, err
+		}
+		sort.Slice(data, func(i, j int) bool {
+			return data[i].MessageDate.After(data[j].MessageDate)
+		})
+		for _, message := range data {
+			ok, err := (matchers.ClientMessage{
+				ListID:           message.ListID,
+				SenderDomains:    message.SenderDomains,
+				ReplyToDomains:   message.ReplyToDomains,
+				SubjectRaw:       message.SubjectRaw,
+				Recipients:       message.Recipients,
+				RecipientTags:    message.RecipientTags,
+				Body:             message.Body,
+				Cc:               message.Cc,
+				ReturnPathDomain: message.ReturnPathDomain,
+				ListUnsubscribe:  message.ListUnsubscribe,
+			}).Match(rule.Client)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				continue
+			}
+			out = append(out, TestMatch{
+				MessageDate:    message.MessageDate,
+				SubjectRaw:     message.SubjectRaw,
+				ListID:         message.ListID,
+				ReplyToDomains: message.ReplyToDomains,
+				SenderDomains:  message.SenderDomains,
+				Recipients:     message.Recipients,
+			})
+			if len(out) >= limit {
+				break
+			}
+		}
+	}
+
+	return out, nil
+}
+</file>
+
+<file path=".tool-versions">
+golang 1.25.5
+</file>
+
+<file path="docker/entrypoint.sh">
+#!/bin/sh
+set -eu
+
+if [ -z "${POSTMANPAT_CONFIG:-}" ]; then
+  echo "POSTMANPAT_CONFIG is required" >&2
+  exit 1
+fi
+
+cat >/etc/cron.d/postmanpat <<EOF
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+POSTMANPAT_CONFIG=${POSTMANPAT_CONFIG}
+POSTMANPAT_IMAP_HOST=${POSTMANPAT_IMAP_HOST}
+POSTMANPAT_IMAP_PORT=${POSTMANPAT_IMAP_PORT}
+POSTMANPAT_IMAP_USER=${POSTMANPAT_IMAP_USER}
+POSTMANPAT_IMAP_PASS=${POSTMANPAT_IMAP_PASS}
+POSTMANPAT_S3_ENDPOINT=${POSTMANPAT_S3_ENDPOINT}
+POSTMANPAT_S3_REGION=${POSTMANPAT_S3_REGION}
+POSTMANPAT_S3_BUCKET=${POSTMANPAT_S3_BUCKET}
+POSTMANPAT_S3_KEY=${POSTMANPAT_S3_KEY}
+POSTMANPAT_S3_SECRET=${POSTMANPAT_S3_SECRET}
+
+0 * * * * /usr/local/bin/postmanpat cleanup --config "$POSTMANPAT_CONFIG" >>/proc/1/fd/1 2>>/proc/1/fd/2
+EOF
+
+chmod 0644 /etc/cron.d/postmanpat
+crontab /etc/cron.d/postmanpat
+
+exec cron -f
+</file>
+
+<file path="watchrunner/runner_test.go">
+package watchrunner
+
+import "testing"
+
+func TestIsBenignIdleError(t *testing.T) {
+	if !IsBenignIdleError(nil) {
+		t.Fatal("expected nil error to be benign")
+	}
+	if !IsBenignIdleError(errString("use of closed network connection")) {
+		t.Fatal("expected closed network connection error to be benign")
+	}
+	if IsBenignIdleError(errString("some other error")) {
+		t.Fatal("expected other error to be non-benign")
+	}
+}
+
+type errString string
+
+func (e errString) Error() string {
+	return string(e)
+}
+</file>
+
+<file path="bin/postmanpat-generate-rules.py">
+#!/usr/bin/env python3
+import argparse
+import json
+import os
+import re
+import sys
+from typing import Any, Dict, List, Optional, Tuple
+
+
+def load_analyze(path: str) -> Dict[str, Any]:
+    with open(path, "r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def escape_regex(value: str) -> str:
+    return re.escape(value)
+
+
+def split_list(value: str) -> List[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def prompt(message: str, default: Optional[str] = None, required: bool = False) -> str:
+    while True:
+        suffix = ""
+        if default is not None and default != "":
+            suffix = f" [{default}]"
+        response = input(f"{message}{suffix}: ").strip()
+        if response == "" and default is not None:
+            return default
+        if response == "" and not required:
+            return ""
+        if response != "":
+            return response
+        print("Value required.")
+
+
+def prompt_yes_no(message: str, default: bool = False) -> str:
+    default_hint = "y" if default else "n"
+    response = input(f"{message} [y/n/q] (default {default_hint}): ").strip().lower()
+    if response == "":
+        return "y" if default else "n"
+    if response in ("q", "quit"):
+        return "q"
+    if response not in ("y", "n"):
+        return "n"
+    return response
+
+
+def yaml_quote(value: str) -> str:
+    if "\\" in value:
+        escaped = value.replace("'", "''")
+        return f"'{escaped}'"
+    escaped = value.replace("\\", "\\\\").replace("\"", "\\\"")
+    return f"\"{escaped}\""
+
+
+def yaml_lines(value: Any, indent: int = 0) -> List[str]:
+    prefix = " " * indent
+    lines: List[str] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if item is None:
+                continue
+            if isinstance(item, (dict, list)):
+                lines.append(f"{prefix}{key}:")
+                lines.extend(yaml_lines(item, indent + 2))
+            else:
+                lines.append(f"{prefix}{key}: {yaml_quote(str(item))}")
+        return lines
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict):
+                if not item:
+                    lines.append(f"{prefix}- {{}}")
+                    continue
+                first_key = next(iter(item))
+                first_val = item[first_key]
+                rest = {k: v for k, v in item.items() if k != first_key}
+                if isinstance(first_val, (dict, list)):
+                    lines.append(f"{prefix}- {first_key}:")
+                    lines.extend(yaml_lines(first_val, indent + 2))
+                else:
+                    lines.append(f"{prefix}- {first_key}: {yaml_quote(str(first_val))}")
+                if rest:
+                    lines.extend(yaml_lines(rest, indent + 2))
+            else:
+                lines.append(f"{prefix}- {yaml_quote(str(item))}")
+        return lines
+    lines.append(f"{prefix}{yaml_quote(str(value))}")
+    return lines
+
+
+def write_yaml(path: str, data: Dict[str, Any]) -> None:
+    lines = yaml_lines(data)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines))
+        handle.write("\n")
+
+
+def load_checkpoint(path: str) -> Optional[set[str]]:
+    if not path or not os.path.exists(path):
+        return None
+    with open(path, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+    if isinstance(data, dict):
+        cluster_ids = data.get("cluster_ids")
+        if isinstance(cluster_ids, list):
+            return {str(value) for value in cluster_ids if str(value).strip()}
+        legacy_id = data.get("cluster_id")
+        if isinstance(legacy_id, str) and legacy_id.strip() and legacy_id != "__skipped__":
+            return {legacy_id.strip()}
+        return set()
+    if isinstance(data, list):
+        return {str(value) for value in data if str(value).strip()}
+    return set()
+
+
+def save_checkpoint(path: str, cluster_ids: set[str]) -> None:
+    if not path:
+        return
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"cluster_ids": sorted(cluster_ids)}, handle, indent=2)
+        handle.write("\n")
+
+
+def cluster_summary(cluster: Dict[str, Any]) -> str:
+    keys = cluster.get("keys", {})
+    count = cluster.get("count")
+    return f"cluster_id={cluster.get('cluster_id')} count={count} keys={keys}"
+
+
+def format_examples(cluster: Dict[str, Any], limit: int = 3) -> List[str]:
+    examples = cluster.get("examples", {}) or {}
+    lines: List[str] = []
+    for label in ("subject_raw", "recipients", "reply_to_domains", "list_unsubscribe_targets", "sender_domains"):
+        values = examples.get(label, []) or []
+        if not values:
+            continue
+        preview = values[:limit]
+        lines.append(f"{label}: {', '.join(str(v) for v in preview)}")
+    latest_date = cluster.get("latest_date")
+    if latest_date:
+        lines.append(f"latest_date: {latest_date}")
+    return lines
+
+
+def prompt_rule_action() -> Dict[str, Any]:
+    action = prompt("Action (delete/move)", default="delete", required=True).lower()
+    if action not in ("delete", "move"):
+        print("Invalid action; using delete.")
+        action = "delete"
+    if action == "move":
+        destination = prompt("Move destination", required=True)
+        return {"type": "move", "destination": destination}
+    return {"type": "delete"}
+
+
+def prompt_folders(default_folders: Optional[str]) -> List[str]:
+    while True:
+        raw = prompt("IMAP Source folders (comma-separated)", default=default_folders, required=True)
+        folders = split_list(raw)
+        if folders:
+            return folders
+        print("At least one folder is required.")
+
+
+def prompt_optional_list(message: str, defaults: List[str], allow_note: Optional[str] = None) -> Optional[List[str]]:
+    if allow_note:
+        print(allow_note)
+    response = prompt_yes_no(f"Add {message}?", default=False)
+    if response != "y":
+        return None
+    default_value = ", ".join(defaults) if defaults else ""
+    raw = prompt(f"{message} (comma-separated)", default=default_value)
+    values = split_list(raw)
+    return values if values else []
+
+
+def rule_name_prompt(lens: str, cluster: Dict[str, Any]) -> str:
+    print(f"\nRule for {lens}:")
+    print(cluster_summary(cluster))
+    return prompt("Rule name", required=True)
+
+
+def build_watch_rule_list(cluster: Dict[str, Any], name: str) -> Optional[Dict[str, Any]]:
+    key = str(cluster.get("keys", {}).get("ListID", "")).strip()
+    default_regex = escape_regex(key) if key else ""
+    regex = prompt("list_id_regex", default=default_regex, required=True)
+    rule = {
+        "name": name,
+        "client": {
+            "list_id_regex": [regex],
+        },
+        "actions": [prompt_rule_action()],
+    }
+    return rule
+
+
+def build_cleanup_rule_list(cluster: Dict[str, Any], name: str, default_folders: Optional[str]) -> Tuple[Optional[Dict[str, Any]], str]:
+    key = str(cluster.get("keys", {}).get("ListID", "")).strip()
+    substring = prompt("list_id_substring", default=key, required=True)
+    folders = prompt_folders(default_folders)
+    rule = {
+        "name": name,
+        "server": {
+            "folders": folders,
+            "list_id_substring": [substring],
+        },
+        "actions": [prompt_rule_action()],
+    }
+    return rule, ", ".join(folders)
+
+
+def build_watch_rule_sender(cluster: Dict[str, Any], name: str) -> Optional[Dict[str, Any]]:
+    sender_domains = cluster.get("keys", {}).get("SenderDomains", []) or []
+    from_list = cluster.get("keys", {}).get("FromList", []) or []
+    has_unsub = cluster.get("keys", {}).get("HasListUnsubscribe")
+    from_domains = []
+    for value in from_list:
+        parts = str(value).split("@")
+        if len(parts) == 2 and parts[1].strip():
+            from_domains.append(parts[1].strip())
+    merged = list(dict.fromkeys([*sender_domains, *from_domains]))
+    sender_defaults = [escape_regex(str(domain)) for domain in merged]
+    sender_prompt_default = ", ".join(sender_defaults)
+    raw_sender = prompt("sender_regex (comma-separated)", default=sender_prompt_default, required=True)
+    sender_values = split_list(raw_sender)
+    rule = {
+        "name": name,
+        "client": {
+            "sender_regex": sender_values,
+        },
+        "actions": [prompt_rule_action()],
+    }
+    if isinstance(has_unsub, bool):
+        rule["client"]["list_unsubscribe"] = has_unsub
+    reply_defaults = cluster.get("examples", {}).get("reply_to_domains", []) or []
+    reply_defaults = [escape_regex(str(value)) for value in reply_defaults]
+    if reply_defaults:
+        reply_values = prompt_optional_list("replyto_regex", reply_defaults)
+        if reply_values is not None:
+            rule["client"]["replyto_regex"] = reply_values
+    recipients_defaults = cluster.get("examples", {}).get("recipients", []) or []
+    recipients_defaults = [escape_regex(str(value)) for value in recipients_defaults]
+    recipients_values = prompt_optional_list(
+        "recipients_regex",
+        recipients_defaults,
+    )
+    if recipients_values is not None:
+        rule["client"]["recipients_regex"] = recipients_values
+    return rule
+
+
+def build_cleanup_rule_sender(cluster: Dict[str, Any], name: str, default_folders: Optional[str]) -> Tuple[Optional[Dict[str, Any]], str]:
+    sender_domains = cluster.get("keys", {}).get("SenderDomains", []) or []
+    from_list = cluster.get("keys", {}).get("FromList", []) or []
+    has_unsub = cluster.get("keys", {}).get("HasListUnsubscribe")
+    from_domains = []
+    for value in from_list:
+        parts = str(value).split("@")
+        if len(parts) == 2 and parts[1].strip():
+            from_domains.append(parts[1].strip())
+    merged = list(dict.fromkeys([*sender_domains, *from_domains]))
+    sender_defaults = ", ".join(str(domain) for domain in merged)
+    raw_sender = prompt("sender_substring (comma-separated)", default=sender_defaults, required=True)
+    sender_values = split_list(raw_sender)
+    folders = prompt_folders(default_folders)
+    rule = {
+        "name": name,
+        "server": {
+            "folders": folders,
+            "sender_substring": sender_values,
+        },
+        "actions": [prompt_rule_action()],
+    }
+    if isinstance(has_unsub, bool):
+        rule["server"]["list_unsubscribe"] = has_unsub
+    reply_defaults = cluster.get("examples", {}).get("reply_to_domains", []) or []
+    if reply_defaults:
+        reply_values = prompt_optional_list("replyto_substring", [str(value) for value in reply_defaults])
+        if reply_values is not None:
+            rule["server"]["replyto_substring"] = reply_values
+    recipients_defaults = cluster.get("examples", {}).get("recipients", []) or []
+    recipients_values = prompt_optional_list("recipients", [str(value) for value in recipients_defaults])
+    if recipients_values is not None:
+        rule["server"]["recipients"] = recipients_values
+    return rule, ", ".join(folders)
+
+
+def build_watch_rule_recipient_tag(cluster: Dict[str, Any], name: str) -> Optional[Dict[str, Any]]:
+    tag_key = str(cluster.get("keys", {}).get("recipient_tag", "")).strip()
+    default_regex = escape_regex(tag_key) if tag_key else ""
+    regex = prompt("recipient_tag_regex", default=default_regex, required=True)
+    rule = {
+        "name": name,
+        "client": {
+            "recipient_tag_regex": [regex],
+        },
+        "actions": [prompt_rule_action()],
+    }
+    return rule
+
+
+def process_cluster(
+    lens: str,
+    cluster: Dict[str, Any],
+    watch_rules: List[Dict[str, Any]],
+    cleanup_rules: List[Dict[str, Any]],
+    default_folders: Optional[str],
+) -> Tuple[bool, Optional[str]]:
+    print("\n=== Cluster ===")
+    print(cluster_summary(cluster))
+    for line in format_examples(cluster):
+        print(f"  {line}")
+
+    rule_name: Optional[str] = None
+
+    watch_response = prompt_yes_no("Generate watch rule?", default=False)
+    if watch_response == "q":
+        return False, default_folders
+    if watch_response == "y":
+        rule_name = rule_name or rule_name_prompt(lens, cluster)
+        if lens == "list_lens":
+            rule = build_watch_rule_list(cluster, rule_name)
+        elif lens == "sender_unsub_lens":
+            rule = build_watch_rule_sender(cluster, rule_name)
+        elif lens == "recipient_tag_lens":
+            rule = build_watch_rule_recipient_tag(cluster, rule_name)
+        else:
+            print(f"Unsupported lens for watch rules: {lens}")
+            rule = None
+        if rule:
+            watch_rules.append(rule)
+
+    cleanup_response = prompt_yes_no("Generate cleanup rule?", default=False)
+    if cleanup_response == "q":
+        return False, default_folders
+    if cleanup_response == "y":
+        rule_name = rule_name or rule_name_prompt(lens, cluster)
+        if lens == "list_lens":
+            rule, default_folders = build_cleanup_rule_list(cluster, rule_name, default_folders)
+        elif lens == "sender_unsub_lens":
+            rule, default_folders = build_cleanup_rule_sender(cluster, rule_name, default_folders)
+        elif lens == "recipient_tag_lens":
+            print("recipient_tag_lens does not support server-side cleanup rules.")
+            rule = None
+        else:
+            print(f"Unsupported lens for cleanup rules: {lens}")
+            rule = None
+        if rule:
+            cleanup_rules.append(rule)
+
+    return True, default_folders
+
+
+def iter_clusters(indexes: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]]:
+    result: List[Tuple[str, Dict[str, Any]]] = []
+    for lens in ("list_lens", "sender_unsub_lens", "recipient_tag_lens"):
+        clusters = indexes.get(lens, {}).get("clusters", []) or []
+        for cluster in clusters:
+            result.append((lens, cluster))
+    return result
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Generate watch/cleanup rules from analyze output.")
+    parser.add_argument("--analyze", required=True, help="Path to analyze JSON file")
+    parser.add_argument("--watch-out", required=True, help="Path to write watch YAML")
+    parser.add_argument("--cleanup-out", required=True, help="Path to write cleanup YAML")
+    parser.add_argument(
+        "--checkpoint",
+        default=None,
+        help="Path to checkpoint JSON (defaults to <watch-out>.checkpoint.json)",
+    )
+    args = parser.parse_args()
+
+    checkpoint_path = args.checkpoint or f"{args.watch_out}.checkpoint.json"
+
+    try:
+        data = load_analyze(args.analyze)
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"Failed to load analyze file: {exc}", file=sys.stderr)
+        return 1
+
+    indexes = data.get("indexes", {})
+
+    enabled_lenses = {}
+    for lens in ("list_lens", "sender_unsub_lens", "recipient_tag_lens"):
+        response = prompt_yes_no(f"Process {lens}?", default=True)
+        if response == "q":
+            return 0
+        enabled_lenses[lens] = response == "y"
+
+    clusters = iter_clusters(indexes)
+
+    processed_ids = load_checkpoint(checkpoint_path) or set()
+
+    watch_rules: List[Dict[str, Any]] = []
+    cleanup_rules: List[Dict[str, Any]] = []
+    default_folders: Optional[str] = "INBOX"
+
+    for lens, cluster in clusters:
+        if not enabled_lenses.get(lens, True):
+            continue
+        cluster_id = str(cluster.get("cluster_id", ""))
+        if cluster_id in processed_ids:
+            continue
+
+        proceed, default_folders = process_cluster(
+            lens,
+            cluster,
+            watch_rules,
+            cleanup_rules,
+            default_folders,
+        )
+        if not proceed:
+            break
+        processed_ids.add(cluster_id)
+        save_checkpoint(checkpoint_path, processed_ids)
+
+    watch_config = {"rules": watch_rules}
+    cleanup_config = {"rules": cleanup_rules}
+
+    write_yaml(args.watch_out, watch_config)
+    write_yaml(args.cleanup_out, cleanup_config)
+
+    print(f"Wrote watch rules to {args.watch_out}")
+    print(f"Wrote cleanup rules to {args.cleanup_out}")
+    print(f"Checkpoint saved to {checkpoint_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+</file>
+
+<file path="AGENTS.md">
+# Repository Guidelines
+
+## Project Structure & Module Organization
+- `context/` contains the current project overview and operating constraints.
+- Top-level Go packages:
+  - `announcer/` webhook notification client.
+  - `appconfig/` configuration models, parsing, and validation.
+  - `cleanuprunner/` cleanup orchestration.
+  - `cli/` Cobra command wiring for `postmanpat`.
+  - `imap/` IMAP facade API.
+  - `watchrunner/` watch-mode orchestration and watch-specific internals.
+- Package internals:
+  - `imap/internal/` for IMAP implementation details (`actions`, `searches`, `selectors`, `sessionmgr`, `maildata`).
+  - `watchrunner/internal/` for watch-only internals (`matchers`).
+
+## Build, Test, and Development Commands
+- **TBD**: Build, test, and local run commands will be defined once the Go module layout and tooling are finalized.
+- **CI**: This repository will use GitHub Actions to run build/test workflows on every pull request.
+
+## Coding Style & Naming Conventions
+- Go formatting should follow `gofmt` and standard Go naming conventions.
+- Keep package names short and lowercase; exported identifiers should use PascalCase.
+- When adding linting/formatting tools, document them here.
+
+## Testing Guidelines
+- **TBD**: Define test framework(s), coverage expectations, and naming conventions once tests are added.
+- Prefer deterministic tests for IMAP interactions; consider local fixtures or mocks instead of live servers.
+
+## Commit & Pull Request Guidelines
+- **Commits**: No history to infer conventions yet. Use imperative, scoped messages (for example `email: handle duplicates`).
+- **PRs**: Include a concise description, test evidence (commands or CI link), and any operational notes.
+
+## Roadmap / Stages (MVP Focus)
+- Stage 1: Functional IMAP ingestion and basic archival to DigitalOcean Spaces.
+- Stage 2: Scalable cleanup rules to triage large inboxes (bulk actions, safe defaults).
+- Stage 3: Assisted manual review tooling for selective cleanup to reach inbox zero.
+- Stage 4: Migration tooling to move mail from Gmail to Fastmail after cleanup.
+
+## Stage 1 Requirements (Cleanup CLI)
+- CLI: `postmanpat cleanup` runs on a schedule (cron) with a YAML config file.
+- Config includes IMAP credentials, DO Spaces credentials, rules, and reporting.
+- Scope: process all IMAP folders (Gmail labels treated as folders).
+- Rules: ordered, apply-all; each rule must include folder selection criteria.
+- Matchers:
+  - Server (IMAP search): age, sender/domain substrings, recipients, body substrings, reply-to substrings, list-id substrings, folders.
+  - Client (post-fetch): regex-capable matchers (subject/body/sender/recipient/reply-to/list-id).
+- Actions: archive to Spaces, move to folder, delete; action order is defined per rule.
+- Archive format: store `.eml` plus decoded `.txt`/`.html` and attachments.
+- Archive path: rule-defined template path with variables.
+- Attachments: `<message-id>/<attachment-name>.<ext>`; email as `<message-id>.eml`.
+- Dedupe: hash of raw `.eml` across folders per run.
+- Checkpoint: per-folder last UID in a separate local file; allow reset/ignore.
+- Reporting: per-rule stats and errors via Slack or Discord webhook.
+
+## IMAP Callback / Watcher (Realtime)
+- Goal: IMAP "callback" equivalent using a long-lived IMAP session with IDLE to trigger rule processing on new inbox mail.
+- Scope: single mailbox (INBOX) only for the watcher; no multi-mailbox support needed initially.
+- Transport: use IDLE only (no polling fallback) for initial implementation.
+- Reliability: handle reconnects with backoff and resume from last UID to avoid missing messages.
+
+## Deployment (DigitalOcean)
+- Target deployment is a Docker container on DigitalOcean.
+- Decide on hosting form factor (App Platform vs. Droplet) and document environment configuration.
+
+## Agent-Specific Instructions
+- Work in small, discussed steps; requirements and stages should be agreed before implementation.
+- Keep this document updated as new directories, commands, and workflows are introduced.
+- IMAP logic must remain vendor-neutral; avoid provider-specific assumptions or headers unless explicitly documented and optional.
+</file>
+
+<file path="Dockerfile">
+FROM golang:1.25-bookworm AS builder
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN go build -o /out/postmanpat ./cmd/postmanpat
+
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates cron \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY --from=builder /out/postmanpat /usr/local/bin/postmanpat
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+CMD ["/entrypoint.sh"]
+</file>
+
+<file path="go.mod">
+module github.com/aaronromeo/postmanpat
+
+go 1.25.5
+
+require (
+	github.com/emersion/go-imap/v2 v2.0.0-beta.7
+	github.com/emersion/go-message v0.18.1
+	github.com/joho/godotenv v1.5.1
+	github.com/spf13/cobra v1.10.2
+	github.com/stretchr/testify v1.11.1
+	gopkg.in/yaml.v3 v3.0.1
+)
+
+require (
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/emersion/go-sasl v0.0.0-20231106173351-e73c9f7bad43 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/spf13/pflag v1.0.9 // indirect
+)
+</file>
+
+<file path="docker-compose.yml">
+services:
+  announcements:
+    build:
+      context: ./announcements
+      dockerfile: Dockerfile
+    container_name: postmanpat-announcements
+    restart: unless-stopped
+    environment:
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+      - PORT=8091
+    expose:
+      - "8091"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8091/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - pi-services
+
+  postmanpat:
+    build: .
+    environment:
+      POSTMANPAT_CONFIG: /config/config_cleanup.yaml
+      POSTMANPAT_CLEANUP_CONFIG: ${POSTMANPAT_CLEANUP_CONFIG}
+      POSTMANPAT_IMAP_HOST: ${POSTMANPAT_IMAP_HOST}
+      POSTMANPAT_IMAP_PORT: ${POSTMANPAT_IMAP_PORT}
+      POSTMANPAT_IMAP_USER: ${POSTMANPAT_IMAP_USER}
+      POSTMANPAT_IMAP_PASS: ${POSTMANPAT_IMAP_PASS}
+      POSTMANPAT_S3_ENDPOINT: ${POSTMANPAT_S3_ENDPOINT}
+      POSTMANPAT_S3_REGION: ${POSTMANPAT_S3_REGION}
+      POSTMANPAT_S3_BUCKET: ${POSTMANPAT_S3_BUCKET}
+      POSTMANPAT_S3_KEY: ${POSTMANPAT_S3_KEY}
+      POSTMANPAT_S3_SECRET: ${POSTMANPAT_S3_SECRET}
+      POSTMANPAT_WEBHOOK_URL: ${POSTMANPAT_WEBHOOK_URL:-http://postmanpat-announcements:8091}
+    volumes:
+      - ${POSTMANPAT_CLEANUP_CONFIG:-./config/config_cleanup.yaml}:/config/config_cleanup.yaml:ro
+    restart: unless-stopped
+    networks:
+      - pi-services
+
+  postmanpat-watch:
+    build: .
+    command: ["postmanpat", "watch", "--verbose"]
+    environment:
+      POSTMANPAT_IMAP_HOST: ${POSTMANPAT_IMAP_HOST}
+      POSTMANPAT_IMAP_PORT: ${POSTMANPAT_IMAP_PORT}
+      POSTMANPAT_IMAP_USER: ${POSTMANPAT_IMAP_USER}
+      POSTMANPAT_IMAP_PASS: ${POSTMANPAT_IMAP_PASS}
+      POSTMANPAT_S3_ENDPOINT: ${POSTMANPAT_S3_ENDPOINT}
+      POSTMANPAT_S3_REGION: ${POSTMANPAT_S3_REGION}
+      POSTMANPAT_S3_BUCKET: ${POSTMANPAT_S3_BUCKET}
+      POSTMANPAT_S3_KEY: ${POSTMANPAT_S3_KEY}
+      POSTMANPAT_S3_SECRET: ${POSTMANPAT_S3_SECRET}
+      POSTMANPAT_WEBHOOK_URL: ${POSTMANPAT_WEBHOOK_URL:-http://postmanpat-announcements:8091}
+      POSTMANPAT_CONFIG: /config/config_watch.yaml
+      POSTMANPAT_WATCH_CONFIG: ${POSTMANPAT_WATCH_CONFIG}
+    volumes:
+      - ${POSTMANPAT_WATCH_CONFIG:-./config/config_watch.yaml}:/config/config_watch.yaml:ro
+    restart: unless-stopped
+    networks:
+      - pi-services
+
+networks:
+  pi-services:
+    driver: bridge
+</file>
+
+<file path=".gitignore">
+.env
+tmp/
+.gocache
+.gomodcache
+config/config_analyze.yaml
+config/config_cleanup.yaml
+config/config_watch.yaml
+</file>
+
+<file path="README.md">
+# PostmanPat
+
+PostmanPat is a Go-based email processing and archival system that connects to IMAP email servers to automatically manage email messages. It provides automated email archival, cleanup, and a web interface for monitoring mailbox operations.
+
+## Quick Start
+
+### Local Development
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd postmanpat
+   ```
+
+2. **Set up environment**
+   Edit .env with your configuration. The env vars `POSTMANPAT_IMAP_HOST`, `POSTMANPAT_IMAP_PORT`, `POSTMANPAT_IMAP_USER`, `POSTMANPAT_IMAP_PASS`, `POSTMANPAT_S3_ENDPOINT`, `POSTMANPAT_S3_REGION`, `POSTMANPAT_S3_BUCKET`, `POSTMANPAT_S3_KEY`, `POSTMANPAT_S3_SECRET`, `POSTMANPAT_WEBHOOK_URL` are required.
+
+   ```bash
+   cp .env.sample .env
+   ```
+
+3. **Go mod tidy if needed**
+   ```bash
+   go mod tidy
+   ```
+
+4. **Build the app**
+   ```bash
+   go build -o bin ./...
+   ```
+
+5. **Base case**
+   ```bash
+    $ bin/postmanpat
+    postmanpat manages email cleanup and archiving
+
+    Usage:
+    postmanpat [command]
+
+    Available Commands:
+    cleanup     Process IMAP folders based on configured rules
+    completion  Generate the autocompletion script for the specified shell
+    help        Help about any command
+
+    Flags:
+    -h, --help   help for postmanpat
+
+    Use "postmanpat [command] --help" for more information about a command.
+    ```
+
+### Rule Matchers
+
+Rules now separate server-side and client-side matchers:
+
+```yaml
+rules:
+  - name: "Example"
+    server:
+      age_window:
+        min: "24h" # at least 24 hours old
+        max: "7d"  # at most 7 days old
+      folders: ["INBOX"]
+      sender_substring:
+        - "example.com"
+    client:
+      subject_regex:
+        - "(?i)welcome"
+```
+
+- `server` matchers are used for IMAP SEARCH (substring/age/folder).
+- `client` matchers are reserved for post-fetch regex filtering (used by `watch`).
+- `age_window` uses IMAP INTERNALDATE, not the message `Date:` header.
+- `age_window` defines a bounded range: `min` is the minimum age (older than), `max` is the maximum age (newer than).
+- Server matchers: `age_window`, `folders`, `sender_substring`, `recipients`, `cc_substring`, `returnpath_substring` (matches `Return-Path` / MAIL FROM domain, e.g. Gmail “mailed-by”), `body_substring`, `replyto_substring`, `list_id_substring`, `seen` (true/false), `list_unsubscribe` (true/false).
+- Client matchers: `subject_regex`, `body_regex`, `sender_regex`, `recipients_regex`, `cc_regex`, `returnpath_regex` (matches `Return-Path` / MAIL FROM domain, e.g. Gmail “mailed-by”), `replyto_regex`, `list_id_regex`, `recipient_tag_regex`, `list_unsubscribe` (true/false).
+
+### Watch Test Mode
+
+Use `watch --test` to run a one-off match check for a single rule and print the last N matches.
+
+```bash
+postmanpat watch --config /path/to/watch.yml --test "Rule Name" --limit 10 --mailbox "[Gmail]/All Mail"
+```
+
+Notes:
+- `--test` takes a rule name from the config.
+- `--limit` caps the number of matches returned (default 10).
+- `--mailbox` overrides the mailbox to scan (default `INBOX`).
+
+### Reporting and Checkpoint
+
+- Reporting is enabled when `POSTMANPAT_WEBHOOK_URL` is set. No YAML config is needed for reporting.
+- `checkpoint.path` is intended to store per-folder UID progress for long-running cleanup jobs. It is not currently used by `watch` or `cleanup`, but it is kept in the config for upcoming checkpointing support.
+
+### Docker (Cleanup Cron)
+
+This setup runs `postmanpat cleanup` every 15 minutes inside the container using cron.
+
+1. **Initialize submodules**
+   ```bash
+   git submodule update --init --recursive
+   ```
+
+2. **Create a config file**
+   - Place your cleanup config at `./config/config.yaml` (mounted to `/config/config.yaml` in the container).
+
+3. **Set required environment variables**
+   - Required IMAP and reporting/Spaces env vars:
+     - `POSTMANPAT_IMAP_HOST`
+     - `POSTMANPAT_IMAP_PORT`
+     - `POSTMANPAT_IMAP_USER`
+     - `POSTMANPAT_IMAP_PASS`
+     - `POSTMANPAT_S3_ENDPOINT`
+     - `POSTMANPAT_S3_REGION`
+     - `POSTMANPAT_S3_BUCKET`
+     - `POSTMANPAT_S3_KEY`
+     - `POSTMANPAT_S3_SECRET`
+     - `POSTMANPAT_WEBHOOK_URL`
+   - The container also expects:
+     - `POSTMANPAT_CONFIG` (set by compose to `/config/config.yaml`)
+
+4. **Run with docker-compose**
+   ```bash
+   docker compose up --build
+   ```
+
+5. **One-off cleanup run**
+   ```bash
+   docker compose run --rm postmanpat postmanpat cleanup --config /config/config_cleanup.yaml
+   ```
+</file>
+
+<file path=".github/workflows/ci.yml">
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.5'
+      - name: Run tests
+        run: go test ./...
+</file>
+
+<file path="cmd/postmanpat/main.go">
+package main
+
+import "github.com/aaronromeo/postmanpat/cli"
+
+func main() {
+	cli.Execute()
+}
+</file>
+
+</files>

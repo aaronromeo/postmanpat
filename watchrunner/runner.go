@@ -6,15 +6,31 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/aaronromeo/postmanpat/internal/config"
-	"github.com/aaronromeo/postmanpat/internal/imap"
-	"github.com/aaronromeo/postmanpat/internal/matchers"
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/imap"
+	"github.com/aaronromeo/postmanpat/watchrunner/internal/matchers"
+	giimap "github.com/emersion/go-imap/v2"
+	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 )
+
+type WatchRunner interface {
+	Connect() error
+	Close() error
+	Idle() (*giimapclient.IdleCommand, error)
+	SelectMailbox(ctx context.Context, mailbox string) (*giimap.SelectData, error)
+	FetchSenderData(ctx context.Context, uids []uint32) ([]imap.MailData, error)
+	SearchUIDsNewerThan(ctx context.Context, lastUID uint32) ([]uint32, error)
+	MoveUIDs(ctx context.Context, uids []uint32, destination string) error
+	DeleteUIDs(ctx context.Context, uids []uint32, expunge bool) error
+}
+
+type Client struct {
+	*imap.Client
+}
 
 type Deps struct {
 	Ctx      context.Context
-	Client   *imap.Client
-	Rules    []config.Rule
+	Rules    []appconfig.Rule
 	Log      *slog.Logger
 	Announce func(string)
 }
@@ -24,12 +40,16 @@ type State struct {
 	LastCount uint32
 }
 
-func ProcessUIDs(deps Deps, state *State, uids []uint32) error {
+func New(opts ...imap.Option) *Client {
+	return &Client{Client: imap.NewWatch(opts...)}
+}
+
+func (c *Client) ProcessUIDs(deps Deps, state *State, uids []uint32) error {
 	deps.Log.Debug("search newer than uid", "last_uid", state.LastUID, "uids", len(uids))
 	if len(uids) == 0 {
 		return nil
 	}
-	data, err := deps.Client.FetchSenderData(deps.Ctx, uids)
+	data, err := c.FetchSenderData(deps.Ctx, uids)
 	if err != nil {
 		return err
 	}
@@ -37,7 +57,7 @@ func ProcessUIDs(deps Deps, state *State, uids []uint32) error {
 	for _, message := range data {
 		matchedAny := false
 		for _, rule := range deps.Rules {
-			ok, err := matchers.MatchesClient(rule.Client, matchers.ClientMessage{
+			ok, err := (matchers.ClientMessage{
 				ListID:           message.ListID,
 				SenderDomains:    message.SenderDomains,
 				ReplyToDomains:   message.ReplyToDomains,
@@ -48,7 +68,7 @@ func ProcessUIDs(deps Deps, state *State, uids []uint32) error {
 				Cc:               message.Cc,
 				ReturnPathDomain: message.ReturnPathDomain,
 				ListUnsubscribe:  message.ListUnsubscribe,
-			})
+			}).Match(rule.Client)
 			if err != nil {
 				return err
 			}
@@ -58,7 +78,7 @@ func ProcessUIDs(deps Deps, state *State, uids []uint32) error {
 				if deps.Announce != nil {
 					deps.Announce(rule.Name)
 				}
-				if err := applyActions(deps, rule, message.UID); err != nil {
+				if err := applyActions(c, deps, rule, message.UID); err != nil {
 					return err
 				}
 			}
@@ -75,21 +95,21 @@ func ProcessUIDs(deps Deps, state *State, uids []uint32) error {
 	return nil
 }
 
-func Reconnect(deps Deps, state *State, mailbox string) error {
-	_ = deps.Client.Close()
-	if err := deps.Client.Connect(); err != nil {
+func (c *Client) Reconnect(deps Deps, state *State, mailbox string) error {
+	_ = c.Close()
+	if err := c.Connect(); err != nil {
 		return err
 	}
-	selection, err := deps.Client.SelectMailbox(deps.Ctx, mailbox)
+	selection, err := c.SelectMailbox(deps.Ctx, mailbox)
 	if err != nil {
 		return err
 	}
 	deps.Log.Info("reconnected", "mailbox", mailbox, "messages", selection.NumMessages)
-	uids, err := deps.Client.SearchUIDsNewerThan(deps.Ctx, state.LastUID)
+	uids, err := c.SearchUIDsNewerThan(deps.Ctx, state.LastUID)
 	if err != nil {
 		return err
 	}
-	if err := ProcessUIDs(deps, state, uids); err != nil {
+	if err := c.ProcessUIDs(deps, state, uids); err != nil {
 		return err
 	}
 	state.LastCount = selection.NumMessages
@@ -113,26 +133,26 @@ func maxUID(current uint32, uids []uint32) uint32 {
 	return max
 }
 
-func applyActions(deps Deps, rule config.Rule, uid uint32) error {
+func applyActions(client WatchRunner, deps Deps, rule appconfig.Rule, uid uint32) error {
 	if uid == 0 {
 		return nil
 	}
 	for _, action := range rule.Actions {
 		switch action.Type {
-		case config.DELETE:
+		case appconfig.DELETE:
 			expungeAfterDelete := true
 			if action.ExpungeAfterDelete != nil {
 				expungeAfterDelete = *action.ExpungeAfterDelete
 			}
-			if err := deps.Client.DeleteUIDs(deps.Ctx, []uint32{uid}, expungeAfterDelete); err != nil {
+			if err := client.DeleteUIDs(deps.Ctx, []uint32{uid}, expungeAfterDelete); err != nil {
 				return err
 			}
-		case config.MOVE:
+		case appconfig.MOVE:
 			destination := strings.TrimSpace(action.Destination)
 			if destination == "" {
 				return fmt.Errorf("Action move missing destination for rule %q", rule.Name)
 			}
-			if err := deps.Client.MoveUIDs(deps.Ctx, []uint32{uid}, destination); err != nil {
+			if err := client.MoveUIDs(deps.Ctx, []uint32{uid}, destination); err != nil {
 				return err
 			}
 		default:

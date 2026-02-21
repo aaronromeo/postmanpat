@@ -11,8 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aaronromeo/postmanpat/internal/config"
-	"github.com/aaronromeo/postmanpat/internal/imap"
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/imap"
+	"github.com/aaronromeo/postmanpat/serverrunner"
 	"github.com/spf13/cobra"
 )
 
@@ -29,12 +30,12 @@ var analyzeCmd = &cobra.Command{
 			return err
 		}
 
-		cfg, err := config.Load(cfgPath)
+		cfg, err := appconfig.Load(cfgPath)
 		if err != nil {
 			return err
 		}
 
-		if err := config.Validate(cfg); err != nil {
+		if err := appconfig.Validate(cfg); err != nil {
 			return err
 		}
 
@@ -47,7 +48,7 @@ var analyzeCmd = &cobra.Command{
 			}
 		}
 
-		imapEnv, err := config.IMAPEnvFromEnv()
+		imapEnv, err := appconfig.IMAPEnvFromEnv()
 		if err != nil {
 			return err
 		}
@@ -57,11 +58,12 @@ var analyzeCmd = &cobra.Command{
 			ctx = context.Background()
 		}
 
-		client := &imap.Client{
-			Addr:     fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
-			Username: imapEnv.User,
-			Password: imapEnv.Pass,
-		}
+		client := serverrunner.New(
+			imap.WithAddr(
+				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
+			),
+			imap.WithCreds(imapEnv.User, imapEnv.Pass),
+		)
 		if err := client.Connect(); err != nil {
 			return err
 		}
@@ -140,7 +142,7 @@ type analyzeReportParams struct {
 	Mailbox   string
 	Account   string
 	Generated time.Time
-	AgeWindow *config.AgeWindow
+	AgeWindow *appconfig.AgeWindow
 	Options   analyzeOptions
 }
 
@@ -250,8 +252,8 @@ const (
 	ExampleKeyListUnsubscribeTargets = "list_unsubscribe_targets"
 )
 
-func buildTimeWindow(now time.Time, window *config.AgeWindow) (timeWindow, error) {
-	after, before, err := config.AgeWindowBounds(now, window)
+func buildTimeWindow(now time.Time, window *appconfig.AgeWindow) (timeWindow, error) {
+	after, before, err := appconfig.AgeWindowBounds(now, window)
 	if err != nil {
 		return timeWindow{}, err
 	}

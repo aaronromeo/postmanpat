@@ -5,8 +5,12 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/aaronromeo/postmanpat/internal/config"
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
 )
+
+type MessageMatcher interface {
+	Match(matchers *appconfig.ClientMatchers) (bool, error)
+}
 
 type ClientMessage struct {
 	ListID           string
@@ -21,8 +25,8 @@ type ClientMessage struct {
 	ListUnsubscribe  bool
 }
 
-// MatchesClient returns true if the message satisfies all configured client matchers.
-func MatchesClient(matchers *config.ClientMatchers, data ClientMessage) (bool, error) {
+// Match returns true if the message satisfies all configured client matchers.
+func (data ClientMessage) Match(matchers *appconfig.ClientMatchers) (bool, error) {
 	if matchers == nil || matchers.IsEmpty() {
 		return true, nil
 	}

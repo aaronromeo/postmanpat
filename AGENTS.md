@@ -2,7 +2,16 @@
 
 ## Project Structure & Module Organization
 - `context/` contains the current project overview and operating constraints.
-- Source code, tests, and assets are not yet defined; document new top-level directories as they are introduced (for example `cmd/`, `internal/`, `pkg/`, `tests/`).
+- Top-level Go packages:
+  - `announcer/` webhook notification client.
+  - `appconfig/` configuration models, parsing, and validation.
+  - `cleanuprunner/` cleanup orchestration.
+  - `cli/` Cobra command wiring for `postmanpat`.
+  - `imap/` IMAP facade API.
+  - `watchrunner/` watch-mode orchestration and watch-specific internals.
+- Package internals:
+  - `imap/internal/` for IMAP implementation details (`actions`, `searches`, `selectors`, `sessionmgr`, `maildata`).
+  - `watchrunner/internal/` for watch-only internals (`matchers`).
 
 ## Build, Test, and Development Commands
 - **TBD**: Build, test, and local run commands will be defined once the Go module layout and tooling are finalized.

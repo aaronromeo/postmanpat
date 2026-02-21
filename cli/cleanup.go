@@ -5,13 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"strings"
-	"time"
 
-	"github.com/aaronromeo/postmanpat/internal/config"
-	"github.com/aaronromeo/postmanpat/internal/imap"
+	"github.com/aaronromeo/postmanpat/announcer"
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/imap"
+	"github.com/aaronromeo/postmanpat/serverrunner"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
@@ -29,12 +29,12 @@ var cleanupCmd = &cobra.Command{
 			return err
 		}
 
-		cfg, err := config.Load(cfgPath)
+		cfg, err := appconfig.Load(cfgPath)
 		if err != nil {
 			return err
 		}
 
-		if err := config.Validate(cfg); err != nil {
+		if err := appconfig.Validate(cfg); err != nil {
 			return err
 		}
 
@@ -47,16 +47,16 @@ var cleanupCmd = &cobra.Command{
 			}
 		}
 
-		if err := config.ValidateEnv(); err != nil {
+		if err := appconfig.ValidateEnv(); err != nil {
 			return err
 		}
 
-		cfgSummary := config.Summary(cfg)
+		cfgSummary := appconfig.Summary(cfg)
 		out := cmd.OutOrStdout()
 		logger := slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: slog.LevelInfo}))
 		logger.Info("config summary", "summary", cfgSummary)
 
-		imapEnv, err := config.IMAPEnvFromEnv()
+		imapEnv, err := appconfig.IMAPEnvFromEnv()
 		if err != nil {
 			return err
 		}
@@ -71,11 +71,16 @@ var cleanupCmd = &cobra.Command{
 			return err
 		}
 
-		client := &imap.Client{
-			Addr:     fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
-			Username: imapEnv.User,
-			Password: imapEnv.Pass,
-		}
+		var client serverrunner.ServerRunner = serverrunner.New(
+			imap.WithAddr(
+				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
+			),
+			imap.WithCreds(imapEnv.User, imapEnv.Pass),
+		)
+
+		var announcerService announcer.Service = announcer.New(
+			announcer.WithWebhookURL(os.Getenv("POSTMANPAT_WEBHOOK_URL")),
+		)
 
 		if err := client.Connect(); err != nil {
 			return err
@@ -92,14 +97,14 @@ var cleanupCmd = &cobra.Command{
 
 			logger.Info("rule matched", "rule", rule.Name, "mailbox", mailbox, "messages", len(uids))
 			if len(uids) > 0 {
-				if err := postAnnouncement(rule.Name, mailbox, len(uids)); err != nil {
+				if err := announcerService.Do("Cleanup", rule.Name, mailbox, len(uids)); err != nil {
 					logger.Error("reporting failed", "rule", rule.Name, "mailbox", mailbox, "error", err)
 				}
 			}
 
 			for _, action := range rule.Actions {
 				switch action.Type {
-				case config.DELETE:
+				case appconfig.DELETE:
 					if dryRun {
 						logger.Info("dry run delete", "rule", rule.Name, "messages", len(uids))
 						continue
@@ -111,7 +116,7 @@ var cleanupCmd = &cobra.Command{
 					if err := client.DeleteByMailbox(ctx, matched, expungeAfterDelete); err != nil {
 						return err
 					}
-				case config.MOVE:
+				case appconfig.MOVE:
 					if strings.TrimSpace(action.Destination) == "" {
 						return fmt.Errorf("Action move missing destination: %s", rule.Name)
 					}
@@ -158,32 +163,4 @@ func loadEnvFile() error {
 		return err
 	}
 	return godotenv.Load(defaultEnvFile)
-}
-
-func postAnnouncement(ruleName, mailbox string, count int) error {
-	if !config.ReportingEnabled() {
-		return nil
-	}
-	baseURL := strings.TrimSpace(os.Getenv("POSTMANPAT_WEBHOOK_URL"))
-	if baseURL == "" {
-		return nil
-	}
-	baseURL = strings.TrimRight(baseURL, "/")
-	message := fmt.Sprintf("Rule %q mailbox %q matched %d messages\n", ruleName, mailbox, count)
-	payload := fmt.Sprintf("{\"message\": %q}", message)
-	req, err := http.NewRequest("POST", baseURL+webhookAnnouncePath, strings.NewReader(payload))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("reporting webhook returned status %s", resp.Status)
-	}
-	return nil
 }

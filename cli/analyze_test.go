@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aaronromeo/postmanpat/internal/config"
-	"github.com/aaronromeo/postmanpat/internal/imap"
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/imap"
 )
 
 func TestBuildAnalyzeReportJSON(t *testing.T) {
 	now := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
-	ageWindow := &config.AgeWindow{
+	ageWindow := &appconfig.AgeWindow{
 		Min: "48h",
 	}
 	data := []imap.MailData{
@@ -156,7 +156,7 @@ func TestBuildAnalyzeReportJSON(t *testing.T) {
 func TestBuildTimeWindow(t *testing.T) {
 	now := time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)
 
-	window, err := buildTimeWindow(now, &config.AgeWindow{Min: "0h"})
+	window, err := buildTimeWindow(now, &appconfig.AgeWindow{Min: "0h"})
 	if err != nil {
 		t.Fatalf("build time window: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestBuildTimeWindow(t *testing.T) {
 func TestBuildTimeWindowMax(t *testing.T) {
 	now := time.Date(2024, 2, 1, 12, 0, 0, 0, time.UTC)
 
-	window, err := buildTimeWindow(now, &config.AgeWindow{Max: "24h"})
+	window, err := buildTimeWindow(now, &appconfig.AgeWindow{Max: "24h"})
 	if err != nil {
 		t.Fatalf("build time window: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestBuildTimeWindowMax(t *testing.T) {
 func TestBuildTimeWindowMin(t *testing.T) {
 	now := time.Date(2024, 2, 1, 12, 0, 0, 0, time.UTC)
 
-	window, err := buildTimeWindow(now, &config.AgeWindow{Min: "6h"})
+	window, err := buildTimeWindow(now, &appconfig.AgeWindow{Min: "6h"})
 	if err != nil {
 		t.Fatalf("build time window: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestBuildTimeWindowMin(t *testing.T) {
 
 func TestAnalyzeRejectsClientMatchers(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
+	path := filepath.Join(dir, "appconfig.yaml")
 	if err := os.WriteFile(path, []byte(`
 rules:
   - name: "Rule"

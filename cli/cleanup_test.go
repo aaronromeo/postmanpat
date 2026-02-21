@@ -10,7 +10,7 @@ import (
 
 func TestCleanupRejectsClientMatchers(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
+	path := filepath.Join(dir, "appconfig.yaml")
 	if err := os.WriteFile(path, []byte(`
 rules:
   - name: "Rule"

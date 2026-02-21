@@ -3,18 +3,18 @@ package matchers
 import (
 	"testing"
 
-	"github.com/aaronromeo/postmanpat/internal/config"
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
 )
 
 func TestMatchesClientListIDRegex(t *testing.T) {
-	matchers := &config.ClientMatchers{
+	matchers := &appconfig.ClientMatchers{
 		ListIDRegex: []string{`<f7443300a7bb349db1e85fa6e\.1520313\.list-id\.mcsv\.net>`},
 	}
 	data := ClientMessage{
 		ListID: "f7443300a7bb349db1e85fa6emc list <f7443300a7bb349db1e85fa6e.1520313.list-id.mcsv.net>",
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := data.Match(matchers)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -24,14 +24,14 @@ func TestMatchesClientListIDRegex(t *testing.T) {
 }
 
 func TestMatchesClientListIDRegexNoMatch(t *testing.T) {
-	matchers := &config.ClientMatchers{
+	matchers := &appconfig.ClientMatchers{
 		ListIDRegex: []string{`<not-a-match>`},
 	}
 	data := ClientMessage{
 		ListID: "f7443300a7bb349db1e85fa6emc list <f7443300a7bb349db1e85fa6e.1520313.list-id.mcsv.net>",
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := data.Match(matchers)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestMatchesClientListIDRegexNoMatch(t *testing.T) {
 }
 
 func TestMatchesClientSenderAndReplyToRegex(t *testing.T) {
-	matchers := &config.ClientMatchers{
+	matchers := &appconfig.ClientMatchers{
 		SenderRegex:  []string{`ghost\.io`},
 		ReplyToRegex: []string{`404media\.co`},
 	}
@@ -50,7 +50,7 @@ func TestMatchesClientSenderAndReplyToRegex(t *testing.T) {
 		ReplyToDomains: []string{"404media.co"},
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := data.Match(matchers)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestMatchesClientSenderAndReplyToRegex(t *testing.T) {
 }
 
 func TestMatchesClientSenderAndReplyToRegexRequiresBoth(t *testing.T) {
-	matchers := &config.ClientMatchers{
+	matchers := &appconfig.ClientMatchers{
 		SenderRegex:  []string{`ghost\.io`},
 		ReplyToRegex: []string{`404media\.co`},
 	}
@@ -69,7 +69,7 @@ func TestMatchesClientSenderAndReplyToRegexRequiresBoth(t *testing.T) {
 		ReplyToDomains: []string{"example.com"},
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := data.Match(matchers)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -79,14 +79,14 @@ func TestMatchesClientSenderAndReplyToRegexRequiresBoth(t *testing.T) {
 }
 
 func TestMatchesClientSubjectRegex(t *testing.T) {
-	matchers := &config.ClientMatchers{
+	matchers := &appconfig.ClientMatchers{
 		SubjectRegex: []string{`(?i)welcome`},
 	}
 	data := ClientMessage{
 		SubjectRaw: "Welcome to the list",
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := data.Match(matchers)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -96,14 +96,14 @@ func TestMatchesClientSubjectRegex(t *testing.T) {
 }
 
 func TestMatchesClientRecipientsRegex(t *testing.T) {
-	matchers := &config.ClientMatchers{
+	matchers := &appconfig.ClientMatchers{
 		RecipientsRegex: []string{`user@example\.com`},
 	}
 	data := ClientMessage{
 		Recipients: []string{"user@example.com"},
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := data.Match(matchers)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -113,14 +113,14 @@ func TestMatchesClientRecipientsRegex(t *testing.T) {
 }
 
 func TestMatchesClientCcRegex(t *testing.T) {
-	matchers := &config.ClientMatchers{
+	matchers := &appconfig.ClientMatchers{
 		CcRegex: []string{`cc@example\.com`},
 	}
 	data := ClientMessage{
 		Cc: []string{"cc@example.com"},
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := data.Match(matchers)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -130,14 +130,14 @@ func TestMatchesClientCcRegex(t *testing.T) {
 }
 
 func TestMatchesClientCcRegexNoMatch(t *testing.T) {
-	matchers := &config.ClientMatchers{
+	matchers := &appconfig.ClientMatchers{
 		CcRegex: []string{`cc@example\.com`},
 	}
 	data := ClientMessage{
 		Cc: []string{"other@example.com"},
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := data.Match(matchers)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -147,14 +147,14 @@ func TestMatchesClientCcRegexNoMatch(t *testing.T) {
 }
 
 func TestMatchesClientReturnPathRegex(t *testing.T) {
-	matchers := &config.ClientMatchers{
+	matchers := &appconfig.ClientMatchers{
 		ReturnPathRegex: []string{`srs\.messagingengine\.com`},
 	}
 	data := ClientMessage{
 		ReturnPathDomain: "srs.messagingengine.com",
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := data.Match(matchers)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -164,14 +164,14 @@ func TestMatchesClientReturnPathRegex(t *testing.T) {
 }
 
 func TestMatchesClientReturnPathRegexNoMatch(t *testing.T) {
-	matchers := &config.ClientMatchers{
+	matchers := &appconfig.ClientMatchers{
 		ReturnPathRegex: []string{`srs\.messagingengine\.com`},
 	}
 	data := ClientMessage{
 		ReturnPathDomain: "example.com",
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := data.Match(matchers)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -181,14 +181,14 @@ func TestMatchesClientReturnPathRegexNoMatch(t *testing.T) {
 }
 
 func TestMatchesClientBodyRegex(t *testing.T) {
-	matchers := &config.ClientMatchers{
+	matchers := &appconfig.ClientMatchers{
 		BodyRegex: []string{`unsubscribe`},
 	}
 	data := ClientMessage{
 		Body: "Click here to unsubscribe.",
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := data.Match(matchers)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -199,14 +199,14 @@ func TestMatchesClientBodyRegex(t *testing.T) {
 
 func TestMatchesClientListUnsubscribeTrue(t *testing.T) {
 	listUnsub := true
-	matchers := &config.ClientMatchers{
+	matchers := &appconfig.ClientMatchers{
 		ListUnsubscribe: &listUnsub,
 	}
 	data := ClientMessage{
 		ListUnsubscribe: true,
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := data.Match(matchers)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -217,14 +217,14 @@ func TestMatchesClientListUnsubscribeTrue(t *testing.T) {
 
 func TestMatchesClientListUnsubscribeFalse(t *testing.T) {
 	listUnsub := false
-	matchers := &config.ClientMatchers{
+	matchers := &appconfig.ClientMatchers{
 		ListUnsubscribe: &listUnsub,
 	}
 	data := ClientMessage{
 		ListUnsubscribe: true,
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := data.Match(matchers)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -234,14 +234,14 @@ func TestMatchesClientListUnsubscribeFalse(t *testing.T) {
 }
 
 func TestMatchesClientBodyRegexNoMatch(t *testing.T) {
-	matchers := &config.ClientMatchers{
+	matchers := &appconfig.ClientMatchers{
 		BodyRegex: []string{`unsubscribe`},
 	}
 	data := ClientMessage{
 		Body: "Welcome to the list.",
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := data.Match(matchers)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -251,14 +251,14 @@ func TestMatchesClientBodyRegexNoMatch(t *testing.T) {
 }
 
 func TestMatchesClientRecipientTagRegex(t *testing.T) {
-	matchers := &config.ClientMatchers{
+	matchers := &appconfig.ClientMatchers{
 		RecipientTagRegex: []string{`news`},
 	}
 	data := ClientMessage{
 		RecipientTags: []string{"news", "alerts"},
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := data.Match(matchers)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -268,14 +268,14 @@ func TestMatchesClientRecipientTagRegex(t *testing.T) {
 }
 
 func TestMatchesClientRecipientTagRegexNoMatch(t *testing.T) {
-	matchers := &config.ClientMatchers{
+	matchers := &appconfig.ClientMatchers{
 		RecipientTagRegex: []string{`events`},
 	}
 	data := ClientMessage{
 		RecipientTags: []string{"news", "alerts"},
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := data.Match(matchers)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}

@@ -1,6 +1,6 @@
 package main
 
-import "github.com/aaronromeo/postmanpat/internal/cli"
+import "github.com/aaronromeo/postmanpat/cli"
 
 func main() {
 	cli.Execute()
