@@ -100,7 +100,7 @@ var watchCmd = &cobra.Command{
 			tlsConfig = watchTLSConfigProvider()
 		}
 
-		var client watchrunner.WatchRunner = watchrunner.New(
+		client := watchrunner.New(
 			imap.WithAddr(
 				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
 			),
@@ -139,10 +139,9 @@ var watchCmd = &cobra.Command{
 		)
 
 		deps := watchrunner.Deps{
-			Ctx:    ctx,
-			Client: client,
-			Rules:  cfg.Rules,
-			Log:    logger,
+			Ctx:   ctx,
+			Rules: cfg.Rules,
+			Log:   logger,
 			Announce: func(ruleName string) {
 				if err := announcerService.Do("Watch", ruleName, defaultMailbox, 1); err != nil {
 					logger.Error("reporting failed", "rule", ruleName, "error", err)
@@ -157,7 +156,7 @@ var watchCmd = &cobra.Command{
 			idleCmd, err := client.Idle()
 			if err != nil {
 				if watchrunner.IsBenignIdleError(err) {
-					if err := watchrunner.Reconnect(deps, state, defaultMailbox); err != nil {
+					if err := client.Reconnect(deps, state, defaultMailbox); err != nil {
 						return err
 					}
 					continue
@@ -179,7 +178,7 @@ var watchCmd = &cobra.Command{
 					if err != nil {
 						return err
 					}
-					if err := watchrunner.ProcessUIDs(deps, state, uids); err != nil {
+					if err := client.ProcessUIDs(deps, state, uids); err != nil {
 						return err
 					}
 				}
