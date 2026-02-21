@@ -15,6 +15,13 @@ import (
 	"github.com/aaronromeo/postmanpat/internal/matchers"
 )
 
+type WatchRunner interface {
+	sessionmgr.ClientConnector
+	selectors.ClientSelectors
+	searches.ClientSearcher
+	actions.Actions
+}
+
 type Deps struct {
 	Ctx      context.Context
 	Client   WatchRunner
