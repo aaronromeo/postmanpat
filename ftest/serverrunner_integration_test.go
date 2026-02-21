@@ -1,4 +1,4 @@
-package serverrunner
+package ftest
 
 import (
 	"context"
@@ -12,15 +12,15 @@ import (
 	"time"
 
 	appconfig "github.com/aaronromeo/postmanpat/appconfig"
-	"github.com/aaronromeo/postmanpat/ftest"
 	"github.com/aaronromeo/postmanpat/imap"
+	"github.com/aaronromeo/postmanpat/serverrunner"
 	giimap "github.com/emersion/go-imap/v2"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestSearchByMatchersLocalServer(t *testing.T) {
-	client, ids, cleanup := setupTestServer(t, nil, nil, nil)
+	client, ids, cleanup := setupServerRunnerTestServer(t, nil, nil, nil)
 	t.Cleanup(cleanup)
 
 	cases := []struct {
@@ -118,7 +118,6 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 			assert.ElementsMatch(t, tc.wantUIDs, matched["INBOX"], "unexpected UID set")
 		})
 	}
-
 }
 
 func TestDeleteUIDsLocalServer(t *testing.T) {
@@ -141,7 +140,7 @@ func TestDeleteUIDsLocalServer(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			client, ids, cleanup := setupTestServer(t, tc.caps, nil, nil)
+			client, ids, cleanup := setupServerRunnerTestServer(t, tc.caps, nil, nil)
 			t.Cleanup(cleanup)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -213,7 +212,7 @@ func TestMoveByMailboxLocalServer(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			client, ids, cleanup := setupTestServer(t, tc.caps, tc.extraMailboxes, nil)
+			client, ids, cleanup := setupServerRunnerTestServer(t, tc.caps, tc.extraMailboxes, nil)
 			t.Cleanup(cleanup)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -224,7 +223,7 @@ func TestMoveByMailboxLocalServer(t *testing.T) {
 			})
 			assert.NoError(t, err, "select inbox before move")
 
-			err = client.MoveByMailbox(ctx, map[string][]uint32{"INBOX": []uint32{ids.NewsUID}}, tc.destination)
+			err = client.MoveByMailbox(ctx, map[string][]uint32{"INBOX": {ids.NewsUID}}, tc.destination)
 			if tc.expectError {
 				assert.Error(t, err, "expected move error")
 				return
@@ -240,7 +239,7 @@ func TestMoveByMailboxLocalServer(t *testing.T) {
 			assert.Empty(t, matched["INBOX"], "expected no matches in INBOX after move")
 
 			if tc.expectInArchive {
-				archiveClient := mustConnectClient(t, client.Addr, client.Username, client.Password, nil)
+				archiveClient := mustConnectServerRunnerClient(t, client.Addr, client.Username, client.Password, nil)
 				archiveMatchers := appconfig.ServerMatchers{
 					Folders:         []string{tc.destination},
 					SenderSubstring: []string{"example.com"},
@@ -254,7 +253,7 @@ func TestMoveByMailboxLocalServer(t *testing.T) {
 }
 
 func TestSearchByMatchersMultipleFolders(t *testing.T) {
-	extraMessages := []ftest.MailboxMessage{
+	extraMessages := []MailboxMessage{
 		{
 			Mailbox: "Archive",
 			From:    "Archive <archive@example.net>",
@@ -264,7 +263,7 @@ func TestSearchByMatchersMultipleFolders(t *testing.T) {
 			Body:    "Stored in archive.",
 		},
 	}
-	client, ids, cleanup := setupTestServer(t, nil, []string{"Archive"}, extraMessages)
+	client, ids, cleanup := setupServerRunnerTestServer(t, nil, []string{"Archive"}, extraMessages)
 	t.Cleanup(cleanup)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -281,7 +280,7 @@ func TestSearchByMatchersMultipleFolders(t *testing.T) {
 }
 
 func TestClientReuseAcrossOperations(t *testing.T) {
-	client, ids, cleanup := setupTestServer(t, nil, []string{"Archive"}, nil)
+	client, ids, cleanup := setupServerRunnerTestServer(t, nil, []string{"Archive"}, nil)
 	t.Cleanup(cleanup)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -315,40 +314,8 @@ func TestClientReuseAcrossOperations(t *testing.T) {
 	assert.Empty(t, matched["INBOX"], "expected no matches in INBOX after move")
 }
 
-func setupTestServer(t *testing.T, caps giimap.CapSet, extraMailboxes []string, extraMessages []ftest.MailboxMessage) (*imap.Client, ftest.MessageIDs, func()) {
-	t.Helper()
-
-	addr, ids, cleanup := ftest.SetupIMAPServer(t, caps, extraMailboxes, extraMessages)
-
-	client := mustConnectClient(t, addr, ftest.DefaultUser, ftest.DefaultPass, nil)
-
-	return client, ids, func() {
-		cleanup()
-	}
-}
-
-func mustConnectClient(t *testing.T, addr, username, password string, handler *giimapclient.UnilateralDataHandler) *imap.Client {
-	t.Helper()
-	opts := []imap.Option{
-		imap.WithAddr(addr),
-		imap.WithCreds(username, password),
-		imap.WithTLSConfig(&tls.Config{InsecureSkipVerify: true}),
-	}
-	if handler != nil {
-		opts = append(opts, imap.WithUnilateralDataHandler(handler))
-	}
-	client := New(opts...)
-	if err := client.Connect(); err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = client.Close()
-	})
-	return client
-}
-
 func TestListIDRegexEndToEnd(t *testing.T) {
-	addr, cleanup := ftest.SetupAnalyzeIMAPServer(t, []ftest.AnalyzeMessage{
+	addr, cleanup := SetupAnalyzeIMAPServer(t, []AnalyzeMessage{
 		{
 			From:    "News <news@example.com>",
 			To:      "User <user@example.com>",
@@ -360,7 +327,7 @@ func TestListIDRegexEndToEnd(t *testing.T) {
 	})
 	t.Cleanup(cleanup)
 
-	client := mustConnectClient(t, addr, "user@example.com", "password", nil)
+	client := mustConnectServerRunnerClient(t, addr, "user@example.com", "password", nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
@@ -396,7 +363,7 @@ func TestListIDRegexEndToEnd(t *testing.T) {
 }
 
 func TestFetchSenderDataReplyToRequiresHeader(t *testing.T) {
-	addr, cleanup := ftest.SetupAnalyzeIMAPServer(t, []ftest.AnalyzeMessage{
+	addr, cleanup := SetupAnalyzeIMAPServer(t, []AnalyzeMessage{
 		{
 			From:    "BandsInTown <updates@bandsintown.com>",
 			To:      "User <user@example.com>",
@@ -408,7 +375,7 @@ func TestFetchSenderDataReplyToRequiresHeader(t *testing.T) {
 	})
 	t.Cleanup(cleanup)
 
-	client := mustConnectClient(t, addr, "user@example.com", "password", nil)
+	client := mustConnectServerRunnerClient(t, addr, "user@example.com", "password", nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
@@ -438,7 +405,7 @@ func TestFetchSenderDataReplyToRequiresHeader(t *testing.T) {
 }
 
 func TestFetchSenderDataDoesNotSetSeen(t *testing.T) {
-	addr, cleanup := ftest.SetupAnalyzeIMAPServer(t, []ftest.AnalyzeMessage{
+	addr, cleanup := SetupAnalyzeIMAPServer(t, []AnalyzeMessage{
 		{
 			From:    "News <news@example.com>",
 			To:      "User <user@example.com>",
@@ -450,7 +417,7 @@ func TestFetchSenderDataDoesNotSetSeen(t *testing.T) {
 	})
 	t.Cleanup(cleanup)
 
-	client := mustConnectClient(t, addr, "user@example.com", "password", nil)
+	client := mustConnectServerRunnerClient(t, addr, "user@example.com", "password", nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
@@ -467,11 +434,11 @@ func TestFetchSenderDataDoesNotSetSeen(t *testing.T) {
 		t.Fatalf("expected 1 uid, got %d", len(uids))
 	}
 
-	flagsBefore, err := fetchMessageFlags(ctx, client.Client, uids)
+	flagsBefore, err := fetchServerRunnerMessageFlags(ctx, client.Client, uids)
 	if err != nil {
 		t.Fatalf("fetch flags before: %v", err)
 	}
-	if containsFlag(flagsBefore, giimap.FlagSeen) {
+	if containsServerRunnerFlag(flagsBefore, giimap.FlagSeen) {
 		t.Fatalf("expected message to be unseen before fetch, got flags %v", flagsBefore)
 	}
 
@@ -480,11 +447,11 @@ func TestFetchSenderDataDoesNotSetSeen(t *testing.T) {
 		t.Fatalf("fetch data: %v", err)
 	}
 
-	flagsAfter, err := fetchMessageFlags(ctx, client.Client, uids)
+	flagsAfter, err := fetchServerRunnerMessageFlags(ctx, client.Client, uids)
 	if err != nil {
 		t.Fatalf("fetch flags after: %v", err)
 	}
-	if containsFlag(flagsAfter, giimap.FlagSeen) {
+	if containsServerRunnerFlag(flagsAfter, giimap.FlagSeen) {
 		t.Fatalf("expected message to remain unseen after fetch, got flags %v", flagsAfter)
 	}
 }
@@ -497,14 +464,14 @@ func TestFetchSenderDataMalformedHeaderDoesNotError(t *testing.T) {
 		"\r\n" +
 		"Body\r\n"
 
-	addr, cleanup := ftest.SetupRawIMAPServer(t, nil, nil, []ftest.RawMessage{{
+	addr, cleanup := SetupRawIMAPServer(t, nil, nil, []RawMessage{{
 		Mailbox: "INBOX",
 		Raw:     raw,
 		Time:    time.Now(),
 	}})
 	t.Cleanup(cleanup)
 
-	client := mustConnectClient(t, addr, ftest.DefaultUser, ftest.DefaultPass, nil)
+	client := mustConnectServerRunnerClient(t, addr, DefaultUser, DefaultPass, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
@@ -534,7 +501,7 @@ func TestFetchSenderDataMalformedHeaderDoesNotError(t *testing.T) {
 }
 
 func TestFetchSenderDataReturnPathDomain(t *testing.T) {
-	addr, cleanup := ftest.SetupRawIMAPServer(t, nil, nil, []ftest.RawMessage{{
+	addr, cleanup := SetupRawIMAPServer(t, nil, nil, []RawMessage{{
 		Mailbox: "INBOX",
 		Raw: "From: News <news@example.com>\r\n" +
 			"To: User <user@example.com>\r\n" +
@@ -546,7 +513,7 @@ func TestFetchSenderDataReturnPathDomain(t *testing.T) {
 	}})
 	t.Cleanup(cleanup)
 
-	client := mustConnectClient(t, addr, ftest.DefaultUser, ftest.DefaultPass, nil)
+	client := mustConnectServerRunnerClient(t, addr, DefaultUser, DefaultPass, nil)
 
 	ctx := context.Background()
 	if _, err := client.SelectMailbox(ctx, "INBOX"); err != nil {
@@ -574,7 +541,7 @@ func TestFetchSenderDataReturnPathDomain(t *testing.T) {
 }
 
 func TestFetchSenderDataReturnsErrorOnFetchFailure(t *testing.T) {
-	addr, cleanup := ftest.SetupAnalyzeIMAPServer(t, []ftest.AnalyzeMessage{
+	addr, cleanup := SetupAnalyzeIMAPServer(t, []AnalyzeMessage{
 		{
 			From:    "News <news@example.com>",
 			To:      "User <user@example.com>",
@@ -586,7 +553,7 @@ func TestFetchSenderDataReturnsErrorOnFetchFailure(t *testing.T) {
 	})
 	t.Cleanup(cleanup)
 
-	client := mustConnectClient(t, addr, "user@example.com", "password", nil)
+	client := mustConnectServerRunnerClient(t, addr, "user@example.com", "password", nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
@@ -611,7 +578,7 @@ func TestFetchSenderDataReturnsErrorOnFetchFailure(t *testing.T) {
 }
 
 func TestAnalyzeAgeWindowEndToEnd(t *testing.T) {
-	addr, cleanup := ftest.SetupAnalyzeIMAPServer(t, []ftest.AnalyzeMessage{
+	addr, cleanup := SetupAnalyzeIMAPServer(t, []AnalyzeMessage{
 		{
 			From:    "News <news@example.com>",
 			To:      "User <user@example.com>",
@@ -666,7 +633,7 @@ rules:
 		t.Fatalf("validate config: %v", err)
 	}
 
-	client := mustConnectClient(t, addr, "user@example.com", "password", nil)
+	client := mustConnectServerRunnerClient(t, addr, "user@example.com", "password", nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
@@ -682,7 +649,38 @@ rules:
 	}
 }
 
-func fetchMessageFlags(ctx context.Context, client *giimapclient.Client, uids []uint32) ([]giimap.Flag, error) {
+func setupServerRunnerTestServer(t *testing.T, caps giimap.CapSet, extraMailboxes []string, extraMessages []MailboxMessage) (*imap.Client, MessageIDs, func()) {
+	t.Helper()
+
+	addr, ids, cleanup := SetupIMAPServer(t, caps, extraMailboxes, extraMessages)
+	client := mustConnectServerRunnerClient(t, addr, DefaultUser, DefaultPass, nil)
+
+	return client, ids, func() {
+		cleanup()
+	}
+}
+
+func mustConnectServerRunnerClient(t *testing.T, addr, username, password string, handler *giimapclient.UnilateralDataHandler) *imap.Client {
+	t.Helper()
+	opts := []imap.Option{
+		imap.WithAddr(addr),
+		imap.WithCreds(username, password),
+		imap.WithTLSConfig(&tls.Config{InsecureSkipVerify: true}),
+	}
+	if handler != nil {
+		opts = append(opts, imap.WithUnilateralDataHandler(handler))
+	}
+	client := serverrunner.New(opts...)
+	if err := client.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+	return client
+}
+
+func fetchServerRunnerMessageFlags(ctx context.Context, client *giimapclient.Client, uids []uint32) ([]giimap.Flag, error) {
 	var uidSet giimap.UIDSet
 	for _, uid := range uids {
 		uidSet.AddNum(giimap.UID(uid))
@@ -718,7 +716,7 @@ func fetchMessageFlags(ctx context.Context, client *giimapclient.Client, uids []
 	return nil, nil
 }
 
-func containsFlag(flags []giimap.Flag, target giimap.Flag) bool {
+func containsServerRunnerFlag(flags []giimap.Flag, target giimap.Flag) bool {
 	for _, flag := range flags {
 		if flag == target {
 			return true
@@ -727,13 +725,13 @@ func containsFlag(flags []giimap.Flag, target giimap.Flag) bool {
 	return false
 }
 
-type errorLiteral struct{}
+type serverRunnerErrorLiteral struct{}
 
-func (errorLiteral) Read([]byte) (int, error) {
+func (serverRunnerErrorLiteral) Read([]byte) (int, error) {
 	return 0, errors.New("read failed")
 }
 
-func (errorLiteral) Size() int64 {
+func (serverRunnerErrorLiteral) Size() int64 {
 	return 0
 }
 
