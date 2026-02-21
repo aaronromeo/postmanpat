@@ -386,7 +386,7 @@ func TestListIDRegexEndToEnd(t *testing.T) {
 		t.Fatalf("expected 1 message, got %d", len(data))
 	}
 
-	ok, err := matchers.MatchesClient(&config.ClientMatchers{
+	ok, err := matchers.Matcher(&config.ClientMatchers{
 		ListIDRegex: []string{`<f7443300a7bb349db1e85fa6e\.1520313\.list-id\.mcsv\.net>`},
 	}, matchers.ClientMessage{ListID: data[0].ListID})
 	if err != nil {

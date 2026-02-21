@@ -8,6 +8,10 @@ import (
 	"github.com/aaronromeo/postmanpat/internal/config"
 )
 
+type Matcher interface {
+	Match(matchers *config.ClientMatchers) (bool, error)
+}
+
 type ClientMessage struct {
 	ListID           string
 	SenderDomains    []string
@@ -21,8 +25,8 @@ type ClientMessage struct {
 	ListUnsubscribe  bool
 }
 
-// MatchesClient returns true if the message satisfies all configured client matchers.
-func MatchesClient(matchers *config.ClientMatchers, data ClientMessage) (bool, error) {
+// Matcher returns true if the message satisfies all configured client matchers.
+func (data ClientMessage) Match(matchers *config.ClientMatchers) (bool, error) {
 	if matchers == nil || matchers.IsEmpty() {
 		return true, nil
 	}

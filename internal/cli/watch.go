@@ -291,7 +291,7 @@ func runWatchTest(ctx context.Context, client watchrunner.WatchRunner, cfg confi
 			return data[i].MessageDate.After(data[j].MessageDate)
 		})
 		for _, message := range data {
-			ok, err := matchers.MatchesClient(rule.Client, matchers.ClientMessage{
+			ok, err := matchers.Matcher(rule.Client, matchers.ClientMessage{
 				ListID:           message.ListID,
 				SenderDomains:    message.SenderDomains,
 				ReplyToDomains:   message.ReplyToDomains,

@@ -59,7 +59,7 @@ func ProcessUIDs(deps Deps, state *State, uids []uint32) error {
 	for _, message := range data {
 		matchedAny := false
 		for _, rule := range deps.Rules {
-			ok, err := matchers.MatchesClient(rule.Client, matchers.ClientMessage{
+			ok, err := matchers.Matcher(rule.Client, matchers.ClientMessage{
 				ListID:           message.ListID,
 				SenderDomains:    message.SenderDomains,
 				ReplyToDomains:   message.ReplyToDomains,

@@ -14,7 +14,7 @@ func TestMatchesClientListIDRegex(t *testing.T) {
 		ListID: "f7443300a7bb349db1e85fa6emc list <f7443300a7bb349db1e85fa6e.1520313.list-id.mcsv.net>",
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := Matcher(matchers, data)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestMatchesClientListIDRegexNoMatch(t *testing.T) {
 		ListID: "f7443300a7bb349db1e85fa6emc list <f7443300a7bb349db1e85fa6e.1520313.list-id.mcsv.net>",
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := Matcher(matchers, data)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestMatchesClientSenderAndReplyToRegex(t *testing.T) {
 		ReplyToDomains: []string{"404media.co"},
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := Matcher(matchers, data)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestMatchesClientSenderAndReplyToRegexRequiresBoth(t *testing.T) {
 		ReplyToDomains: []string{"example.com"},
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := Matcher(matchers, data)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestMatchesClientSubjectRegex(t *testing.T) {
 		SubjectRaw: "Welcome to the list",
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := Matcher(matchers, data)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestMatchesClientRecipientsRegex(t *testing.T) {
 		Recipients: []string{"user@example.com"},
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := Matcher(matchers, data)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestMatchesClientCcRegex(t *testing.T) {
 		Cc: []string{"cc@example.com"},
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := Matcher(matchers, data)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestMatchesClientCcRegexNoMatch(t *testing.T) {
 		Cc: []string{"other@example.com"},
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := Matcher(matchers, data)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestMatchesClientReturnPathRegex(t *testing.T) {
 		ReturnPathDomain: "srs.messagingengine.com",
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := Matcher(matchers, data)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestMatchesClientReturnPathRegexNoMatch(t *testing.T) {
 		ReturnPathDomain: "example.com",
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := Matcher(matchers, data)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestMatchesClientBodyRegex(t *testing.T) {
 		Body: "Click here to unsubscribe.",
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := Matcher(matchers, data)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestMatchesClientListUnsubscribeTrue(t *testing.T) {
 		ListUnsubscribe: true,
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := Matcher(matchers, data)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestMatchesClientListUnsubscribeFalse(t *testing.T) {
 		ListUnsubscribe: true,
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := Matcher(matchers, data)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestMatchesClientBodyRegexNoMatch(t *testing.T) {
 		Body: "Welcome to the list.",
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := Matcher(matchers, data)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestMatchesClientRecipientTagRegex(t *testing.T) {
 		RecipientTags: []string{"news", "alerts"},
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := Matcher(matchers, data)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
@@ -275,7 +275,7 @@ func TestMatchesClientRecipientTagRegexNoMatch(t *testing.T) {
 		RecipientTags: []string{"news", "alerts"},
 	}
 
-	ok, err := MatchesClient(matchers, data)
+	ok, err := Matcher(matchers, data)
 	if err != nil {
 		t.Fatalf("match client: %v", err)
 	}
