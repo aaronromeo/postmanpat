@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/aaronromeo/postmanpat/internal/foo"
+	"github.com/aaronromeo/postmanpat/imap/internal/maildata"
 	"github.com/emersion/go-imap/v2"
 	giimap "github.com/emersion/go-imap/v2"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"

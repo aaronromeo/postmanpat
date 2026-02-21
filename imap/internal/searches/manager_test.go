@@ -3,7 +3,7 @@ package searches
 import (
 	"testing"
 
-	"github.com/aaronromeo/postmanpat/internal/config"
+	"github.com/aaronromeo/postmanpat/appconfig"
 	"github.com/emersion/go-imap/v2"
 )
 

@@ -7,15 +7,13 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
-	"github.com/aaronromeo/postmanpat/internal/announcer"
-	"github.com/aaronromeo/postmanpat/internal/config"
-	"github.com/aaronromeo/postmanpat/internal/imap/sessionmgr"
-	"github.com/aaronromeo/postmanpat/internal/matchers"
-	"github.com/aaronromeo/postmanpat/internal/watchrunner"
+	"github.com/aaronromeo/postmanpat/announcer"
+	"github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/imap"
+	"github.com/aaronromeo/postmanpat/watchrunner"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 	"github.com/spf13/cobra"
 )
@@ -103,12 +101,12 @@ var watchCmd = &cobra.Command{
 		}
 
 		var client watchrunner.WatchRunner = watchrunner.New(
-			sessionmgr.WithAddr(
+			imap.WithAddr(
 				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
 			),
-			sessionmgr.WithCreds(imapEnv.User, imapEnv.Pass),
-			sessionmgr.WithTLSConfig(tlsConfig),
-			sessionmgr.WithUnilateralDataHandler(handler),
+			imap.WithCreds(imapEnv.User, imapEnv.Pass),
+			imap.WithTLSConfig(tlsConfig),
+			imap.WithUnilateralDataHandler(handler),
 		)
 		if err := client.Connect(); err != nil {
 			return err
@@ -247,85 +245,36 @@ func runWatchTest(ctx context.Context, client watchrunner.WatchRunner, cfg confi
 	if strings.TrimSpace(ruleName) == "" {
 		return errors.New("test rule name is required")
 	}
-	if limit <= 0 {
-		limit = 10
-	}
 	rule, err := findRuleByName(cfg, ruleName)
 	if err != nil {
 		return err
-	}
-	if rule.Client == nil {
-		return fmt.Errorf("rule %q does not define client matchers", rule.Name)
 	}
 	if strings.TrimSpace(mailbox) == "" {
 		mailbox = defaultMailbox
 	}
 
-	if _, err := client.SelectMailbox(ctx, mailbox); err != nil {
-		return err
-	}
-
-	uids, err := client.SearchUIDsNewerThan(ctx, 0)
+	matches, err := watchrunner.RunRuleTest(ctx, client, *rule, mailbox, limit)
 	if err != nil {
 		return err
 	}
-	if len(uids) == 0 {
+	if len(matches) == 0 {
 		logger.Info("no messages found", "mailbox", mailbox)
-		return nil
 	}
 
-	logger.Info("running watch test", "rule", rule.Name, "mailbox", mailbox, "uids", len(uids))
-	matches := 0
-	chunkSize := 200
-	for end := len(uids); end > 0 && matches < limit; end -= chunkSize {
-		start := end - chunkSize
-		if start < 0 {
-			start = 0
-		}
-		batch := uids[start:end]
-		data, err := client.FetchSenderData(ctx, batch)
-		if err != nil {
-			return err
-		}
-		sort.Slice(data, func(i, j int) bool {
-			return data[i].MessageDate.After(data[j].MessageDate)
-		})
-		for _, message := range data {
-			ok, err := matchers.Matcher(rule.Client, matchers.ClientMessage{
-				ListID:           message.ListID,
-				SenderDomains:    message.SenderDomains,
-				ReplyToDomains:   message.ReplyToDomains,
-				SubjectRaw:       message.SubjectRaw,
-				Recipients:       message.Recipients,
-				RecipientTags:    message.RecipientTags,
-				Body:             message.Body,
-				Cc:               message.Cc,
-				ReturnPathDomain: message.ReturnPathDomain,
-				ListUnsubscribe:  message.ListUnsubscribe,
-			})
-			if err != nil {
-				return err
-			}
-			if !ok {
-				continue
-			}
-			logger.Info(
-				"test match",
-				"rule", rule.Name,
-				"date", message.MessageDate,
-				"subject", message.SubjectRaw,
-				"list_id", message.ListID,
-				"reply_to_domains", message.ReplyToDomains,
-				"sender_domains", message.SenderDomains,
-				"recipients", message.Recipients,
-			)
-			matches++
-			if matches >= limit {
-				break
-			}
-		}
+	logger.Info("running watch test", "rule", rule.Name, "mailbox", mailbox)
+	for _, match := range matches {
+		logger.Info(
+			"test match",
+			"rule", rule.Name,
+			"date", match.MessageDate,
+			"subject", match.SubjectRaw,
+			"list_id", match.ListID,
+			"reply_to_domains", match.ReplyToDomains,
+			"sender_domains", match.SenderDomains,
+			"recipients", match.Recipients,
+		)
 	}
-	logger.Info("watch test complete", "rule", rule.Name, "matches", matches)
+	logger.Info("watch test complete", "rule", rule.Name, "matches", len(matches))
 	return nil
 }
 

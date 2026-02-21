@@ -7,14 +7,13 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
+	config "github.com/aaronromeo/postmanpat/appconfig"
 	"github.com/aaronromeo/postmanpat/ftest"
-	"github.com/aaronromeo/postmanpat/internal/config"
-	"github.com/aaronromeo/postmanpat/internal/imap"
-	"github.com/aaronromeo/postmanpat/internal/imap/sessionmgr"
-	"github.com/aaronromeo/postmanpat/internal/matchers"
+	"github.com/aaronromeo/postmanpat/imap"
 	giimap "github.com/emersion/go-imap/v2"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 	"github.com/stretchr/testify/assert"
@@ -330,13 +329,13 @@ func setupTestServer(t *testing.T, caps giimap.CapSet, extraMailboxes []string, 
 
 func mustConnectClient(t *testing.T, addr, username, password string, handler *giimapclient.UnilateralDataHandler) *imap.Client {
 	t.Helper()
-	opts := []sessionmgr.Option{
-		sessionmgr.WithAddr(addr),
-		sessionmgr.WithCreds(username, password),
-		sessionmgr.WithTLSConfig(&tls.Config{InsecureSkipVerify: true}),
+	opts := []imap.Option{
+		imap.WithAddr(addr),
+		imap.WithCreds(username, password),
+		imap.WithTLSConfig(&tls.Config{InsecureSkipVerify: true}),
 	}
 	if handler != nil {
-		opts = append(opts, sessionmgr.WithUnilateralDataHandler(handler))
+		opts = append(opts, imap.WithUnilateralDataHandler(handler))
 	}
 	client := New(opts...)
 	if err := client.Connect(); err != nil {
@@ -386,12 +385,11 @@ func TestListIDRegexEndToEnd(t *testing.T) {
 		t.Fatalf("expected 1 message, got %d", len(data))
 	}
 
-	ok, err := matchers.Matcher(&config.ClientMatchers{
-		ListIDRegex: []string{`<f7443300a7bb349db1e85fa6e\.1520313\.list-id\.mcsv\.net>`},
-	}, matchers.ClientMessage{ListID: data[0].ListID})
+	re, err := regexp.Compile(`<f7443300a7bb349db1e85fa6e\.1520313\.list-id\.mcsv\.net>`)
 	if err != nil {
-		t.Fatalf("match client: %v", err)
+		t.Fatalf("compile regex: %v", err)
 	}
+	ok := re.MatchString(data[0].ListID)
 	if !ok {
 		t.Fatal("expected list_id_regex to match ListID")
 	}

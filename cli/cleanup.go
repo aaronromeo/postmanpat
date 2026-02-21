@@ -8,10 +8,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/aaronromeo/postmanpat/internal/announcer"
-	"github.com/aaronromeo/postmanpat/internal/cleanuprunner"
-	"github.com/aaronromeo/postmanpat/internal/config"
-	"github.com/aaronromeo/postmanpat/internal/imap/sessionmgr"
+	"github.com/aaronromeo/postmanpat/announcer"
+	"github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/cleanuprunner"
+	"github.com/aaronromeo/postmanpat/imap"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
@@ -72,10 +72,10 @@ var cleanupCmd = &cobra.Command{
 		}
 
 		var client cleanuprunner.ServerRunner = cleanuprunner.New(
-			sessionmgr.WithAddr(
+			imap.WithAddr(
 				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
 			),
-			sessionmgr.WithCreds(imapEnv.User, imapEnv.Pass),
+			imap.WithCreds(imapEnv.User, imapEnv.Pass),
 		)
 
 		var announcerService announcer.Service = announcer.New(

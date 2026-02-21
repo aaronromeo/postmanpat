@@ -6,20 +6,22 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/aaronromeo/postmanpat/internal/config"
-	"github.com/aaronromeo/postmanpat/internal/imap"
-	"github.com/aaronromeo/postmanpat/internal/imap/actions"
-	"github.com/aaronromeo/postmanpat/internal/imap/searches"
-	"github.com/aaronromeo/postmanpat/internal/imap/selectors"
-	"github.com/aaronromeo/postmanpat/internal/imap/sessionmgr"
-	"github.com/aaronromeo/postmanpat/internal/matchers"
+	config "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/imap"
+	"github.com/aaronromeo/postmanpat/watchrunner/internal/matchers"
+	giimap "github.com/emersion/go-imap/v2"
+	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 )
 
 type WatchRunner interface {
-	sessionmgr.ClientConnector
-	selectors.ClientSelectors
-	searches.ClientSearcher
-	actions.Actions
+	Connect() error
+	Close() error
+	Idle() (*giimapclient.IdleCommand, error)
+	SelectMailbox(ctx context.Context, mailbox string) (*giimap.SelectData, error)
+	FetchSenderData(ctx context.Context, uids []uint32) ([]imap.MailData, error)
+	SearchUIDsNewerThan(ctx context.Context, lastUID uint32) ([]uint32, error)
+	MoveUIDs(ctx context.Context, uids []uint32, destination string) error
+	DeleteUIDs(ctx context.Context, uids []uint32, expunge bool) error
 }
 
 type Deps struct {
@@ -35,15 +37,8 @@ type State struct {
 	LastCount uint32
 }
 
-func New(opts ...sessionmgr.Option) *imap.Client {
-	session := sessionmgr.NewClientConnector(opts...)
-	client := &imap.Client{
-		IMAPConnector:       session,
-		IMAPSearchManager:   searches.New(session),
-		IMAPActionManager:   actions.New(session),
-		IMAPSelectorManager: selectors.New(session),
-	}
-	return client
+func New(opts ...imap.Option) *imap.Client {
+	return imap.NewWatch(opts...)
 }
 
 func ProcessUIDs(deps Deps, state *State, uids []uint32) error {
@@ -59,7 +54,7 @@ func ProcessUIDs(deps Deps, state *State, uids []uint32) error {
 	for _, message := range data {
 		matchedAny := false
 		for _, rule := range deps.Rules {
-			ok, err := matchers.Matcher(rule.Client, matchers.ClientMessage{
+			ok, err := (matchers.ClientMessage{
 				ListID:           message.ListID,
 				SenderDomains:    message.SenderDomains,
 				ReplyToDomains:   message.ReplyToDomains,
@@ -70,7 +65,7 @@ func ProcessUIDs(deps Deps, state *State, uids []uint32) error {
 				Cc:               message.Cc,
 				ReturnPathDomain: message.ReturnPathDomain,
 				ListUnsubscribe:  message.ListUnsubscribe,
-			})
+			}).Match(rule.Client)
 			if err != nil {
 				return err
 			}

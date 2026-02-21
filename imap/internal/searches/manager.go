@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aaronromeo/postmanpat/internal/config"
+	"github.com/aaronromeo/postmanpat/appconfig"
 	"github.com/emersion/go-imap/v2"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 )
