@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/aaronromeo/postmanpat/announcer"
-	"github.com/aaronromeo/postmanpat/appconfig"
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
 	"github.com/aaronromeo/postmanpat/imap"
 	"github.com/aaronromeo/postmanpat/watchrunner"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
@@ -35,12 +35,12 @@ var watchCmd = &cobra.Command{
 			return err
 		}
 
-		cfg, err := config.Load(cfgPath)
+		cfg, err := appconfig.Load(cfgPath)
 		if err != nil {
 			return err
 		}
 
-		if err := config.Validate(cfg); err != nil {
+		if err := appconfig.Validate(cfg); err != nil {
 			return err
 		}
 		if err := validateWatchRules(cfg); err != nil {
@@ -72,7 +72,7 @@ var watchCmd = &cobra.Command{
 		reloadTicker := time.NewTicker(5 * time.Minute)
 		defer reloadTicker.Stop()
 
-		imapEnv, err := config.IMAPEnvFromEnv()
+		imapEnv, err := appconfig.IMAPEnvFromEnv()
 		if err != nil {
 			return err
 		}
@@ -203,12 +203,12 @@ var watchCmd = &cobra.Command{
 						logger.Error("watch idle close failed", "error", err)
 					}
 				}
-				updated, err := config.Load(cfgPath)
+				updated, err := appconfig.Load(cfgPath)
 				if err != nil {
 					logger.Error("watch config reload failed", "error", err)
 					continue
 				}
-				if err := config.Validate(updated); err != nil {
+				if err := appconfig.Validate(updated); err != nil {
 					logger.Error("watch config reload failed", "error", err)
 					continue
 				}
@@ -232,7 +232,7 @@ func init() {
 	watchCmd.Flags().String("mailbox", defaultMailbox, "Mailbox to scan when using --test")
 }
 
-func validateWatchRules(cfg config.Config) error {
+func validateWatchRules(cfg appconfig.Config) error {
 	for _, rule := range cfg.Rules {
 		if rule.Server != nil {
 			return fmt.Errorf("rule %q defines server matchers, which are not supported by watch", rule.Name)
@@ -241,7 +241,7 @@ func validateWatchRules(cfg config.Config) error {
 	return nil
 }
 
-func runWatchTest(ctx context.Context, client watchrunner.WatchRunner, cfg config.Config, logger *slog.Logger, ruleName, mailbox string, limit int) error {
+func runWatchTest(ctx context.Context, client watchrunner.WatchRunner, cfg appconfig.Config, logger *slog.Logger, ruleName, mailbox string, limit int) error {
 	if strings.TrimSpace(ruleName) == "" {
 		return errors.New("test rule name is required")
 	}
@@ -278,7 +278,7 @@ func runWatchTest(ctx context.Context, client watchrunner.WatchRunner, cfg confi
 	return nil
 }
 
-func findRuleByName(cfg config.Config, ruleName string) (*config.Rule, error) {
+func findRuleByName(cfg appconfig.Config, ruleName string) (*appconfig.Rule, error) {
 	for i := range cfg.Rules {
 		if cfg.Rules[i].Name == ruleName {
 			return &cfg.Rules[i], nil

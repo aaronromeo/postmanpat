@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
-	config "github.com/aaronromeo/postmanpat/appconfig"
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
 	"github.com/aaronromeo/postmanpat/imap"
 	"github.com/aaronromeo/postmanpat/watchrunner/internal/matchers"
 	giimap "github.com/emersion/go-imap/v2"
@@ -27,7 +27,7 @@ type WatchRunner interface {
 type Deps struct {
 	Ctx      context.Context
 	Client   WatchRunner
-	Rules    []config.Rule
+	Rules    []appconfig.Rule
 	Log      *slog.Logger
 	Announce func(string)
 }
@@ -130,13 +130,13 @@ func maxUID(current uint32, uids []uint32) uint32 {
 	return max
 }
 
-func applyActions(deps Deps, rule config.Rule, uid uint32) error {
+func applyActions(deps Deps, rule appconfig.Rule, uid uint32) error {
 	if uid == 0 {
 		return nil
 	}
 	for _, action := range rule.Actions {
 		switch action.Type {
-		case config.DELETE:
+		case appconfig.DELETE:
 			expungeAfterDelete := true
 			if action.ExpungeAfterDelete != nil {
 				expungeAfterDelete = *action.ExpungeAfterDelete
@@ -144,7 +144,7 @@ func applyActions(deps Deps, rule config.Rule, uid uint32) error {
 			if err := deps.Client.DeleteUIDs(deps.Ctx, []uint32{uid}, expungeAfterDelete); err != nil {
 				return err
 			}
-		case config.MOVE:
+		case appconfig.MOVE:
 			destination := strings.TrimSpace(action.Destination)
 			if destination == "" {
 				return fmt.Errorf("Action move missing destination for rule %q", rule.Name)

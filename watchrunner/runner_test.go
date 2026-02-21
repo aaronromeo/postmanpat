@@ -8,10 +8,10 @@ import (
 	"log/slog"
 	"testing"
 
-	config "github.com/aaronromeo/postmanpat/appconfig"
-	"github.com/aaronromeo/postmanpat/cleanuprunner"
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
 	"github.com/aaronromeo/postmanpat/ftest"
 	"github.com/aaronromeo/postmanpat/imap"
+	"github.com/aaronromeo/postmanpat/serverrunner"
 )
 
 func TestIsBenignIdleError(t *testing.T) {
@@ -40,13 +40,13 @@ func TestWatchProcessUIDsMove(t *testing.T) {
 		t.Fatalf("select inbox: %v", err)
 	}
 
-	rule := config.Rule{
+	rule := appconfig.Rule{
 		Name: "MoveRule",
-		Client: &config.ClientMatchers{
+		Client: &appconfig.ClientMatchers{
 			SenderRegex: []string{senderHostPattern},
 		},
-		Actions: []config.Action{{
-			Type:        config.MOVE,
+		Actions: []appconfig.Action{{
+			Type:        appconfig.MOVE,
 			Destination: "Archive",
 		}},
 	}
@@ -54,7 +54,7 @@ func TestWatchProcessUIDsMove(t *testing.T) {
 	deps := Deps{
 		Ctx:    context.Background(),
 		Client: client,
-		Rules:  []config.Rule{rule},
+		Rules:  []appconfig.Rule{rule},
 		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 
@@ -79,20 +79,20 @@ func TestWatchProcessUIDsDelete(t *testing.T) {
 		t.Fatalf("select inbox: %v", err)
 	}
 
-	rule := config.Rule{
+	rule := appconfig.Rule{
 		Name: "DeleteRule",
-		Client: &config.ClientMatchers{
+		Client: &appconfig.ClientMatchers{
 			SenderRegex: []string{senderHostPattern},
 		},
-		Actions: []config.Action{{
-			Type: config.DELETE,
+		Actions: []appconfig.Action{{
+			Type: appconfig.DELETE,
 		}},
 	}
 
 	deps := Deps{
 		Ctx:    context.Background(),
 		Client: client,
-		Rules:  []config.Rule{rule},
+		Rules:  []appconfig.Rule{rule},
 		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 
@@ -114,13 +114,13 @@ func TestWatchProcessUIDsMoveMissingDestination(t *testing.T) {
 		t.Fatalf("select inbox: %v", err)
 	}
 
-	rule := config.Rule{
+	rule := appconfig.Rule{
 		Name: "MoveRule",
-		Client: &config.ClientMatchers{
+		Client: &appconfig.ClientMatchers{
 			SenderRegex: []string{senderHostPattern},
 		},
-		Actions: []config.Action{{
-			Type:        config.MOVE,
+		Actions: []appconfig.Action{{
+			Type:        appconfig.MOVE,
 			Destination: "MissingFolder",
 		}},
 	}
@@ -128,7 +128,7 @@ func TestWatchProcessUIDsMoveMissingDestination(t *testing.T) {
 	deps := Deps{
 		Ctx:    context.Background(),
 		Client: client,
-		Rules:  []config.Rule{rule},
+		Rules:  []appconfig.Rule{rule},
 		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 
@@ -146,20 +146,20 @@ func TestWatchProcessUIDsUnsupportedAction(t *testing.T) {
 		t.Fatalf("select inbox: %v", err)
 	}
 
-	rule := config.Rule{
+	rule := appconfig.Rule{
 		Name: "UnsupportedRule",
-		Client: &config.ClientMatchers{
+		Client: &appconfig.ClientMatchers{
 			SenderRegex: []string{senderHostPattern},
 		},
-		Actions: []config.Action{{
-			Type: config.ActionName("archive"),
+		Actions: []appconfig.Action{{
+			Type: appconfig.ActionName("archive"),
 		}},
 	}
 
 	deps := Deps{
 		Ctx:    context.Background(),
 		Client: client,
-		Rules:  []config.Rule{rule},
+		Rules:  []appconfig.Rule{rule},
 		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 
@@ -173,7 +173,7 @@ const senderHostValue = "example.com"
 const senderHostPattern = "example\\.com"
 
 func assertMailboxCount(ctx context.Context, client *imap.Client, mailbox, senderHost string, expected int) error {
-	matchers := config.ServerMatchers{
+	matchers := appconfig.ServerMatchers{
 		Folders:         []string{mailbox},
 		SenderSubstring: []string{senderHost},
 	}
@@ -197,7 +197,7 @@ func setupWatchRunnerServer(t *testing.T, extraMailboxes []string) (*imap.Client
 		imap.WithTLSConfig(&tls.Config{InsecureSkipVerify: true}),
 	}
 
-	client := cleanuprunner.New(
+	client := serverrunner.New(
 		opts...,
 	)
 

@@ -3,12 +3,12 @@ package searches
 import (
 	"testing"
 
-	"github.com/aaronromeo/postmanpat/appconfig"
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
 	"github.com/emersion/go-imap/v2"
 )
 
 func TestBuildSearchCriteriaListIDSubstring(t *testing.T) {
-	matchers := config.ServerMatchers{
+	matchers := appconfig.ServerMatchers{
 		ListIDSubstring: []string{"list.example.com"},
 	}
 
@@ -31,7 +31,7 @@ func TestBuildSearchCriteriaListIDSubstring(t *testing.T) {
 }
 
 func TestBuildSearchCriteriaListIDSubstringSkipsEmpty(t *testing.T) {
-	matchers := config.ServerMatchers{
+	matchers := appconfig.ServerMatchers{
 		ListIDSubstring: []string{"", "   "},
 	}
 
@@ -48,7 +48,7 @@ func TestBuildSearchCriteriaListIDSubstringSkipsEmpty(t *testing.T) {
 }
 
 func TestBuildSearchCriteriaReturnPathSubstring(t *testing.T) {
-	matchers := config.ServerMatchers{
+	matchers := appconfig.ServerMatchers{
 		ReturnPathSubstring: []string{"srs.messagingengine.com"},
 	}
 
@@ -72,7 +72,7 @@ func TestBuildSearchCriteriaReturnPathSubstring(t *testing.T) {
 
 func TestBuildSearchCriteriaSeenTrue(t *testing.T) {
 	seen := true
-	matchers := config.ServerMatchers{
+	matchers := appconfig.ServerMatchers{
 		Seen: &seen,
 	}
 
@@ -97,7 +97,7 @@ func TestBuildSearchCriteriaSeenTrue(t *testing.T) {
 
 func TestBuildSearchCriteriaListUnsubscribeTrue(t *testing.T) {
 	listUnsub := true
-	matchers := config.ServerMatchers{
+	matchers := appconfig.ServerMatchers{
 		ListUnsubscribe: &listUnsub,
 	}
 
@@ -118,7 +118,7 @@ func TestBuildSearchCriteriaListUnsubscribeTrue(t *testing.T) {
 
 func TestBuildSearchCriteriaListUnsubscribeFalse(t *testing.T) {
 	listUnsub := false
-	matchers := config.ServerMatchers{
+	matchers := appconfig.ServerMatchers{
 		ListUnsubscribe: &listUnsub,
 	}
 
@@ -142,7 +142,7 @@ func TestBuildSearchCriteriaListUnsubscribeFalse(t *testing.T) {
 
 func TestBuildSearchCriteriaSeenFalse(t *testing.T) {
 	seen := false
-	matchers := config.ServerMatchers{
+	matchers := appconfig.ServerMatchers{
 		Seen: &seen,
 	}
 
@@ -166,7 +166,7 @@ func TestBuildSearchCriteriaSeenFalse(t *testing.T) {
 }
 
 func TestBuildSearchCriteriaExcludesDeleted(t *testing.T) {
-	criteria, err := buildSearchCriteria(config.ServerMatchers{})
+	criteria, err := buildSearchCriteria(appconfig.ServerMatchers{})
 	if err != nil {
 		t.Fatalf("build criteria: %v", err)
 	}

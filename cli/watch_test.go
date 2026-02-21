@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aaronromeo/postmanpat/appconfig"
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
 	"github.com/emersion/go-imap/v2"
 	giimapserver "github.com/emersion/go-imap/v2/imapserver"
 	giimapmemserver "github.com/emersion/go-imap/v2/imapserver/imapmemserver"
@@ -23,7 +23,7 @@ import (
 
 func TestWatchRejectsServerMatchers(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
+	path := filepath.Join(dir, "appconfig.yaml")
 	if err := os.WriteFile(path, []byte(`
 rules:
   - name: "Rule"
@@ -50,11 +50,11 @@ rules:
 }
 
 func TestWatchAcceptsClientMatchers(t *testing.T) {
-	cfg := config.Config{
-		Rules: []config.Rule{
+	cfg := appconfig.Config{
+		Rules: []appconfig.Rule{
 			{
 				Name: "Rule",
-				Client: &config.ClientMatchers{
+				Client: &appconfig.ClientMatchers{
 					SubjectRegex: []string{"hello"},
 				},
 			},
@@ -85,7 +85,7 @@ func TestWatchTestHappyPath(t *testing.T) {
 	t.Setenv("POSTMANPAT_IMAP_PASS", "password")
 
 	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
+	path := filepath.Join(dir, "appconfig.yaml")
 	if err := os.WriteFile(path, []byte(`
 rules:
   - name: "ROM"
@@ -134,7 +134,7 @@ func TestWatchTestNoMatches(t *testing.T) {
 	t.Setenv("POSTMANPAT_IMAP_PASS", "password")
 
 	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
+	path := filepath.Join(dir, "appconfig.yaml")
 	if err := os.WriteFile(path, []byte(`
 rules:
   - name: "ROM"
@@ -180,7 +180,7 @@ func TestWatchTestMailboxOverride(t *testing.T) {
 	t.Setenv("POSTMANPAT_IMAP_PASS", "password")
 
 	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
+	path := filepath.Join(dir, "appconfig.yaml")
 	if err := os.WriteFile(path, []byte(`
 rules:
   - name: "ROM"

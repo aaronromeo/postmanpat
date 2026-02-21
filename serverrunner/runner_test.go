@@ -1,4 +1,4 @@
-package cleanuprunner
+package serverrunner
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	config "github.com/aaronromeo/postmanpat/appconfig"
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
 	"github.com/aaronromeo/postmanpat/ftest"
 	"github.com/aaronromeo/postmanpat/imap"
 	giimap "github.com/emersion/go-imap/v2"
@@ -25,12 +25,12 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 
 	cases := []struct {
 		name     string
-		matchers config.ServerMatchers
+		matchers appconfig.ServerMatchers
 		wantUIDs []uint32
 	}{
 		{
 			name: "match body substrings require all",
-			matchers: config.ServerMatchers{
+			matchers: appconfig.ServerMatchers{
 				Folders:       []string{"INBOX"},
 				BodySubstring: []string{"unsubscribe", "updates"},
 			},
@@ -38,7 +38,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 		},
 		{
 			name: "body substrings fail when missing",
-			matchers: config.ServerMatchers{
+			matchers: appconfig.ServerMatchers{
 				Folders:       []string{"INBOX"},
 				BodySubstring: []string{"unsubscribe", "missing"},
 			},
@@ -46,7 +46,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 		},
 		{
 			name: "match reply-to domain",
-			matchers: config.ServerMatchers{
+			matchers: appconfig.ServerMatchers{
 				Folders:          []string{"INBOX"},
 				ReplyToSubstring: []string{"example.com"},
 			},
@@ -54,9 +54,9 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 		},
 		{
 			name: "match age window max",
-			matchers: config.ServerMatchers{
+			matchers: appconfig.ServerMatchers{
 				Folders: []string{"INBOX"},
-				AgeWindow: &config.AgeWindow{
+				AgeWindow: &appconfig.AgeWindow{
 					Max: "1d",
 				},
 			},
@@ -64,9 +64,9 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 		},
 		{
 			name: "match age window min",
-			matchers: config.ServerMatchers{
+			matchers: appconfig.ServerMatchers{
 				Folders: []string{"INBOX"},
-				AgeWindow: &config.AgeWindow{
+				AgeWindow: &appconfig.AgeWindow{
 					Min: "1d",
 				},
 			},
@@ -74,7 +74,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 		},
 		{
 			name: "match sender recipient body",
-			matchers: config.ServerMatchers{
+			matchers: appconfig.ServerMatchers{
 				Folders:       []string{"INBOX"},
 				BodySubstring: []string{"unsubscribe"},
 			},
@@ -82,7 +82,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 		},
 		{
 			name: "match sender email",
-			matchers: config.ServerMatchers{
+			matchers: appconfig.ServerMatchers{
 				Folders:         []string{"INBOX"},
 				SenderSubstring: []string{"example.com"},
 			},
@@ -90,7 +90,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 		},
 		{
 			name: "match recipients email",
-			matchers: config.ServerMatchers{
+			matchers: appconfig.ServerMatchers{
 				Folders:    []string{"INBOX"},
 				Recipients: []string{"user@example.com"},
 			},
@@ -98,7 +98,7 @@ func TestSearchByMatchersLocalServer(t *testing.T) {
 		},
 		{
 			name: "no matches",
-			matchers: config.ServerMatchers{
+			matchers: appconfig.ServerMatchers{
 				Folders:         []string{"INBOX"},
 				SenderSubstring: []string{"nope"},
 				Recipients:      []string{"user@example.com"},
@@ -147,7 +147,7 @@ func TestDeleteUIDsLocalServer(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			t.Cleanup(cancel)
 
-			target := config.ServerMatchers{
+			target := appconfig.ServerMatchers{
 				Folders:         []string{"INBOX"},
 				SenderSubstring: []string{"example.com"},
 			}
@@ -162,7 +162,7 @@ func TestDeleteUIDsLocalServer(t *testing.T) {
 			assert.NoError(t, err, "search after delete")
 			assert.Empty(t, matched["INBOX"], "expected no matches after delete")
 
-			remaining := config.ServerMatchers{
+			remaining := appconfig.ServerMatchers{
 				Folders:         []string{"INBOX"},
 				SenderSubstring: []string{"example.org"},
 			}
@@ -219,7 +219,7 @@ func TestMoveByMailboxLocalServer(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			t.Cleanup(cancel)
 
-			_, err := client.SearchByServerMatchers(ctx, config.ServerMatchers{
+			_, err := client.SearchByServerMatchers(ctx, appconfig.ServerMatchers{
 				Folders: []string{"INBOX"},
 			})
 			assert.NoError(t, err, "select inbox before move")
@@ -231,7 +231,7 @@ func TestMoveByMailboxLocalServer(t *testing.T) {
 			}
 			assert.NoError(t, err, "move error")
 
-			inboxMatchers := config.ServerMatchers{
+			inboxMatchers := appconfig.ServerMatchers{
 				Folders:         []string{"INBOX"},
 				SenderSubstring: []string{"example.com"},
 			}
@@ -241,7 +241,7 @@ func TestMoveByMailboxLocalServer(t *testing.T) {
 
 			if tc.expectInArchive {
 				archiveClient := mustConnectClient(t, client.Addr, client.Username, client.Password, nil)
-				archiveMatchers := config.ServerMatchers{
+				archiveMatchers := appconfig.ServerMatchers{
 					Folders:         []string{tc.destination},
 					SenderSubstring: []string{"example.com"},
 				}
@@ -270,7 +270,7 @@ func TestSearchByMatchersMultipleFolders(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
 
-	matchers := config.ServerMatchers{
+	matchers := appconfig.ServerMatchers{
 		Folders:         []string{"INBOX", "Archive"},
 		SenderSubstring: []string{"example."},
 	}
@@ -287,7 +287,7 @@ func TestClientReuseAcrossOperations(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
 
-	matched, err := client.SearchByServerMatchers(ctx, config.ServerMatchers{
+	matched, err := client.SearchByServerMatchers(ctx, appconfig.ServerMatchers{
 		Folders:         []string{"INBOX"},
 		SenderSubstring: []string{"example.com"},
 	})
@@ -297,7 +297,7 @@ func TestClientReuseAcrossOperations(t *testing.T) {
 	err = client.DeleteUIDs(ctx, matched["INBOX"], true)
 	assert.NoError(t, err, "delete sender matches")
 
-	matched, err = client.SearchByServerMatchers(ctx, config.ServerMatchers{
+	matched, err = client.SearchByServerMatchers(ctx, appconfig.ServerMatchers{
 		Folders:         []string{"INBOX"},
 		SenderSubstring: []string{"example.com"},
 	})
@@ -307,7 +307,7 @@ func TestClientReuseAcrossOperations(t *testing.T) {
 	err = client.MoveUIDs(ctx, []uint32{ids.OtherUID}, "Archive")
 	assert.NoError(t, err, "move other message")
 
-	matched, err = client.SearchByServerMatchers(ctx, config.ServerMatchers{
+	matched, err = client.SearchByServerMatchers(ctx, appconfig.ServerMatchers{
 		Folders:         []string{"INBOX"},
 		SenderSubstring: []string{"example.org"},
 	})
@@ -641,7 +641,7 @@ func TestAnalyzeAgeWindowEndToEnd(t *testing.T) {
 	t.Setenv("POSTMANPAT_IMAP_PASS", "password")
 
 	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
+	path := filepath.Join(dir, "appconfig.yaml")
 	if err := os.WriteFile(path, []byte(`
 rules:
   - name: "Rule"
@@ -658,11 +658,11 @@ rules:
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, err := config.Load(path)
+	cfg, err := appconfig.Load(path)
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	if err := config.Validate(cfg); err != nil {
+	if err := appconfig.Validate(cfg); err != nil {
 		t.Fatalf("validate config: %v", err)
 	}
 

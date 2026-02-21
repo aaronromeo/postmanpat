@@ -9,9 +9,9 @@ import (
 	"strings"
 
 	"github.com/aaronromeo/postmanpat/announcer"
-	"github.com/aaronromeo/postmanpat/appconfig"
-	"github.com/aaronromeo/postmanpat/cleanuprunner"
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
 	"github.com/aaronromeo/postmanpat/imap"
+	"github.com/aaronromeo/postmanpat/serverrunner"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
@@ -29,12 +29,12 @@ var cleanupCmd = &cobra.Command{
 			return err
 		}
 
-		cfg, err := config.Load(cfgPath)
+		cfg, err := appconfig.Load(cfgPath)
 		if err != nil {
 			return err
 		}
 
-		if err := config.Validate(cfg); err != nil {
+		if err := appconfig.Validate(cfg); err != nil {
 			return err
 		}
 
@@ -47,16 +47,16 @@ var cleanupCmd = &cobra.Command{
 			}
 		}
 
-		if err := config.ValidateEnv(); err != nil {
+		if err := appconfig.ValidateEnv(); err != nil {
 			return err
 		}
 
-		cfgSummary := config.Summary(cfg)
+		cfgSummary := appconfig.Summary(cfg)
 		out := cmd.OutOrStdout()
 		logger := slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: slog.LevelInfo}))
 		logger.Info("config summary", "summary", cfgSummary)
 
-		imapEnv, err := config.IMAPEnvFromEnv()
+		imapEnv, err := appconfig.IMAPEnvFromEnv()
 		if err != nil {
 			return err
 		}
@@ -71,7 +71,7 @@ var cleanupCmd = &cobra.Command{
 			return err
 		}
 
-		var client cleanuprunner.ServerRunner = cleanuprunner.New(
+		var client serverrunner.ServerRunner = serverrunner.New(
 			imap.WithAddr(
 				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
 			),
@@ -104,7 +104,7 @@ var cleanupCmd = &cobra.Command{
 
 			for _, action := range rule.Actions {
 				switch action.Type {
-				case config.DELETE:
+				case appconfig.DELETE:
 					if dryRun {
 						logger.Info("dry run delete", "rule", rule.Name, "messages", len(uids))
 						continue
@@ -116,7 +116,7 @@ var cleanupCmd = &cobra.Command{
 					if err := client.DeleteByMailbox(ctx, matched, expungeAfterDelete); err != nil {
 						return err
 					}
-				case config.MOVE:
+				case appconfig.MOVE:
 					if strings.TrimSpace(action.Destination) == "" {
 						return fmt.Errorf("Action move missing destination: %s", rule.Name)
 					}

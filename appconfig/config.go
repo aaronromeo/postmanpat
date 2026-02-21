@@ -1,4 +1,4 @@
-package config
+package appconfig
 
 import (
 	"errors"
@@ -287,7 +287,7 @@ func defaultIfEmpty(value, fallback string) string {
 	return value
 }
 
-// Validate performs basic validation on non-secret config.
+// Validate performs basic validation on non-secret appconfig.
 func Validate(cfg Config) error {
 	if len(cfg.Rules) == 0 {
 		return errors.New("config must define at least one rule")

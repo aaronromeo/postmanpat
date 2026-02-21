@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aaronromeo/postmanpat/appconfig"
+	appconfig "github.com/aaronromeo/postmanpat/appconfig"
 	"github.com/aaronromeo/postmanpat/watchrunner/internal/matchers"
 )
 
@@ -21,7 +21,7 @@ type TestMatch struct {
 	Recipients     []string
 }
 
-func RunRuleTest(ctx context.Context, client WatchRunner, rule config.Rule, mailbox string, limit int) ([]TestMatch, error) {
+func RunRuleTest(ctx context.Context, client WatchRunner, rule appconfig.Rule, mailbox string, limit int) ([]TestMatch, error) {
 	if rule.Client == nil {
 		return nil, fmt.Errorf("rule %q does not define client matchers", rule.Name)
 	}

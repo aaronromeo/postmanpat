@@ -1,4 +1,4 @@
-package config
+package appconfig
 
 import (
 	"os"
@@ -111,7 +111,7 @@ func writeTempFile(t *testing.T, contents string) string {
 	t.Helper()
 
 	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
+	path := filepath.Join(dir, "appconfig.yaml")
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
 	}
