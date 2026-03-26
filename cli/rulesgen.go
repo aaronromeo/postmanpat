@@ -30,12 +30,39 @@ var rulesgenServeCmd = &cobra.Command{
 			}
 		}
 
-		server, err := rulesgen.NewServer(port)
+		// Load environment file if present
+		if err := loadEnvFile(); err != nil {
+			return err
+		}
+
+		// Load server config from environment
+		serverConfig := rulesgen.NewServerConfig(
+			rulesgen.WithCleanupOut(os.Getenv("POSTMANPAT_CONFIG")),
+			rulesgen.WithRulesGenStore(os.Getenv("POSTMANPAT_RULESGEN_STORE")),
+			rulesgen.WithWatchOut(os.Getenv("POSTMANPAT_RULESGEN_WATCH_OUT")),
+			rulesgen.WithCleanupOut(os.Getenv("POSTMANPAT_RULESGEN_CLEANUP_OUT")),
+			rulesgen.WithRulesGenStore(os.Getenv("POSTMANPAT_RULESGEN_ONETIME_OUT")),
+		)
+		if err := serverConfig.Validate(); err != nil {
+			return err
+		}
+
+		serverConfig.Port = port
+
+		// Validate that rules have server matchers
+		for _, rule := range serverConfig.Cfg.Rules {
+			if rule.Server == nil {
+				return fmt.Errorf("rule %q must define server matchers for rulesgen", rule.Name)
+			}
+		}
+
+		server, err := rulesgen.NewServer(port, &serverConfig.Cfg)
 		if err != nil {
 			return err
 		}
 
 		fmt.Fprintf(cmd.OutOrStdout(), "Starting rules generation server on http://localhost:%d\n", port)
+		fmt.Fprintf(cmd.OutOrStdout(), "API endpoint: http://localhost:%d/api/analysis\n", port)
 		if err := server.Run(); err != nil {
 			return fmt.Errorf("server error: %w", err)
 		}

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aaronromeo/postmanpat/analysis"
 	appconfig "github.com/aaronromeo/postmanpat/appconfig"
 	"github.com/aaronromeo/postmanpat/imap"
 )
@@ -42,7 +43,7 @@ func TestBuildAnalyzeReportJSON(t *testing.T) {
 		Account:   "user@example.com",
 		Generated: now,
 		AgeWindow: ageWindow,
-		Options: analyzeOptions{
+		Options: analysis.Options{
 			Top:      100,
 			Examples: 20,
 			MinCount: 1,

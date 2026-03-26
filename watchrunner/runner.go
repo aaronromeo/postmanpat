@@ -150,7 +150,7 @@ func applyActions(client WatchRunner, deps Deps, rule appconfig.Rule, uid uint32
 		case appconfig.MOVE:
 			destination := strings.TrimSpace(action.Destination)
 			if destination == "" {
-				return fmt.Errorf("Action move missing destination for rule %q", rule.Name)
+				return fmt.Errorf("action move missing destination for rule %q", rule.Name)
 			}
 			if err := client.MoveUIDs(deps.Ctx, []uint32{uid}, destination); err != nil {
 				return err

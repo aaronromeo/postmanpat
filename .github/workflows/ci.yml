@@ -15,5 +15,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.25.5'
+      - name: Run list
+        run: make list
       - name: Run tests
-        run: go test ./...
+        run: make test

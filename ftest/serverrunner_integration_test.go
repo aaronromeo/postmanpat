@@ -3,7 +3,6 @@ package ftest
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -723,16 +722,6 @@ func containsServerRunnerFlag(flags []giimap.Flag, target giimap.Flag) bool {
 		}
 	}
 	return false
-}
-
-type serverRunnerErrorLiteral struct{}
-
-func (serverRunnerErrorLiteral) Read([]byte) (int, error) {
-	return 0, errors.New("read failed")
-}
-
-func (serverRunnerErrorLiteral) Size() int64 {
-	return 0
 }
 
 func splitHostPort(addr string) (string, string, error) {

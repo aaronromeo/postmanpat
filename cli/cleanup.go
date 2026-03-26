@@ -118,7 +118,7 @@ var cleanupCmd = &cobra.Command{
 					}
 				case appconfig.MOVE:
 					if strings.TrimSpace(action.Destination) == "" {
-						return fmt.Errorf("Action move missing destination: %s", rule.Name)
+						return fmt.Errorf("action move missing destination: %s", rule.Name)
 					}
 					if dryRun {
 						logger.Info("dry run move", "rule", rule.Name, "messages", len(uids))
