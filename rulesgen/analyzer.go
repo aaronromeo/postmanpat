@@ -23,47 +23,13 @@ func NewAnalyzer(cfg *appconfig.Config) *Analyzer {
 	}
 }
 
-// analysisReport represents the results of an analysis run
-type analysisReport struct {
-	GeneratedAt string          `json:"generated_at"`
-	Source      analysisSource  `json:"source"`
-	Stats       analysisStats   `json:"stats"`
-	Indexes     analysisIndexes `json:"indexes"`
-}
-
-// analysisSource contains metadata about the analysis source
-type analysisSource struct {
-	Mailbox    string             `json:"mailbox"`
-	Account    string             `json:"account"`
-	TimeWindow analysisTimeWindow `json:"time_window"`
-}
-
-// analysisTimeWindow represents the time range analyzed
-type analysisTimeWindow struct {
-	After  string `json:"after"`
-	Before string `json:"before"`
-}
-
-// analysisStats contains statistics about the analysis
-type analysisStats struct {
-	TotalMessagesScanned int `json:"total_messages_scanned"`
-}
-
-// analysisIndexes contains all lens-based cluster indexes
-type analysisIndexes struct {
-	ListLens         analysis.Lens `json:"list_lens"`
-	SenderLens       analysis.Lens `json:"sender_unsub_lens"`
-	TemplateLens     analysis.Lens `json:"template_lens"`
-	RecipientTagLens analysis.Lens `json:"recipient_tag_lens"`
-}
-
 // DefaultAnalyzeOptions returns default analysis options
 func DefaultAnalyzeOptions() analysis.Options {
 	return analysis.DefaultOptions()
 }
 
 // Run executes the analysis and returns a report
-func (a *Analyzer) Run(ctx context.Context, options analysis.Options) (*analysisReport, error) {
+func (a *Analyzer) Run(ctx context.Context, options analysis.Options) (*analysis.Report, error) {
 	imapEnv, err := appconfig.IMAPEnvFromEnv()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get IMAP config: %w", err)
@@ -103,8 +69,16 @@ func (a *Analyzer) Run(ctx context.Context, options analysis.Options) (*analysis
 
 	data := dataByMailbox[mailbox]
 
+	arp := analysis.ReportParams{
+		Mailbox:   mailbox,
+		Account:   imapEnv.User,
+		Generated: time.Now().UTC(),
+		AgeWindow: rule.Server.AgeWindow,
+		Options:   options,
+	}
+
 	// Build the report
-	report, err := a.buildReport(data, mailbox, imapEnv.User, rule.Server.AgeWindow, options)
+	report, err := a.BuildReport(data, arp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build report: %w", err)
 	}
@@ -112,18 +86,25 @@ func (a *Analyzer) Run(ctx context.Context, options analysis.Options) (*analysis
 	return report, nil
 }
 
-// buildReport creates an analysis report from mail data
-func (a *Analyzer) buildReport(data []imap.MailData, mailbox, account string, ageWindow *appconfig.AgeWindow, options analysis.Options) (*analysisReport, error) {
-	now := time.Now().UTC()
-
-	// Build time window
-	after, before, err := appconfig.AgeWindowBounds(now, ageWindow)
+func BuildTimeWindow(now time.Time, window *appconfig.AgeWindow) (analysis.TimeWindow, error) {
+	after, before, err := appconfig.AgeWindowBounds(now, window)
 	if err != nil {
-		return nil, err
+		return analysis.TimeWindow{}, err
 	}
 	if before == "" {
 		before = now.Format(time.RFC3339)
 	}
+	return analysis.TimeWindow{After: after, Before: before}, nil
+}
+
+// BuildReport creates an analysis report from mail data
+func (a *Analyzer) BuildReport(data []imap.MailData, params analysis.ReportParams) (*analysis.Report, error) {
+	window, err := BuildTimeWindow(params.Generated, params.AgeWindow)
+	if err != nil {
+		return nil, err
+	}
+
+	options := params.Options
 
 	// Build lens clusters using shared functions from analysis package
 	listLens := analysis.BuildListLens(data, options)
@@ -131,20 +112,17 @@ func (a *Analyzer) buildReport(data []imap.MailData, mailbox, account string, ag
 	templateLens := analysis.BuildTemplateLens(data, options)
 	recipientTagLens := analysis.BuildRecipientTagLens(data, options)
 
-	return &analysisReport{
-		GeneratedAt: now.Format(time.RFC3339),
-		Source: analysisSource{
-			Mailbox: mailbox,
-			Account: account,
-			TimeWindow: analysisTimeWindow{
-				After:  after,
-				Before: before,
-			},
+	return &analysis.Report{
+		GeneratedAt: params.Generated.Format(time.RFC3339),
+		Source: analysis.Source{
+			Mailbox:    params.Mailbox,
+			Account:    params.Account,
+			TimeWindow: analysis.TimeWindow(window),
 		},
-		Stats: analysisStats{
+		Stats: analysis.Stats{
 			TotalMessagesScanned: len(data),
 		},
-		Indexes: analysisIndexes{
+		Indexes: analysis.Indexes{
 			ListLens:         listLens,
 			SenderLens:       senderLens,
 			TemplateLens:     templateLens,

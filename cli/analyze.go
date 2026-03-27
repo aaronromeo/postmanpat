@@ -10,6 +10,7 @@ import (
 	"github.com/aaronromeo/postmanpat/analysis"
 	appconfig "github.com/aaronromeo/postmanpat/appconfig"
 	"github.com/aaronromeo/postmanpat/imap"
+	"github.com/aaronromeo/postmanpat/rulesgen"
 	"github.com/aaronromeo/postmanpat/serverrunner"
 	"github.com/spf13/cobra"
 )
@@ -84,6 +85,8 @@ var analyzeCmd = &cobra.Command{
 			MinCount: minCount,
 		}
 
+		analyzer := rulesgen.NewAnalyzer(&cfg)
+
 		for _, rule := range cfg.Rules {
 			if rule.Client != nil {
 				return fmt.Errorf("rule %q defines client matchers, which are not supported by analyze", rule.Name)
@@ -105,7 +108,7 @@ var analyzeCmd = &cobra.Command{
 			}
 
 			data := dataByMailbox[mailbox]
-			report, err := buildAnalyzeReport(data, analyzeReportParams{
+			report, err := analyzer.BuildReport(data, analysis.ReportParams{
 				Mailbox:   mailbox,
 				Account:   imapEnv.User,
 				Generated: time.Now().UTC(),
@@ -116,7 +119,7 @@ var analyzeCmd = &cobra.Command{
 				return err
 			}
 
-			path, err := writeAnalyzeReport(report)
+			path, err := writeAnalyzeReport(*report)
 			if err != nil {
 				return err
 			}
@@ -135,93 +138,7 @@ func init() {
 	analyzeCmd.Flags().Int("min-count", 2, "Minimum cluster count to include")
 }
 
-type analyzeReportParams struct {
-	Mailbox   string
-	Account   string
-	Generated time.Time
-	AgeWindow *appconfig.AgeWindow
-	Options   analysis.Options
-}
-
-type analyzeTimeWindow struct {
-	After  string `json:"after"`
-	Before string `json:"before"`
-}
-
-type analyzeSource struct {
-	Mailbox    string            `json:"mailbox"`
-	Account    string            `json:"account"`
-	TimeWindow analyzeTimeWindow `json:"time_window"`
-}
-
-type analyzeStats struct {
-	TotalMessagesScanned int `json:"total_messages_scanned"`
-}
-
-type analyzeIndexes struct {
-	// Raw              []analyzeRawRecord `json:"raw"`
-	ListLens         analysis.Lens `json:"list_lens"`
-	SenderLens       analysis.Lens `json:"sender_unsub_lens"`
-	TemplateLens     analysis.Lens `json:"template_lens"`
-	RecipientTagLens analysis.Lens `json:"recipient_tag_lens"`
-}
-
-type analyzeReport struct {
-	GeneratedAt string         `json:"generated_at"`
-	Source      analyzeSource  `json:"source"`
-	Stats       analyzeStats   `json:"stats"`
-	Indexes     analyzeIndexes `json:"indexes"`
-}
-
-type timeWindow struct {
-	After  string
-	Before string
-}
-
-func buildTimeWindow(now time.Time, window *appconfig.AgeWindow) (timeWindow, error) {
-	after, before, err := appconfig.AgeWindowBounds(now, window)
-	if err != nil {
-		return timeWindow{}, err
-	}
-	if before == "" {
-		before = now.Format(time.RFC3339)
-	}
-	return timeWindow{After: after, Before: before}, nil
-}
-
-func buildAnalyzeReport(data []imap.MailData, params analyzeReportParams) (analyzeReport, error) {
-	window, err := buildTimeWindow(params.Generated, params.AgeWindow)
-	if err != nil {
-		return analyzeReport{}, err
-	}
-
-	options := params.Options
-	listLens := analysis.BuildListLens(data, options)
-	senderLens := analysis.BuildSenderUnsubLens(data, options)
-	templateLens := analysis.BuildTemplateLens(data, options)
-	recipientTagLens := analysis.BuildRecipientTagLens(data, options)
-
-	return analyzeReport{
-		GeneratedAt: params.Generated.Format(time.RFC3339),
-		Source: analyzeSource{
-			Mailbox:    params.Mailbox,
-			Account:    params.Account,
-			TimeWindow: analyzeTimeWindow(window),
-		},
-		Stats: analyzeStats{
-			TotalMessagesScanned: len(data),
-		},
-		Indexes: analyzeIndexes{
-			// Raw:              raw,
-			ListLens:         listLens,
-			SenderLens:       senderLens,
-			TemplateLens:     templateLens,
-			RecipientTagLens: recipientTagLens,
-		},
-	}, nil
-}
-
-func writeAnalyzeReport(report analyzeReport) (string, error) {
+func writeAnalyzeReport(report analysis.Report) (string, error) {
 	tmpFile, err := os.CreateTemp("", "postmanpat-analyze-*.json")
 	if err != nil {
 		return "", err

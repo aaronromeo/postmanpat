@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aaronromeo/postmanpat/appconfig"
 	"github.com/aaronromeo/postmanpat/imap"
 )
 
@@ -36,11 +37,11 @@ type Lens struct {
 
 // Cluster represents a single cluster of similar emails
 type Cluster struct {
-	ClusterID  string         `json:"cluster_id"`
-	Count      int            `json:"count"`
-	LatestDate time.Time      `json:"latest_date"`
-	Keys       map[string]any `json:"keys"`
-	Signals    ClusterSignals `json:"signals"`
+	ClusterID  string          `json:"cluster_id"`
+	Count      int             `json:"count"`
+	LatestDate time.Time       `json:"latest_date"`
+	Keys       map[string]any  `json:"keys"`
+	Signals    ClusterSignals  `json:"signals"`
 	Examples   ClusterExamples `json:"examples"`
 }
 
@@ -71,6 +72,43 @@ type clusterAccumulator struct {
 	latestDate     time.Time
 	examples       ClusterExamples
 	exampleSets    map[string]map[string]struct{}
+}
+
+type ReportParams struct {
+	Mailbox   string
+	Account   string
+	Generated time.Time
+	AgeWindow *appconfig.AgeWindow
+	Options   Options
+}
+
+type Source struct {
+	Mailbox    string     `json:"mailbox"`
+	Account    string     `json:"account"`
+	TimeWindow TimeWindow `json:"time_window"`
+}
+
+type Stats struct {
+	TotalMessagesScanned int `json:"total_messages_scanned"`
+}
+
+type Indexes struct {
+	ListLens         Lens `json:"list_lens"`
+	SenderLens       Lens `json:"sender_unsub_lens"`
+	TemplateLens     Lens `json:"template_lens"`
+	RecipientTagLens Lens `json:"recipient_tag_lens"`
+}
+
+type Report struct {
+	GeneratedAt string  `json:"generated_at"`
+	Source      Source  `json:"source"`
+	Stats       Stats   `json:"stats"`
+	Indexes     Indexes `json:"indexes"`
+}
+
+type TimeWindow struct {
+	After  string `json:"after"`
+	Before string `json:"before"`
 }
 
 const (

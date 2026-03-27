@@ -12,6 +12,7 @@ import (
 	"github.com/aaronromeo/postmanpat/analysis"
 	appconfig "github.com/aaronromeo/postmanpat/appconfig"
 	"github.com/aaronromeo/postmanpat/imap"
+	"github.com/aaronromeo/postmanpat/rulesgen"
 )
 
 func TestBuildAnalyzeReportJSON(t *testing.T) {
@@ -38,7 +39,10 @@ func TestBuildAnalyzeReportJSON(t *testing.T) {
 		},
 	}
 
-	report, err := buildAnalyzeReport(data, analyzeReportParams{
+	blankCfg := appconfig.Config{}
+	analyzer := rulesgen.NewAnalyzer(&blankCfg)
+
+	report, err := analyzer.BuildReport(data, analysis.ReportParams{
 		Mailbox:   "INBOX",
 		Account:   "user@example.com",
 		Generated: now,
@@ -53,7 +57,7 @@ func TestBuildAnalyzeReportJSON(t *testing.T) {
 		t.Fatalf("build report: %v", err)
 	}
 
-	path, err := writeAnalyzeReport(report)
+	path, err := writeAnalyzeReport(*report)
 	if err != nil {
 		t.Fatalf("write report: %v", err)
 	}
@@ -157,7 +161,7 @@ func TestBuildAnalyzeReportJSON(t *testing.T) {
 func TestBuildTimeWindow(t *testing.T) {
 	now := time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)
 
-	window, err := buildTimeWindow(now, &appconfig.AgeWindow{Min: "0h"})
+	window, err := rulesgen.BuildTimeWindow(now, &appconfig.AgeWindow{Min: "0h"})
 	if err != nil {
 		t.Fatalf("build time window: %v", err)
 	}
@@ -168,7 +172,7 @@ func TestBuildTimeWindow(t *testing.T) {
 		t.Fatal("expected after timestamp with age_window set")
 	}
 
-	window, err = buildTimeWindow(now, nil)
+	window, err = rulesgen.BuildTimeWindow(now, nil)
 	if err != nil {
 		t.Fatalf("build time window: %v", err)
 	}
@@ -183,7 +187,7 @@ func TestBuildTimeWindow(t *testing.T) {
 func TestBuildTimeWindowMax(t *testing.T) {
 	now := time.Date(2024, 2, 1, 12, 0, 0, 0, time.UTC)
 
-	window, err := buildTimeWindow(now, &appconfig.AgeWindow{Max: "24h"})
+	window, err := rulesgen.BuildTimeWindow(now, &appconfig.AgeWindow{Max: "24h"})
 	if err != nil {
 		t.Fatalf("build time window: %v", err)
 	}
@@ -198,7 +202,7 @@ func TestBuildTimeWindowMax(t *testing.T) {
 func TestBuildTimeWindowMin(t *testing.T) {
 	now := time.Date(2024, 2, 1, 12, 0, 0, 0, time.UTC)
 
-	window, err := buildTimeWindow(now, &appconfig.AgeWindow{Min: "6h"})
+	window, err := rulesgen.BuildTimeWindow(now, &appconfig.AgeWindow{Min: "6h"})
 	if err != nil {
 		t.Fatalf("build time window: %v", err)
 	}
