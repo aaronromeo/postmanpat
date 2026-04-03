@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	appconfig "github.com/aaronromeo/postmanpat/envmgr"
 	"github.com/aaronromeo/postmanpat/watchrunner/internal/matchers"
 )
 

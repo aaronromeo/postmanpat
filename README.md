@@ -117,7 +117,7 @@ This setup runs `postmanpat cleanup` every 15 minutes inside the container using
      - `POSTMANPAT_S3_SECRET`
      - `POSTMANPAT_WEBHOOK_URL`
    - The container also expects:
-     - `POSTMANPAT_CONFIG` (set by compose to `/config/config.yaml`)
+     - `POSTMANPAT_RULES_CONFIG` (set by compose to `/config/config.yaml`)
 
 4. **Run with docker-compose**
    ```bash

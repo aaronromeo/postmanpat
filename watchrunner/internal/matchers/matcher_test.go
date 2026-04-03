@@ -3,7 +3,7 @@ package matchers
 import (
 	"testing"
 
-	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	appconfig "github.com/aaronromeo/postmanpat/envmgr"
 )
 
 func TestMatchesClientListIDRegex(t *testing.T) {

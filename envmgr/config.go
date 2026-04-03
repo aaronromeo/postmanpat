@@ -1,4 +1,4 @@
-package appconfig
+package envmgr
 
 import (
 	"errors"
@@ -9,19 +9,6 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
-)
-
-const (
-	envIMAPHost   = "POSTMANPAT_IMAP_HOST"
-	envIMAPPort   = "POSTMANPAT_IMAP_PORT"
-	envIMAPUser   = "POSTMANPAT_IMAP_USER"
-	envIMAPPass   = "POSTMANPAT_IMAP_PASS"
-	envS3Endpoint = "POSTMANPAT_S3_ENDPOINT"
-	envS3Region   = "POSTMANPAT_S3_REGION"
-	envS3Bucket   = "POSTMANPAT_S3_BUCKET"
-	envS3Key      = "POSTMANPAT_S3_KEY"
-	envS3Secret   = "POSTMANPAT_S3_SECRET"
-	envWebhookURL = "POSTMANPAT_WEBHOOK_URL"
 )
 
 // Config holds non-secret configuration loaded from YAML.
@@ -36,6 +23,13 @@ type IMAPEnv struct {
 	Port int
 	User string
 	Pass string
+}
+
+type RulesGenOutput struct {
+	StorePath          string
+	WatchOutPath       string
+	CleanupOutPath     string
+	OneTimeCleanupPath string
 }
 
 // Rule describes a single cleanup rule.
@@ -188,7 +182,7 @@ func Load(path string) (Config, error) {
 }
 
 // ValidateEnv ensures required environment variables are set.
-func ValidateEnv() error {
+func ValidateEnv(requiredEnvVars func() []string) error {
 	missing := []string{}
 	for _, name := range requiredEnvVars() {
 		if strings.TrimSpace(os.Getenv(name)) == "" {
@@ -207,24 +201,24 @@ func ValidateEnv() error {
 func IMAPEnvFromEnv() (IMAPEnv, error) {
 	missing := []string{}
 
-	host := strings.TrimSpace(os.Getenv(envIMAPHost))
+	host := strings.TrimSpace(os.Getenv(EnvIMAPHost))
 	if host == "" {
-		missing = append(missing, envIMAPHost)
+		missing = append(missing, EnvIMAPHost)
 	}
 
-	portRaw := strings.TrimSpace(os.Getenv(envIMAPPort))
+	portRaw := strings.TrimSpace(os.Getenv(EnvIMAPPort))
 	if portRaw == "" {
-		missing = append(missing, envIMAPPort)
+		missing = append(missing, EnvIMAPPort)
 	}
 
-	user := strings.TrimSpace(os.Getenv(envIMAPUser))
+	user := strings.TrimSpace(os.Getenv(EnvIMAPUser))
 	if user == "" {
-		missing = append(missing, envIMAPUser)
+		missing = append(missing, EnvIMAPUser)
 	}
 
-	pass := strings.TrimSpace(os.Getenv(envIMAPPass))
+	pass := strings.TrimSpace(os.Getenv(EnvIMAPPass))
 	if pass == "" {
-		missing = append(missing, envIMAPPass)
+		missing = append(missing, EnvIMAPPass)
 	}
 
 	if len(missing) > 0 {
@@ -233,7 +227,7 @@ func IMAPEnvFromEnv() (IMAPEnv, error) {
 
 	port, err := strconv.Atoi(portRaw)
 	if err != nil {
-		return IMAPEnv{}, fmt.Errorf("invalid %s: %w", envIMAPPort, err)
+		return IMAPEnv{}, fmt.Errorf("invalid %s: %w", EnvIMAPPort, err)
 	}
 
 	return IMAPEnv{
@@ -241,6 +235,50 @@ func IMAPEnvFromEnv() (IMAPEnv, error) {
 		Port: port,
 		User: user,
 		Pass: pass,
+	}, nil
+}
+
+func RulesGenOutputFromEnv() (RulesGenOutput, error) {
+	missing := []string{}
+
+	store := strings.TrimSpace(os.Getenv(EnvRulesGenStore))
+	if store == "" {
+		missing = append(missing, EnvIMAPHost)
+	}
+
+	watchOutPath := strings.TrimSpace(os.Getenv(EnvRulesGenWatchOut))
+	if watchOutPath == "" {
+		missing = append(missing, EnvRulesGenWatchOut)
+	}
+
+	cleanupOutPath := strings.TrimSpace(os.Getenv(EnvRulesGenCleanupOut))
+	if cleanupOutPath == "" {
+		missing = append(missing, EnvRulesGenCleanupOut)
+	}
+
+	onetimeOutPath := strings.TrimSpace(os.Getenv(EnvRulesGenOneTimeOut))
+	if onetimeOutPath == "" {
+		missing = append(missing, EnvRulesGenOneTimeOut)
+	}
+
+	if len(missing) > 0 {
+		return RulesGenOutput{}, fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
+	}
+
+	// portRaw := strings.TrimSpace(os.Getenv(EnvRulesGenWatchOut))
+	// if portRaw == "" {
+	// 	missing = append(missing, EnvIMAPPort)
+	// }
+
+	// port, err := strconv.Atoi(portRaw)
+	// if err != nil {
+	// 	return RulesGenOutput{}, fmt.Errorf("invalid %s: %w", EnvIMAPPort, err)
+	// }
+
+	return RulesGenOutput{
+		WatchOutPath:       watchOutPath,
+		CleanupOutPath:     cleanupOutPath,
+		OneTimeCleanupPath: onetimeOutPath,
 	}, nil
 }
 
@@ -263,21 +301,7 @@ func Summary(cfg Config) string {
 
 // ReportingEnabled returns true when a webhook URL is configured via env var.
 func ReportingEnabled() bool {
-	return strings.TrimSpace(os.Getenv(envWebhookURL)) != ""
-}
-
-func requiredEnvVars() []string {
-	return []string{
-		envIMAPHost,
-		envIMAPPort,
-		envIMAPUser,
-		envIMAPPass,
-		envS3Endpoint,
-		envS3Region,
-		envS3Bucket,
-		envS3Key,
-		envS3Secret,
-	}
+	return strings.TrimSpace(os.Getenv(EnvWebhookURL)) != ""
 }
 
 func defaultIfEmpty(value, fallback string) string {

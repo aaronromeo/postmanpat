@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/aaronromeo/postmanpat/announcer"
-	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	appconfig "github.com/aaronromeo/postmanpat/envmgr"
 	"github.com/aaronromeo/postmanpat/imap"
 	"github.com/aaronromeo/postmanpat/watchrunner"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
@@ -224,7 +224,7 @@ var watchCmd = &cobra.Command{
 }
 
 func init() {
-	watchCmd.Flags().String("config", "", "Path to YAML config file (or set POSTMANPAT_CONFIG)")
+	watchCmd.Flags().String("config", "", "Path to YAML config file (or set POSTMANPAT_RULES_CONFIG)")
 	watchCmd.Flags().Bool("verbose", false, "Enable verbose logging")
 	watchCmd.Flags().String("test", "", "Run a one-off test for the named rule and exit")
 	watchCmd.Flags().Int("limit", 10, "Maximum matches to return when using --test")

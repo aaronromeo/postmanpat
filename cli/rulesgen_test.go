@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	appconfig "github.com/aaronromeo/postmanpat/envmgr"
 	"github.com/aaronromeo/postmanpat/rulesgen"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,10 +29,14 @@ func createTestConfig() *appconfig.Config {
 }
 
 func TestRulesgenServe_DefaultPort(t *testing.T) {
-	// Create server with default port and test config
+	// Create server with default port, test config, and mock store
 	cfg := createTestConfig()
-	server, err := rulesgen.NewServer(8080, cfg)
+	mockStore := rulesgen.NewMockStore()
+	defer mockStore.Close()
+
+	server, err := rulesgen.NewServer(8080, cfg, mockStore)
 	require.NoError(t, err)
+	defer server.Close()
 
 	// Use httptest to avoid port conflicts
 	ts := httptest.NewServer(server.Handler())
@@ -54,11 +58,15 @@ func TestRulesgenServe_DefaultPort(t *testing.T) {
 }
 
 func TestRulesgenServe_CustomPort(t *testing.T) {
-	// Create server with custom port and test config
+	// Create server with custom port, test config, and mock store
 	customPort := 9999
 	cfg := createTestConfig()
-	server, err := rulesgen.NewServer(customPort, cfg)
+	mockStore := rulesgen.NewMockStore()
+	defer mockStore.Close()
+
+	server, err := rulesgen.NewServer(customPort, cfg, mockStore)
 	require.NoError(t, err)
+	defer server.Close()
 
 	// Use httptest to avoid port conflicts
 	ts := httptest.NewServer(server.Handler())

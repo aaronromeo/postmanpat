@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
-	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	appconfig "github.com/aaronromeo/postmanpat/envmgr"
 	"github.com/aaronromeo/postmanpat/imap"
 	"github.com/aaronromeo/postmanpat/watchrunner/internal/matchers"
 	giimap "github.com/emersion/go-imap/v2"

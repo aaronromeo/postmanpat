@@ -3,7 +3,7 @@ package serverrunner
 import (
 	"context"
 
-	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	appconfig "github.com/aaronromeo/postmanpat/envmgr"
 	"github.com/aaronromeo/postmanpat/imap"
 )
 

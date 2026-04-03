@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	appconfig "github.com/aaronromeo/postmanpat/envmgr"
 )
 
 type MessageMatcher interface {

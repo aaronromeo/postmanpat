@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/aaronromeo/postmanpat/analysis"
-	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	appconfig "github.com/aaronromeo/postmanpat/envmgr"
 	"github.com/aaronromeo/postmanpat/imap"
 	"github.com/aaronromeo/postmanpat/rulesgen"
 	"github.com/aaronromeo/postmanpat/serverrunner"
@@ -131,7 +131,7 @@ var analyzeCmd = &cobra.Command{
 }
 
 func init() {
-	analyzeCmd.Flags().String("config", "", "Path to YAML config file (or set POSTMANPAT_CONFIG)")
+	analyzeCmd.Flags().String("config", "", "Path to YAML config file (or set POSTMANPAT_RULES_CONFIG)")
 	analyzeCmd.Flags().Bool("verbose", false, "Enable verbose logging")
 	analyzeCmd.Flags().Int("top", 100, "Maximum clusters per lens")
 	analyzeCmd.Flags().Int("examples", 20, "Maximum examples per field")

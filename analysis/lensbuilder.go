@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/envmgr"
 	"github.com/aaronromeo/postmanpat/imap"
 )
 
@@ -78,7 +78,7 @@ type ReportParams struct {
 	Mailbox   string
 	Account   string
 	Generated time.Time
-	AgeWindow *appconfig.AgeWindow
+	AgeWindow *envmgr.AgeWindow
 	Options   Options
 }
 

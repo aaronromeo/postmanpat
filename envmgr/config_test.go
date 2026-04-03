@@ -1,4 +1,4 @@
-package appconfig
+package envmgr
 
 import (
 	"os"
@@ -7,19 +7,33 @@ import (
 	"testing"
 )
 
-func TestValidateEnvMissing(t *testing.T) {
-	t.Setenv(envIMAPHost, "")
-	t.Setenv(envIMAPPort, "")
-	t.Setenv(envIMAPUser, "")
-	t.Setenv(envIMAPPass, "")
-	t.Setenv(envS3Endpoint, "")
-	t.Setenv(envS3Region, "")
-	t.Setenv(envS3Bucket, "")
-	t.Setenv(envS3Key, "")
-	t.Setenv(envS3Secret, "")
-	t.Setenv(envWebhookURL, "")
+func testRequiredEnvVars() []string {
+	return []string{
+		EnvIMAPHost,
+		EnvIMAPPort,
+		EnvIMAPUser,
+		EnvIMAPPass,
+		EnvS3Endpoint,
+		EnvS3Region,
+		EnvS3Bucket,
+		EnvS3Key,
+		EnvS3Secret,
+	}
+}
 
-	if err := ValidateEnv(); err == nil {
+func TestValidateEnvMissing(t *testing.T) {
+	t.Setenv(EnvIMAPHost, "")
+	t.Setenv(EnvIMAPPort, "")
+	t.Setenv(EnvIMAPUser, "")
+	t.Setenv(EnvIMAPPass, "")
+	t.Setenv(EnvS3Endpoint, "")
+	t.Setenv(EnvS3Region, "")
+	t.Setenv(EnvS3Bucket, "")
+	t.Setenv(EnvS3Key, "")
+	t.Setenv(EnvS3Secret, "")
+	t.Setenv(EnvWebhookURL, "")
+
+	if err := ValidateEnv(testRequiredEnvVars); err == nil {
 		t.Fatalf("expected error for missing environment variables")
 	} else if err != nil && !strings.Contains(err.Error(), "missing required environment variables") {
 		t.Fatalf("expected missing env var error, got: %v", err)
@@ -71,16 +85,16 @@ rules:
 }
 
 func TestHappyPath(t *testing.T) {
-	t.Setenv(envIMAPHost, "imap.example.com")
-	t.Setenv(envIMAPPort, "993")
-	t.Setenv(envIMAPUser, "user@example.com")
-	t.Setenv(envIMAPPass, "password")
-	t.Setenv(envS3Endpoint, "https://nyc3.digitaloceanspaces.com")
-	t.Setenv(envS3Region, "nyc3")
-	t.Setenv(envS3Bucket, "postmanpat-archive")
-	t.Setenv(envS3Key, "key")
-	t.Setenv(envS3Secret, "secret")
-	t.Setenv(envWebhookURL, "https://example.com/webhook")
+	t.Setenv(EnvIMAPHost, "imap.example.com")
+	t.Setenv(EnvIMAPPort, "993")
+	t.Setenv(EnvIMAPUser, "user@example.com")
+	t.Setenv(EnvIMAPPass, "password")
+	t.Setenv(EnvS3Endpoint, "https://nyc3.digitaloceanspaces.com")
+	t.Setenv(EnvS3Region, "nyc3")
+	t.Setenv(EnvS3Bucket, "postmanpat-archive")
+	t.Setenv(EnvS3Key, "key")
+	t.Setenv(EnvS3Secret, "secret")
+	t.Setenv(EnvWebhookURL, "https://example.com/webhook")
 
 	path := writeTempFile(t, `
 rules:
@@ -102,7 +116,7 @@ rules:
 		t.Fatalf("expected config to validate, got error: %v", err)
 	}
 
-	if err := ValidateEnv(); err != nil {
+	if err := ValidateEnv(testRequiredEnvVars); err != nil {
 		t.Fatalf("expected env validation to pass, got error: %v", err)
 	}
 }

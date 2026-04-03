@@ -2,19 +2,31 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"strings"
 
 	"github.com/aaronromeo/postmanpat/announcer"
-	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/envmgr"
 	"github.com/aaronromeo/postmanpat/imap"
 	"github.com/aaronromeo/postmanpat/serverrunner"
-	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
+
+func cleanupRequiredEnvVars() []string {
+	return []string{
+		envmgr.EnvIMAPHost,
+		envmgr.EnvIMAPPort,
+		envmgr.EnvIMAPUser,
+		envmgr.EnvIMAPPass,
+		envmgr.EnvS3Endpoint,
+		envmgr.EnvS3Region,
+		envmgr.EnvS3Bucket,
+		envmgr.EnvS3Key,
+		envmgr.EnvS3Secret,
+	}
+}
 
 var cleanupCmd = &cobra.Command{
 	Use:   "cleanup",
@@ -29,12 +41,12 @@ var cleanupCmd = &cobra.Command{
 			return err
 		}
 
-		cfg, err := appconfig.Load(cfgPath)
+		cfg, err := envmgr.Load(cfgPath)
 		if err != nil {
 			return err
 		}
 
-		if err := appconfig.Validate(cfg); err != nil {
+		if err := envmgr.Validate(cfg); err != nil {
 			return err
 		}
 
@@ -47,16 +59,16 @@ var cleanupCmd = &cobra.Command{
 			}
 		}
 
-		if err := appconfig.ValidateEnv(); err != nil {
+		if err := envmgr.ValidateEnv(cleanupRequiredEnvVars); err != nil {
 			return err
 		}
 
-		cfgSummary := appconfig.Summary(cfg)
+		cfgSummary := envmgr.Summary(cfg)
 		out := cmd.OutOrStdout()
 		logger := slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: slog.LevelInfo}))
 		logger.Info("config summary", "summary", cfgSummary)
 
-		imapEnv, err := appconfig.IMAPEnvFromEnv()
+		imapEnv, err := envmgr.IMAPEnvFromEnv()
 		if err != nil {
 			return err
 		}
@@ -104,7 +116,7 @@ var cleanupCmd = &cobra.Command{
 
 			for _, action := range rule.Actions {
 				switch action.Type {
-				case appconfig.DELETE:
+				case envmgr.DELETE:
 					if dryRun {
 						logger.Info("dry run delete", "rule", rule.Name, "messages", len(uids))
 						continue
@@ -116,7 +128,7 @@ var cleanupCmd = &cobra.Command{
 					if err := client.DeleteByMailbox(ctx, matched, expungeAfterDelete); err != nil {
 						return err
 					}
-				case appconfig.MOVE:
+				case envmgr.MOVE:
 					if strings.TrimSpace(action.Destination) == "" {
 						return fmt.Errorf("action move missing destination: %s", rule.Name)
 					}
@@ -137,30 +149,6 @@ var cleanupCmd = &cobra.Command{
 }
 
 func init() {
-	cleanupCmd.Flags().String("config", "", "Path to YAML config file (or set POSTMANPAT_CONFIG)")
+	cleanupCmd.Flags().String("config", "", "Path to YAML config file (or set POSTMANPAT_RULES_CONFIG)")
 	cleanupCmd.Flags().Bool("dry-run", false, "Validate and report actions without making changes")
-}
-
-func resolveConfigPath(cmd *cobra.Command) (string, error) {
-	cfgPath, err := cmd.Flags().GetString("config")
-	if err != nil {
-		return "", err
-	}
-	if strings.TrimSpace(cfgPath) == "" {
-		cfgPath = os.Getenv(configEnvVar)
-	}
-	if strings.TrimSpace(cfgPath) == "" {
-		return "", errors.New("config path is required via --config or POSTMANPAT_CONFIG")
-	}
-	return cfgPath, nil
-}
-
-func loadEnvFile() error {
-	if _, err := os.Stat(defaultEnvFile); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	return godotenv.Load(defaultEnvFile)
 }

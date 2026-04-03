@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	appconfig "github.com/aaronromeo/postmanpat/envmgr"
 	"github.com/emersion/go-imap/v2"
 	giimapserver "github.com/emersion/go-imap/v2/imapserver"
 	giimapmemserver "github.com/emersion/go-imap/v2/imapserver/imapmemserver"

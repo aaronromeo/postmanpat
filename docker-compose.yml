@@ -22,7 +22,7 @@ services:
   postmanpat:
     build: .
     environment:
-      POSTMANPAT_CONFIG: /config/config_cleanup.yaml
+      POSTMANPAT_RULES_CONFIG: /config/config_cleanup.yaml
       POSTMANPAT_CLEANUP_CONFIG: ${POSTMANPAT_CLEANUP_CONFIG}
       POSTMANPAT_IMAP_HOST: ${POSTMANPAT_IMAP_HOST}
       POSTMANPAT_IMAP_PORT: ${POSTMANPAT_IMAP_PORT}
@@ -54,7 +54,7 @@ services:
       POSTMANPAT_S3_KEY: ${POSTMANPAT_S3_KEY}
       POSTMANPAT_S3_SECRET: ${POSTMANPAT_S3_SECRET}
       POSTMANPAT_WEBHOOK_URL: ${POSTMANPAT_WEBHOOK_URL:-http://postmanpat-announcements:8091}
-      POSTMANPAT_CONFIG: /config/config_watch.yaml
+      POSTMANPAT_RULES_CONFIG: /config/config_watch.yaml
       POSTMANPAT_WATCH_CONFIG: ${POSTMANPAT_WATCH_CONFIG}
     volumes:
       - ${POSTMANPAT_WATCH_CONFIG:-./config/config_watch.yaml}:/config/config_watch.yaml:ro

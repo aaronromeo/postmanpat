@@ -9,7 +9,8 @@ import (
 	"os"
 	"strings"
 
-	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/analysis"
+	"github.com/aaronromeo/postmanpat/envmgr"
 )
 
 //go:embed templates/*
@@ -19,20 +20,20 @@ var templatesFS embed.FS
 type Server struct {
 	templates *template.Template
 	port      int
-	config    *appconfig.Config
-	analyzer  *Analyzer
+	// config    *envmgr.Config
+	analyzer *Analyzer
+	store    Store
 }
 
 // ServerConfig contains configuration for the server
 type ServerConfig struct {
-	Port       int
 	storePath  string
 	WatchOut   string
 	CleanupOut string
 	OnetimeOut string
 	ConfigPath string
 
-	Cfg           appconfig.Config
+	Cfg           envmgr.Config
 	RulesGenStore []byte
 }
 
@@ -81,12 +82,12 @@ func (sc *ServerConfig) Validate() error {
 		return fmt.Errorf("config path is required")
 	}
 	configPath := sc.ConfigPath
-	cfg, err := appconfig.Load(configPath)
+	cfg, err := envmgr.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	if err := appconfig.Validate(cfg); err != nil {
+	if err := envmgr.Validate(cfg); err != nil {
 		return fmt.Errorf("config validation failed: %w", err)
 	}
 
@@ -95,11 +96,6 @@ func (sc *ServerConfig) Validate() error {
 	if sc.storePath == "" {
 		return fmt.Errorf("rulesgen store path is required")
 	}
-	rulesGenStore, err := os.ReadFile(sc.storePath)
-	if err != nil {
-		return err
-	}
-	sc.RulesGenStore = rulesGenStore
 
 	if sc.WatchOut == "" {
 		return fmt.Errorf("watch out path is required")
@@ -117,7 +113,7 @@ func (sc *ServerConfig) Validate() error {
 }
 
 // NewServer creates a new rules generation server
-func NewServer(port int, config *appconfig.Config) (*Server, error) {
+func NewServer(port int, config *envmgr.Config, store Store) (*Server, error) {
 	tmpl, err := template.ParseFS(templatesFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse templates: %w", err)
@@ -128,8 +124,9 @@ func NewServer(port int, config *appconfig.Config) (*Server, error) {
 	return &Server{
 		templates: tmpl,
 		port:      port,
-		config:    config,
-		analyzer:  analyzer,
+		// config:    config,
+		analyzer: analyzer,
+		store:    store,
 	}, nil
 }
 
@@ -138,6 +135,8 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/api/analysis", s.handleAnalysis)
+	mux.HandleFunc("/api/clusters", s.handleClusters)
+	mux.HandleFunc("/api/decisions", s.handleDecisions)
 	return mux
 }
 
@@ -174,3 +173,167 @@ func (s *Server) handleAnalysis(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
 	}
 }
+
+func (s *Server) handleClusters(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx := r.Context()
+	options := DefaultAnalyzeOptions()
+
+	report, err := s.analyzer.Run(ctx, options)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Analysis failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Load decided clusters from store
+	decidedClusters, err := s.store.GetAllDecidedClusterIDs()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load decisions: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Convert clusters to ClusterView, filtering out decided ones
+	var clusters []ClusterView
+	clusters = append(clusters, convertLensToViews(report.Indexes.ListLens, decidedClusters)...)
+	clusters = append(clusters, convertLensToViews(report.Indexes.SenderLens, decidedClusters)...)
+	clusters = append(clusters, convertLensToViews(report.Indexes.TemplateLens, decidedClusters)...)
+	clusters = append(clusters, convertLensToViews(report.Indexes.RecipientTagLens, decidedClusters)...)
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(clusters); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) handleDecisions(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleGetDecisions(w, r)
+	case http.MethodPost:
+		s.handlePostDecisions(w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleGetDecisions(w http.ResponseWriter, r *http.Request) {
+	decisions, err := s.store.GetAllDecisions()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load decisions: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(decisions); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) handlePostDecisions(w http.ResponseWriter, r *http.Request) {
+	var decisions []Decision
+	if err := json.NewDecoder(r.Body).Decode(&decisions); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Validate and store each decision
+	for _, decision := range decisions {
+		if err := decision.Validate(); err != nil {
+			http.Error(w, fmt.Sprintf("Invalid decision: %v", err), http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Start a transaction
+	tx, err := s.store.BeginTransaction()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to start transaction: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	// Store each decision
+	for _, decision := range decisions {
+		if _, err := s.store.CreateDecisionTx(tx, decision); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to store decision: %v", err), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to commit transaction: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// TODO: Generate YAML files in Step 5
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"count":   len(decisions),
+	})
+}
+
+// convertLensToViews converts analysis.Lens clusters to ClusterView, filtering decided clusters
+func convertLensToViews(lens analysis.Lens, decidedClusters map[string]bool) []ClusterView {
+	var views []ClusterView
+	for _, cluster := range lens.Clusters {
+		key := fmt.Sprintf("%s:%s", extractLensFromClusterID(cluster.ClusterID), cluster.ClusterID)
+		if decidedClusters[key] {
+			continue // Skip decided clusters
+		}
+
+		view := ClusterView{
+			ClusterID:   cluster.ClusterID,
+			Lens:        extractLensFromClusterID(cluster.ClusterID),
+			Count:       cluster.Count,
+			Keys:        cluster.Keys,
+			Examples:    cluster.Examples,
+			HasDecision: false,
+		}
+		views = append(views, view)
+	}
+	return views
+}
+
+// extractLensFromClusterID extracts the lens name from a cluster ID (e.g., "list_lens:abc123" -> "list_lens")
+func extractLensFromClusterID(clusterID string) string {
+	parts := strings.SplitN(clusterID, ":", 2)
+	if len(parts) > 0 {
+		return parts[0]
+	}
+	return ""
+}
+
+// LoadServerStore loads or creates the SQLite store for the server
+func LoadServerStore(storePath string) (Store, error) {
+	// Ensure the directory exists
+	dir := storePath[:strings.LastIndex(storePath, string(os.PathSeparator))]
+	if dir != "" {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create store directory: %w", err)
+		}
+	}
+	return NewStore(storePath)
+}
+
+// Close closes the server and its resources
+func (s *Server) Close() error {
+	if s.store != nil {
+		return s.store.Close()
+	}
+	return nil
+}
+
+// GetStore returns the server's store (for testing)
+func (s *Server) GetStore() Store {
+	return s.store
+}
+
+// Verify Store implements StoreInterface
+var _ Store = (*SqlStore)(nil)
