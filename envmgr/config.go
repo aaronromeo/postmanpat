@@ -11,8 +11,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config holds non-secret configuration loaded from YAML.
-type Config struct {
+// RulesConfig holds non-secret configuration loaded from YAML.
+type RulesConfig struct {
 	Rules      []Rule     `yaml:"rules"`
 	Checkpoint Checkpoint `yaml:"checkpoint"`
 }
@@ -167,15 +167,15 @@ type Checkpoint struct {
 }
 
 // Load reads configuration from a YAML file.
-func Load(path string) (Config, error) {
+func Load(path string) (RulesConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return Config{}, err
+		return RulesConfig{}, err
 	}
 
-	var cfg Config
+	var cfg RulesConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return Config{}, err
+		return RulesConfig{}, err
 	}
 
 	return cfg, nil
@@ -283,7 +283,7 @@ func RulesGenOutputFromEnv() (RulesGenOutput, error) {
 }
 
 // Summary returns a concise config summary for validation runs.
-func Summary(cfg Config) string {
+func Summary(cfg RulesConfig) string {
 	reportingStatus := "disabled"
 	if ReportingEnabled() {
 		reportingStatus = "enabled"
@@ -312,7 +312,7 @@ func defaultIfEmpty(value, fallback string) string {
 }
 
 // Validate performs basic validation on non-secret appconfig.
-func Validate(cfg Config) error {
+func Validate(cfg RulesConfig) error {
 	if len(cfg.Rules) == 0 {
 		return errors.New("config must define at least one rule")
 	}

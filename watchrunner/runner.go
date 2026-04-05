@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
-	appconfig "github.com/aaronromeo/postmanpat/envmgr"
+	"github.com/aaronromeo/postmanpat/envmgr"
 	"github.com/aaronromeo/postmanpat/imap"
 	"github.com/aaronromeo/postmanpat/watchrunner/internal/matchers"
 	giimap "github.com/emersion/go-imap/v2"
@@ -30,7 +30,7 @@ type Client struct {
 
 type Deps struct {
 	Ctx      context.Context
-	Rules    []appconfig.Rule
+	Rules    []envmgr.Rule
 	Log      *slog.Logger
 	Announce func(string)
 }
@@ -133,13 +133,13 @@ func maxUID(current uint32, uids []uint32) uint32 {
 	return max
 }
 
-func applyActions(client WatchRunner, deps Deps, rule appconfig.Rule, uid uint32) error {
+func applyActions(client WatchRunner, deps Deps, rule envmgr.Rule, uid uint32) error {
 	if uid == 0 {
 		return nil
 	}
 	for _, action := range rule.Actions {
 		switch action.Type {
-		case appconfig.DELETE:
+		case envmgr.DELETE:
 			expungeAfterDelete := true
 			if action.ExpungeAfterDelete != nil {
 				expungeAfterDelete = *action.ExpungeAfterDelete
@@ -147,7 +147,7 @@ func applyActions(client WatchRunner, deps Deps, rule appconfig.Rule, uid uint32
 			if err := client.DeleteUIDs(deps.Ctx, []uint32{uid}, expungeAfterDelete); err != nil {
 				return err
 			}
-		case appconfig.MOVE:
+		case envmgr.MOVE:
 			destination := strings.TrimSpace(action.Destination)
 			if destination == "" {
 				return fmt.Errorf("action move missing destination for rule %q", rule.Name)

@@ -32,7 +32,7 @@ var cleanupCmd = &cobra.Command{
 	Use:   "cleanup",
 	Short: "Process IMAP folders based on configured rules",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		cfgPath, err := resolveConfigPath(cmd)
+		cfgPath, err := resolveRulesConfigPath(cmd)
 		if err != nil {
 			return err
 		}

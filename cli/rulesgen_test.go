@@ -6,22 +6,22 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	appconfig "github.com/aaronromeo/postmanpat/envmgr"
+	"github.com/aaronromeo/postmanpat/envmgr"
 	"github.com/aaronromeo/postmanpat/rulesgen"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func createTestConfig() *appconfig.Config {
-	return &appconfig.Config{
-		Rules: []appconfig.Rule{
+func createTestConfig() *envmgr.RulesConfig {
+	return &envmgr.RulesConfig{
+		Rules: []envmgr.Rule{
 			{
 				Name: "Test Rule",
-				Server: &appconfig.ServerMatchers{
+				Server: &envmgr.ServerMatchers{
 					Folders: []string{"INBOX"},
 				},
-				Actions: []appconfig.Action{
-					{Type: appconfig.DELETE},
+				Actions: []envmgr.Action{
+					{Type: envmgr.DELETE},
 				},
 			},
 		},
@@ -34,7 +34,11 @@ func TestRulesgenServe_DefaultPort(t *testing.T) {
 	mockStore := rulesgen.NewMockStore()
 	defer mockStore.Close()
 
-	server, err := rulesgen.NewServer(8080, cfg, mockStore)
+	srvrCfg := &rulesgen.ServerConfig{
+		Port: 8080,
+		Cfg:  *cfg,
+	}
+	server, err := rulesgen.NewServerWithStore(srvrCfg, mockStore)
 	require.NoError(t, err)
 	defer server.Close()
 
@@ -64,7 +68,11 @@ func TestRulesgenServe_CustomPort(t *testing.T) {
 	mockStore := rulesgen.NewMockStore()
 	defer mockStore.Close()
 
-	server, err := rulesgen.NewServer(customPort, cfg, mockStore)
+	srvrCfg := &rulesgen.ServerConfig{
+		Port: customPort,
+		Cfg:  *cfg,
+	}
+	server, err := rulesgen.NewServerWithStore(srvrCfg, mockStore)
 	require.NoError(t, err)
 	defer server.Close()
 

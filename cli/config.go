@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func resolveConfigPath(cmd *cobra.Command) (string, error) {
+func resolveRulesConfigPath(cmd *cobra.Command) (string, error) {
 	cfgPath, err := cmd.Flags().GetString("config")
 	if err != nil {
 		return "", err

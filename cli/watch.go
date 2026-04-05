@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/aaronromeo/postmanpat/announcer"
-	appconfig "github.com/aaronromeo/postmanpat/envmgr"
+	"github.com/aaronromeo/postmanpat/envmgr"
 	"github.com/aaronromeo/postmanpat/imap"
 	"github.com/aaronromeo/postmanpat/watchrunner"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
@@ -26,7 +26,7 @@ var watchCmd = &cobra.Command{
 	Use:   "watch",
 	Short: "Watch the inbox for new mail (IDLE)",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		cfgPath, err := resolveConfigPath(cmd)
+		cfgPath, err := resolveRulesConfigPath(cmd)
 		if err != nil {
 			return err
 		}
@@ -35,12 +35,12 @@ var watchCmd = &cobra.Command{
 			return err
 		}
 
-		cfg, err := appconfig.Load(cfgPath)
+		cfg, err := envmgr.Load(cfgPath)
 		if err != nil {
 			return err
 		}
 
-		if err := appconfig.Validate(cfg); err != nil {
+		if err := envmgr.Validate(cfg); err != nil {
 			return err
 		}
 		if err := validateWatchRules(cfg); err != nil {
@@ -72,7 +72,7 @@ var watchCmd = &cobra.Command{
 		reloadTicker := time.NewTicker(5 * time.Minute)
 		defer reloadTicker.Stop()
 
-		imapEnv, err := appconfig.IMAPEnvFromEnv()
+		imapEnv, err := envmgr.IMAPEnvFromEnv()
 		if err != nil {
 			return err
 		}
@@ -202,12 +202,12 @@ var watchCmd = &cobra.Command{
 						logger.Error("watch idle close failed", "error", err)
 					}
 				}
-				updated, err := appconfig.Load(cfgPath)
+				updated, err := envmgr.Load(cfgPath)
 				if err != nil {
 					logger.Error("watch config reload failed", "error", err)
 					continue
 				}
-				if err := appconfig.Validate(updated); err != nil {
+				if err := envmgr.Validate(updated); err != nil {
 					logger.Error("watch config reload failed", "error", err)
 					continue
 				}
@@ -231,7 +231,7 @@ func init() {
 	watchCmd.Flags().String("mailbox", defaultMailbox, "Mailbox to scan when using --test")
 }
 
-func validateWatchRules(cfg appconfig.Config) error {
+func validateWatchRules(cfg envmgr.RulesConfig) error {
 	for _, rule := range cfg.Rules {
 		if rule.Server != nil {
 			return fmt.Errorf("rule %q defines server matchers, which are not supported by watch", rule.Name)
@@ -240,7 +240,7 @@ func validateWatchRules(cfg appconfig.Config) error {
 	return nil
 }
 
-func runWatchTest(ctx context.Context, client watchrunner.WatchRunner, cfg appconfig.Config, logger *slog.Logger, ruleName, mailbox string, limit int) error {
+func runWatchTest(ctx context.Context, client watchrunner.WatchRunner, cfg envmgr.RulesConfig, logger *slog.Logger, ruleName, mailbox string, limit int) error {
 	if strings.TrimSpace(ruleName) == "" {
 		return errors.New("test rule name is required")
 	}
@@ -277,7 +277,7 @@ func runWatchTest(ctx context.Context, client watchrunner.WatchRunner, cfg appco
 	return nil
 }
 
-func findRuleByName(cfg appconfig.Config, ruleName string) (*appconfig.Rule, error) {
+func findRuleByName(cfg envmgr.RulesConfig, ruleName string) (*envmgr.Rule, error) {
 	for i := range cfg.Rules {
 		if cfg.Rules[i].Name == ruleName {
 			return &cfg.Rules[i], nil

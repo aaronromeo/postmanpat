@@ -24,6 +24,9 @@ func rulesgenRequiredEnvVars() []string {
 	}
 }
 
+const defaultPort = 8000
+const portFlag = "port"
+
 var rulesgenCmd = &cobra.Command{
 	Use:   "rulesgen",
 	Short: "Interactive rule generation web server",
@@ -33,7 +36,7 @@ var rulesgenServeCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Start the rules generation web server",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		cfgPath, err := resolveConfigPath(cmd)
+		rulesCfgPath, err := resolveRulesConfigPath(cmd)
 		if err != nil {
 			return err
 		}
@@ -47,25 +50,41 @@ var rulesgenServeCmd = &cobra.Command{
 			return err
 		}
 
-		port, err := cmd.Flags().GetInt("port")
-		if err != nil {
-			return err
+		port := defaultPort
+		if cmd.Flags().Changed("port") {
+			port, err = cmd.Flags().GetInt(portFlag)
+			if err != nil {
+				return err
+			}
+		}
+
+		// Allow port override from environment
+		if envPort := os.Getenv(envmgr.EnvRulesGenWebPort); envPort != "" {
+			if cmd.Flags().Changed("port") {
+				return fmt.Errorf("only one of %s or 'port' flag should be set", envmgr.EnvRulesGenWebPort)
+			}
+
+			if p, err := strconv.Atoi(envPort); err == nil {
+				port = p
+			}
 		}
 
 		if err := envmgr.ValidateEnv(rulesgenRequiredEnvVars); err != nil {
 			return err
 		}
 
-		// Allow port override from environment
-		if envPort := os.Getenv("POSTMANPAT_RULESGEN_PORT"); envPort != "" {
-			if p, err := strconv.Atoi(envPort); err == nil {
-				port = p
-			}
+		imapEnv, err := envmgr.IMAPEnvFromEnv()
+		if err != nil {
+			return fmt.Errorf("failed to get IMAP config: %w", err)
 		}
 
 		// Load server config from environment
 		serverConfig := rulesgen.NewServerConfig(
-			rulesgen.WithConfig(cfgPath),
+			rulesgen.WithAddr(
+				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
+			),
+			rulesgen.WithCreds(imapEnv.User, imapEnv.Pass),
+			rulesgen.WithRulesConfig(rulesCfgPath),
 			rulesgen.WithRulesGenStore(ruleGenOutput.StorePath),
 			rulesgen.WithWatchOut(ruleGenOutput.WatchOutPath),
 			rulesgen.WithCleanupOut(ruleGenOutput.CleanupOutPath),
@@ -75,21 +94,7 @@ var rulesgenServeCmd = &cobra.Command{
 			return err
 		}
 
-		// Validate that rules have server matchers
-		for _, rule := range serverConfig.Cfg.Rules {
-			if rule.Server == nil {
-				return fmt.Errorf("rule %q must define server matchers for rulesgen", rule.Name)
-			}
-		}
-
-		// Initialize the SQLite store
-		store, err := rulesgen.LoadServerStore(ruleGenOutput.StorePath)
-		if err != nil {
-			return fmt.Errorf("failed to initialize store: %w", err)
-		}
-		defer store.Close()
-
-		server, err := rulesgen.NewServer(port, &serverConfig.Cfg, store)
+		server, err := rulesgen.NewServer(serverConfig)
 		if err != nil {
 			return err
 		}

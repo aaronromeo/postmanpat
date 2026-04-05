@@ -6,20 +6,33 @@ import (
 	"time"
 
 	"github.com/aaronromeo/postmanpat/analysis"
-	appconfig "github.com/aaronromeo/postmanpat/envmgr"
+	"github.com/aaronromeo/postmanpat/envmgr"
 	"github.com/aaronromeo/postmanpat/imap"
 	"github.com/aaronromeo/postmanpat/serverrunner"
 )
 
 // Analyzer handles email analysis for the rules generation server
 type Analyzer struct {
-	config *appconfig.Config
+	rulesConfig *envmgr.RulesConfig
+	// addr        string
+	// username    string
+	// password    string
+	// port        int
+}
+
+type IMAPConnector struct {
+	Addr     string
+	Username string
+	Password string
+	// TLSConfig             *tls.Config
+	// UnilateralDataHandler *giimapclient.UnilateralDataHandler
+	// Client                *giimapclient.Client
 }
 
 // NewAnalyzer creates a new analyzer with the given configuration
-func NewAnalyzer(cfg *appconfig.Config) *Analyzer {
+func NewAnalyzer(rulesCfg *envmgr.RulesConfig) *Analyzer {
 	return &Analyzer{
-		config: cfg,
+		rulesConfig: rulesCfg,
 	}
 }
 
@@ -29,15 +42,10 @@ func DefaultAnalyzeOptions() analysis.Options {
 }
 
 // Run executes the analysis and returns a report
-func (a *Analyzer) Run(ctx context.Context, options analysis.Options) (*analysis.Report, error) {
-	imapEnv, err := appconfig.IMAPEnvFromEnv()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get IMAP config: %w", err)
-	}
-
+func (a *Analyzer) Run(ctx context.Context, imapconnector *IMAPConnector, options analysis.Options) (*analysis.Report, error) {
 	client := serverrunner.New(
-		imap.WithAddr(fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port)),
-		imap.WithCreds(imapEnv.User, imapEnv.Pass),
+		imap.WithAddr(imapconnector.Addr),
+		imap.WithCreds(imapconnector.Username, imapconnector.Password),
 	)
 
 	if err := client.Connect(); err != nil {
@@ -46,11 +54,11 @@ func (a *Analyzer) Run(ctx context.Context, options analysis.Options) (*analysis
 	defer client.Close()
 
 	// Run analysis on the first rule
-	if len(a.config.Rules) == 0 {
+	if len(a.rulesConfig.Rules) == 0 {
 		return nil, fmt.Errorf("no rules configured")
 	}
 
-	rule := a.config.Rules[0]
+	rule := a.rulesConfig.Rules[0]
 	if rule.Server == nil {
 		return nil, fmt.Errorf("rule %q has no server matchers", rule.Name)
 	}
@@ -71,7 +79,7 @@ func (a *Analyzer) Run(ctx context.Context, options analysis.Options) (*analysis
 
 	arp := analysis.ReportParams{
 		Mailbox:   mailbox,
-		Account:   imapEnv.User,
+		Account:   imapconnector.Username,
 		Generated: time.Now().UTC(),
 		AgeWindow: rule.Server.AgeWindow,
 		Options:   options,
@@ -86,8 +94,8 @@ func (a *Analyzer) Run(ctx context.Context, options analysis.Options) (*analysis
 	return report, nil
 }
 
-func BuildTimeWindow(now time.Time, window *appconfig.AgeWindow) (analysis.TimeWindow, error) {
-	after, before, err := appconfig.AgeWindowBounds(now, window)
+func BuildTimeWindow(now time.Time, window *envmgr.AgeWindow) (analysis.TimeWindow, error) {
+	after, before, err := envmgr.AgeWindowBounds(now, window)
 	if err != nil {
 		return analysis.TimeWindow{}, err
 	}

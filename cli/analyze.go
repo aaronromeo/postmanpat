@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/aaronromeo/postmanpat/analysis"
-	appconfig "github.com/aaronromeo/postmanpat/envmgr"
+	"github.com/aaronromeo/postmanpat/envmgr"
 	"github.com/aaronromeo/postmanpat/imap"
 	"github.com/aaronromeo/postmanpat/rulesgen"
 	"github.com/aaronromeo/postmanpat/serverrunner"
@@ -19,7 +19,7 @@ var analyzeCmd = &cobra.Command{
 	Use:   "analyze",
 	Short: "Analyze IMAP folders and report unique sender domains",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		cfgPath, err := resolveConfigPath(cmd)
+		cfgPath, err := resolveRulesConfigPath(cmd)
 		if err != nil {
 			return err
 		}
@@ -28,12 +28,12 @@ var analyzeCmd = &cobra.Command{
 			return err
 		}
 
-		cfg, err := appconfig.Load(cfgPath)
+		cfg, err := envmgr.Load(cfgPath)
 		if err != nil {
 			return err
 		}
 
-		if err := appconfig.Validate(cfg); err != nil {
+		if err := envmgr.Validate(cfg); err != nil {
 			return err
 		}
 
@@ -46,7 +46,7 @@ var analyzeCmd = &cobra.Command{
 			}
 		}
 
-		imapEnv, err := appconfig.IMAPEnvFromEnv()
+		imapEnv, err := envmgr.IMAPEnvFromEnv()
 		if err != nil {
 			return err
 		}

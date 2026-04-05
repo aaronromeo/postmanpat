@@ -18,28 +18,33 @@ var templatesFS embed.FS
 
 // Server handles HTTP requests for the rules generation UI
 type Server struct {
-	templates *template.Template
-	port      int
-	// config    *envmgr.Config
-	analyzer *Analyzer
-	store    Store
+	templates  *template.Template
+	port       int
+	imapclient *IMAPConnector
+	analyzer   *Analyzer
+	store      Store
+	// rulesCfg  *envmgr.RulesConfig
 }
 
 // ServerConfig contains configuration for the server
 type ServerConfig struct {
-	storePath  string
+	StorePath  string
 	WatchOut   string
 	CleanupOut string
 	OnetimeOut string
 	ConfigPath string
+	Addr       string
+	Username   string
+	Password   string
+	Port       int
 
-	Cfg           envmgr.Config
+	Cfg           envmgr.RulesConfig
 	RulesGenStore []byte
 }
 
 type Option func(*ServerConfig)
 
-func WithConfig(configPath string) Option {
+func WithRulesConfig(configPath string) Option {
 	return func(s *ServerConfig) {
 		s.ConfigPath = strings.TrimSpace(configPath)
 	}
@@ -47,7 +52,7 @@ func WithConfig(configPath string) Option {
 
 func WithRulesGenStore(storePath string) Option {
 	return func(s *ServerConfig) {
-		s.storePath = strings.TrimSpace(storePath)
+		s.StorePath = strings.TrimSpace(storePath)
 	}
 }
 
@@ -66,6 +71,25 @@ func WithCleanupOut(cleanupOutPath string) Option {
 func WithOneTimeOut(onetimeOutPath string) Option {
 	return func(s *ServerConfig) {
 		s.OnetimeOut = strings.TrimSpace(onetimeOutPath)
+	}
+}
+
+func WithPort(port int) Option {
+	return func(c *ServerConfig) {
+		c.Port = port
+	}
+}
+
+func WithAddr(a string) Option {
+	return func(c *ServerConfig) {
+		c.Addr = a
+	}
+}
+
+func WithCreds(username string, password string) Option {
+	return func(c *ServerConfig) {
+		c.Username = username
+		c.Password = password
 	}
 }
 
@@ -93,7 +117,7 @@ func (sc *ServerConfig) Validate() error {
 
 	sc.Cfg = cfg
 
-	if sc.storePath == "" {
+	if sc.StorePath == "" {
 		return fmt.Errorf("rulesgen store path is required")
 	}
 
@@ -109,24 +133,64 @@ func (sc *ServerConfig) Validate() error {
 		return fmt.Errorf("onetime cleanup out path is required")
 	}
 
+	if sc.Port == 0 {
+		return fmt.Errorf("web server port is required")
+	}
+
+	if sc.Addr == "" {
+		return fmt.Errorf("imap address is required")
+	}
+
+	if sc.Username == "" {
+		return fmt.Errorf("imap username is required")
+	}
+
+	if sc.Password == "" {
+		return fmt.Errorf("imap password is required")
+	}
+
+	// Validate that rules have server matchers
+	for _, rule := range sc.Cfg.Rules {
+		if rule.Server == nil {
+			return fmt.Errorf("rule %q must define server matchers for rulesgen", rule.Name)
+		}
+	}
+
 	return nil
 }
 
 // NewServer creates a new rules generation server
-func NewServer(port int, config *envmgr.Config, store Store) (*Server, error) {
+func NewServer(config *ServerConfig) (*Server, error) {
+	// Initialize the SQLite store
+	store, err := LoadServerStore(config.StorePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize store: %w", err)
+	}
+	defer store.Close()
+
+	return NewServerWithStore(config, store)
+}
+
+// NewServerWithStore creates a new rules generation server (used for tests)
+func NewServerWithStore(config *ServerConfig, store Store) (*Server, error) {
 	tmpl, err := template.ParseFS(templatesFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse templates: %w", err)
 	}
-
-	analyzer := NewAnalyzer(config)
+	analyzer := NewAnalyzer(&config.Cfg)
+	imapclient := &IMAPConnector{
+		Addr:     config.Addr,
+		Username: config.Username,
+		Password: config.Password,
+	}
 
 	return &Server{
-		templates: tmpl,
-		port:      port,
+		templates:  tmpl,
+		port:       config.Port,
+		imapclient: imapclient,
+		analyzer:   analyzer,
+		store:      store,
 		// config:    config,
-		analyzer: analyzer,
-		store:    store,
 	}, nil
 }
 
@@ -162,7 +226,7 @@ func (s *Server) handleAnalysis(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	options := DefaultAnalyzeOptions()
 
-	report, err := s.analyzer.Run(ctx, options)
+	report, err := s.analyzer.Run(ctx, s.imapclient, options)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Analysis failed: %v", err), http.StatusInternalServerError)
 		return
@@ -183,7 +247,7 @@ func (s *Server) handleClusters(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	options := DefaultAnalyzeOptions()
 
-	report, err := s.analyzer.Run(ctx, options)
+	report, err := s.analyzer.Run(ctx, s.imapclient, options)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Analysis failed: %v", err), http.StatusInternalServerError)
 		return

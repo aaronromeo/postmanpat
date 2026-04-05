@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	appconfig "github.com/aaronromeo/postmanpat/envmgr"
+	"github.com/aaronromeo/postmanpat/envmgr"
 	"github.com/emersion/go-imap/v2"
 	giimapserver "github.com/emersion/go-imap/v2/imapserver"
 	giimapmemserver "github.com/emersion/go-imap/v2/imapserver/imapmemserver"
@@ -50,11 +50,11 @@ rules:
 }
 
 func TestWatchAcceptsClientMatchers(t *testing.T) {
-	cfg := appconfig.Config{
-		Rules: []appconfig.Rule{
+	cfg := envmgr.RulesConfig{
+		Rules: []envmgr.Rule{
 			{
 				Name: "Rule",
-				Client: &appconfig.ClientMatchers{
+				Client: &envmgr.ClientMatchers{
 					SubjectRegex: []string{"hello"},
 				},
 			},
