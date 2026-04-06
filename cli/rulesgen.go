@@ -36,12 +36,12 @@ var rulesgenServeCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Start the rules generation web server",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		rulesCfgPath, err := resolveRulesConfigPath(cmd)
-		if err != nil {
+		if err := loadEnvFile(); err != nil {
 			return err
 		}
 
-		if err := loadEnvFile(); err != nil {
+		rulesCfgPath, err := resolveRulesConfigPath(cmd)
+		if err != nil {
 			return err
 		}
 
@@ -69,17 +69,18 @@ var rulesgenServeCmd = &cobra.Command{
 			}
 		}
 
-		if err := envmgr.ValidateEnv(rulesgenRequiredEnvVars); err != nil {
-			return err
-		}
-
 		imapEnv, err := envmgr.IMAPEnvFromEnv()
 		if err != nil {
 			return fmt.Errorf("failed to get IMAP config: %w", err)
 		}
 
+		if err := envmgr.ValidateEnv(rulesgenRequiredEnvVars); err != nil {
+			return err
+		}
+
 		// Load server config from environment
 		serverConfig := rulesgen.NewServerConfig(
+			rulesgen.WithPort(port),
 			rulesgen.WithAddr(
 				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
 			),
@@ -114,4 +115,5 @@ func init() {
 	rootCmd.AddCommand(rulesgenCmd)
 	rulesgenCmd.AddCommand(rulesgenServeCmd)
 	rulesgenServeCmd.Flags().Int("port", 8080, "Port to run the server on")
+	rulesgenServeCmd.Flags().String("config", "", "Path to YAML config file (or set POSTMANPAT_RULES_CONFIG)")
 }

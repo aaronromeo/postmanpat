@@ -133,10 +133,6 @@ func (sc *ServerConfig) Validate() error {
 		return fmt.Errorf("onetime cleanup out path is required")
 	}
 
-	if sc.Port == 0 {
-		return fmt.Errorf("web server port is required")
-	}
-
 	if sc.Addr == "" {
 		return fmt.Errorf("imap address is required")
 	}
@@ -147,6 +143,10 @@ func (sc *ServerConfig) Validate() error {
 
 	if sc.Password == "" {
 		return fmt.Errorf("imap password is required")
+	}
+
+	if sc.Port == 0 {
+		return fmt.Errorf("web server port is required")
 	}
 
 	// Validate that rules have server matchers

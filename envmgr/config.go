@@ -243,7 +243,7 @@ func RulesGenOutputFromEnv() (RulesGenOutput, error) {
 
 	store := strings.TrimSpace(os.Getenv(EnvRulesGenStore))
 	if store == "" {
-		missing = append(missing, EnvIMAPHost)
+		missing = append(missing, EnvRulesGenStore)
 	}
 
 	watchOutPath := strings.TrimSpace(os.Getenv(EnvRulesGenWatchOut))
@@ -279,6 +279,7 @@ func RulesGenOutputFromEnv() (RulesGenOutput, error) {
 		WatchOutPath:       watchOutPath,
 		CleanupOutPath:     cleanupOutPath,
 		OneTimeCleanupPath: onetimeOutPath,
+		StorePath:          store,
 	}, nil
 }
 
