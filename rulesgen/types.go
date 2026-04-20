@@ -2,6 +2,7 @@ package rulesgen
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aaronromeo/postmanpat/analysis"
@@ -53,4 +54,34 @@ type ClusterView struct {
 	Keys        map[string]interface{}   `json:"keys"`
 	Examples    analysis.ClusterExamples `json:"examples"`
 	HasDecision bool                     `json:"has_decision"`
+}
+
+// NewDecisionFromCluster creates a Decision from an analysis.Cluster
+// The clusterID should be formatted as "lens:unique_id", e.g., "list_lens:abc123"
+func NewDecisionFromCluster(cluster analysis.Cluster, decisionType, action, destination, ageWindow string) (Decision, error) {
+	// Extract lens from cluster.ClusterID (expected format: "lens:unique_id")
+	var lens string
+	clusterID := cluster.ClusterID
+	if idx := strings.Index(clusterID, ":"); idx >= 0 {
+		lens = clusterID[:idx]
+		clusterID = clusterID[idx+1:]
+	} else {
+		return Decision{}, fmt.Errorf("invalid cluster ID format: expected 'lens:unique_id', got %q", cluster.ClusterID)
+	}
+
+	d := Decision{
+		Lens:        lens,
+		ClusterID:   clusterID,
+		Type:        decisionType,
+		Action:      action,
+		Destination: destination,
+		AgeWindow:   ageWindow,
+		CreatedAt:   time.Now().UTC(),
+	}
+
+	if err := d.Validate(); err != nil {
+		return Decision{}, fmt.Errorf("invalid decision: %w", err)
+	}
+
+	return d, nil
 }

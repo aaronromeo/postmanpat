@@ -52,11 +52,13 @@ CREATE TABLE IF NOT EXISTS decisions (
     lens TEXT NOT NULL,
     cluster_id TEXT NOT NULL,
     decision_type TEXT NOT NULL CHECK(decision_type IN ('ignore', 'watch', 'cleanup')),
-    action TEXT CHECK(action IN ('delete', 'move')),
+    action TEXT,
     destination TEXT,
     age_window TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(lens, cluster_id, decision_type)
+    UNIQUE(lens, cluster_id, decision_type),
+    CHECK((decision_type = 'ignore' AND (action IS NULL OR action = '')) OR 
+          (decision_type IN ('watch', 'cleanup') AND action IN ('delete', 'move')))
 );
 
 CREATE INDEX IF NOT EXISTS idx_decisions_lookup ON decisions(lens, cluster_id);
@@ -77,7 +79,12 @@ ON CONFLICT(lens, cluster_id, decision_type) DO UPDATE SET
     created_at = CURRENT_TIMESTAMP
 `
 
-	result, err := s.db.Exec(query, d.Lens, d.ClusterID, d.Type, d.Action, d.Destination, d.AgeWindow)
+	// Convert empty strings to NULL for SQLite
+	action := sql.NullString{String: d.Action, Valid: d.Action != ""}
+	destination := sql.NullString{String: d.Destination, Valid: d.Destination != ""}
+	ageWindow := sql.NullString{String: d.AgeWindow, Valid: d.AgeWindow != ""}
+
+	result, err := s.db.Exec(query, d.Lens, d.ClusterID, d.Type, action, destination, ageWindow)
 	if err != nil {
 		return 0, fmt.Errorf("failed to insert decision: %w", err)
 	}
@@ -200,19 +207,29 @@ func (s *SqlStore) scanDecisions(rows *sql.Rows) ([]Decision, error) {
 	var decisions []Decision
 	for rows.Next() {
 		var d Decision
+		var action, destination, ageWindow sql.NullString
 		var createdAt sql.NullTime
 		err := rows.Scan(
 			&d.ID,
 			&d.Lens,
 			&d.ClusterID,
 			&d.Type,
-			&d.Action,
-			&d.Destination,
-			&d.AgeWindow,
+			&action,
+			&destination,
+			&ageWindow,
 			&createdAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan decision: %w", err)
+		}
+		if action.Valid {
+			d.Action = action.String
+		}
+		if destination.Valid {
+			d.Destination = destination.String
+		}
+		if ageWindow.Valid {
+			d.AgeWindow = ageWindow.String
 		}
 		if createdAt.Valid {
 			d.CreatedAt = createdAt.Time
@@ -244,7 +261,12 @@ ON CONFLICT(lens, cluster_id, decision_type) DO UPDATE SET
     created_at = CURRENT_TIMESTAMP
 `
 
-	result, err := tx.Exec(query, d.Lens, d.ClusterID, d.Type, d.Action, d.Destination, d.AgeWindow)
+	// Convert empty strings to NULL for SQLite
+	action := sql.NullString{String: d.Action, Valid: d.Action != ""}
+	destination := sql.NullString{String: d.Destination, Valid: d.Destination != ""}
+	ageWindow := sql.NullString{String: d.AgeWindow, Valid: d.AgeWindow != ""}
+
+	result, err := tx.Exec(query, d.Lens, d.ClusterID, d.Type, action, destination, ageWindow)
 	if err != nil {
 		return 0, fmt.Errorf("failed to insert decision in transaction: %w", err)
 	}

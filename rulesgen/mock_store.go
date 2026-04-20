@@ -3,6 +3,8 @@ package rulesgen
 import (
 	"database/sql"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -83,11 +85,42 @@ func (m *MockStore) GetAllDecidedClusterIDs() (map[string]bool, error) {
 }
 
 func (m *MockStore) DeleteDecision(lens string, clusterID string, decisionType string) error {
-	return fmt.Errorf("not implemented")
+	if m.closed {
+		return fmt.Errorf("store is closed")
+	}
+	key := fmt.Sprintf("%s:%s:%s", lens, clusterID, decisionType)
+	if _, exists := m.decisions[key]; exists {
+		delete(m.decisions, key)
+		// Check if any decisions remain for this lens:clusterID
+		hasOther := false
+		for k := range m.decisions {
+			if strings.HasPrefix(k, fmt.Sprintf("%s:%s:", lens, clusterID)) {
+				hasOther = true
+				break
+			}
+		}
+		if !hasOther {
+			delete(m.decidedClusters, fmt.Sprintf("%s:%s", lens, clusterID))
+		}
+	}
+	return nil
 }
 
 func (m *MockStore) GetDecisionsByType(decisionType string) ([]Decision, error) {
-	return []Decision{}, fmt.Errorf("not implemented")
+	if m.closed {
+		return nil, fmt.Errorf("store is closed")
+	}
+	var result []Decision
+	for _, d := range m.decisions {
+		if d.Type == decisionType {
+			result = append(result, d)
+		}
+	}
+	// Sort by CreatedAt descending
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.After(result[j].CreatedAt)
+	})
+	return result, nil
 }
 
 // Close marks the store as closed
