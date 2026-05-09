@@ -54,6 +54,9 @@ type ClusterView struct {
 	Keys        map[string]interface{}   `json:"keys"`
 	Examples    analysis.ClusterExamples `json:"examples"`
 	HasDecision bool                     `json:"has_decision"`
+	// YAML preview snippets
+	WatchYAML   string `json:"watch_yaml"`
+	CleanupYAML string `json:"cleanup_yaml"`
 }
 
 // NewDecisionFromCluster creates a Decision from an analysis.Cluster

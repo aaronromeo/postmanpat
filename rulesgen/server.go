@@ -166,14 +166,20 @@ func NewServer(config *ServerConfig) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize store: %w", err)
 	}
-	defer store.Close()
+	// Note: store is closed when Server.Run() returns or server is stopped
 
 	return NewServerWithStore(config, store)
 }
 
 // NewServerWithStore creates a new rules generation server (used for tests)
 func NewServerWithStore(config *ServerConfig, store Store) (*Server, error) {
-	tmpl, err := template.ParseFS(templatesFS, "templates/*.html")
+	// Create template with js function for escaping JavaScript
+	tmpl, err := template.New("").Funcs(template.FuncMap{
+		"js": func(s string) string {
+			// Simple escaping for use in HTML IDs and JavaScript
+			return strings.ReplaceAll(s, ":", "_")
+		},
+	}).ParseFS(templatesFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse templates: %w", err)
 	}
@@ -201,6 +207,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/analysis", s.handleAnalysis)
 	mux.HandleFunc("/api/clusters", s.handleClusters)
 	mux.HandleFunc("/api/decisions", s.handleDecisions)
+	mux.HandleFunc("/api/yaml-preview", s.handleYamlPreview)
 	return mux
 }
 
@@ -211,8 +218,39 @@ func (s *Server) Run() error {
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	options := DefaultAnalyzeOptions()
+
+	report, err := s.analyzer.Run(ctx, s.imapclient, options)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Analysis failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Load decided clusters from store
+	decidedClusters, err := s.store.GetAllDecidedClusterIDs()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load decisions: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Convert clusters to ClusterView, filtering out decided ones
+	var clusters []ClusterView
+	clusters = append(clusters, convertLensToViews(report.Indexes.ListLens, decidedClusters)...)
+	clusters = append(clusters, convertLensToViews(report.Indexes.SenderLens, decidedClusters)...)
+	clusters = append(clusters, convertLensToViews(report.Indexes.TemplateLens, decidedClusters)...)
+	clusters = append(clusters, convertLensToViews(report.Indexes.RecipientTagLens, decidedClusters)...)
+
+	data := struct {
+		Clusters []ClusterView
+		Total    int
+	}{
+		Clusters: clusters,
+		Total:    len(clusters),
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.templates.ExecuteTemplate(w, "index.html", nil); err != nil {
+	if err := s.templates.ExecuteTemplate(w, "index.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -343,32 +381,140 @@ func (s *Server) handlePostDecisions(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleYamlPreview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var request struct {
+		ClusterID   string `json:"cluster_id"`
+		Lens        string `json:"lens"`
+		Decision    string `json:"decision"` // ignore, watch, cleanup
+		Action      string `json:"action"`   // delete, move
+		Destination string `json:"destination,omitempty"`
+		AgeWindow   string `json:"age_window,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Validate request
+	if request.ClusterID == "" {
+		http.Error(w, "cluster_id is required", http.StatusBadRequest)
+		return
+	}
+	if request.Lens == "" {
+		http.Error(w, "lens is required", http.StatusBadRequest)
+		return
+	}
+	if request.Decision == "" {
+		http.Error(w, "decision is required", http.StatusBadRequest)
+		return
+	}
+
+	// Create a mock cluster for YAML generation
+	cluster := analysis.Cluster{
+		ClusterID: request.ClusterID,
+		Count:     1, // Default count
+		Keys:      make(map[string]any),
+		Examples: analysis.ClusterExamples{
+			SubjectRaw:             []string{"Example Subject"},
+			SenderDomains:          []string{"example.com"},
+			ListUnsubscribeTargets: []string{},
+		},
+		Signals: analysis.ClusterSignals{
+			HasListID:          strings.Contains(request.Lens, "list"),
+			HasListUnsubscribe: strings.Contains(request.Lens, "unsub"),
+		},
+	}
+
+	// Add lens-specific data
+	switch request.Lens {
+	case "list_lens":
+		cluster.Keys["ListID"] = strings.Split(request.ClusterID, ":")[1] + "-list-id"
+	case "sender_unsub_lens":
+		cluster.Keys["SenderDomain"] = "example.com"
+	case "recipient_tag_lens":
+		cluster.Keys["recipient_tag"] = strings.Split(request.ClusterID, ":")[1] + "-tag"
+	}
+
+	// Generate YAML preview
+	preview, err := GenerateRulePreview(cluster, request.Decision, request.Action, request.Destination, request.AgeWindow)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to generate YAML: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Return the preview
+	w.Header().Set("Content-Type", "application/json")
+	response := map[string]interface{}{
+		"success": true,
+		"preview": preview,
+	}
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
+	}
+}
+
 // convertLensToViews converts analysis.Lens clusters to ClusterView, filtering decided clusters
 func convertLensToViews(lens analysis.Lens, decidedClusters map[string]bool) []ClusterView {
 	var views []ClusterView
 	for _, cluster := range lens.Clusters {
-		key := fmt.Sprintf("%s:%s", extractLensFromClusterID(cluster.ClusterID), cluster.ClusterID)
+		lensName := extractLensFromClusterID(cluster.ClusterID)
+		clusterID := extractClusterIDWithoutLens(cluster.ClusterID)
+		key := fmt.Sprintf("%s:%s", lensName, clusterID)
 		if decidedClusters[key] {
 			continue // Skip decided clusters
 		}
 
+		// Generate YAML previews
+		watchYAML := ""
+		cleanupYAML := ""
+		
+		// Generate Watch rule (delete action as default)
+		watchPreview, err := GenerateRulePreview(cluster, "watch", "delete", "", "")
+		if err == nil && watchPreview.WatchRule != "" {
+			watchYAML = watchPreview.WatchRule
+		}
+		
+		// Generate Cleanup rule (30d age window as default)
+		cleanupPreview, err := GenerateRulePreview(cluster, "cleanup", "delete", "", "30d")
+		if err == nil && cleanupPreview.CleanupRule != "" {
+			cleanupYAML = cleanupPreview.CleanupRule
+		}
+
 		view := ClusterView{
 			ClusterID:   cluster.ClusterID,
-			Lens:        extractLensFromClusterID(cluster.ClusterID),
+			Lens:        lensName,
 			Count:       cluster.Count,
 			Keys:        cluster.Keys,
 			Examples:    cluster.Examples,
 			HasDecision: false,
+			WatchYAML:   watchYAML,
+			CleanupYAML: cleanupYAML,
 		}
 		views = append(views, view)
 	}
 	return views
 }
 
+// extractClusterIDWithoutLens extracts the unique cluster ID without the lens prefix
+func extractClusterIDWithoutLens(clusterID string) string {
+	parts := strings.SplitN(clusterID, ":", 2)
+	if len(parts) > 1 {
+		return parts[1]
+	}
+	return clusterID
+}
+
 // extractLensFromClusterID extracts the lens name from a cluster ID (e.g., "list_lens:abc123" -> "list_lens")
 func extractLensFromClusterID(clusterID string) string {
 	parts := strings.SplitN(clusterID, ":", 2)
-	if len(parts) > 0 {
+	if len(parts) > 1 {
 		return parts[0]
 	}
 	return ""
@@ -376,11 +522,16 @@ func extractLensFromClusterID(clusterID string) string {
 
 // LoadServerStore loads or creates the SQLite store for the server
 func LoadServerStore(storePath string) (Store, error) {
+	if storePath == "" {
+		return nil, fmt.Errorf("store path is empty")
+	}
 	// Ensure the directory exists
-	dir := storePath[:strings.LastIndex(storePath, string(os.PathSeparator))]
-	if dir != "" {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create store directory: %w", err)
+	if idx := strings.LastIndex(storePath, string(os.PathSeparator)); idx >= 0 {
+		dir := storePath[:idx]
+		if dir != "" {
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return nil, fmt.Errorf("failed to create store directory: %w", err)
+			}
 		}
 	}
 	return NewStore(storePath)
