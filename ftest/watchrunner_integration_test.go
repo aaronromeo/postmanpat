@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/aaronromeo/postmanpat/envmgr"
 	"github.com/aaronromeo/postmanpat/imap"
 	"github.com/aaronromeo/postmanpat/watchrunner"
+	"github.com/stretchr/testify/assert"
 )
 
 const watchSenderHostValue = "example.com"
@@ -24,20 +27,23 @@ func TestWatchProcessUIDsMove(t *testing.T) {
 		t.Fatalf("select inbox: %v", err)
 	}
 
-	rule := envmgr.Rule{
-		Name: "MoveRule",
-		Client: &envmgr.ClientMatchers{
-			SenderRegex: []string{watchSenderHostPattern},
-		},
-		Actions: []envmgr.Action{{
-			Type:        envmgr.MOVE,
-			Destination: "Archive",
-		}},
-	}
+	path := writeTempFile(t, fmt.Sprintf(`
+rules:
+  - name: "MoveRule"
+    client:
+      sender_regex:
+        - %s
+    actions:
+      - type: "move"
+        destination: "Archive"
+`, watchSenderHostPattern))
+
+	cfg, err := envmgr.Load(path)
+	assert.NoError(t, err, "Unable to parse file")
 
 	deps := watchrunner.Deps{
 		Ctx:   context.Background(),
-		Rules: []envmgr.Rule{rule},
+		Rules: cfg.Rules,
 		Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 
@@ -186,4 +192,15 @@ func setupWatchRunnerServer(t *testing.T, extraMailboxes []string) (*watchrunner
 		cleanup()
 	}
 	return client, ids, combinedCleanup
+}
+
+func writeTempFile(t *testing.T, contents string) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "appconfig.yaml")
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+	return path
 }
