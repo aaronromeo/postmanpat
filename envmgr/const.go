@@ -1,0 +1,27 @@
+package envmgr
+
+const (
+	RulesConfigEnvVar = "POSTMANPAT_RULES_CONFIG"
+	DefaultEnvFile    = ".env"
+)
+
+const (
+	EnvIMAPHost = "POSTMANPAT_IMAP_HOST"
+	EnvIMAPPort = "POSTMANPAT_IMAP_PORT"
+	EnvIMAPUser = "POSTMANPAT_IMAP_USER"
+	EnvIMAPPass = "POSTMANPAT_IMAP_PASS"
+
+	EnvS3Endpoint = "POSTMANPAT_S3_ENDPOINT"
+	EnvS3Region   = "POSTMANPAT_S3_REGION"
+	EnvS3Bucket   = "POSTMANPAT_S3_BUCKET"
+	EnvS3Key      = "POSTMANPAT_S3_KEY"
+	EnvS3Secret   = "POSTMANPAT_S3_SECRET"
+
+	EnvWebhookURL = "POSTMANPAT_WEBHOOK_URL"
+
+	EnvRulesGenStore      = "POSTMANPAT_RULESGEN_STORE"
+	EnvRulesGenWatchOut   = "POSTMANPAT_RULESGEN_WATCH_OUT"
+	EnvRulesGenCleanupOut = "POSTMANPAT_RULESGEN_CLEANUP_OUT"
+	EnvRulesGenOneTimeOut = "POSTMANPAT_RULESGEN_ONETIME_OUT"
+	EnvRulesGenWebPort    = "POSTMANPAT_RULESGEN_PORT"
+)

@@ -1,15 +1,15 @@
 #!/bin/sh
 set -eu
 
-if [ -z "${POSTMANPAT_CONFIG:-}" ]; then
-  echo "POSTMANPAT_CONFIG is required" >&2
+if [ -z "${POSTMANPAT_RULES_CONFIG:-}" ]; then
+  echo "POSTMANPAT_RULES_CONFIG is required" >&2
   exit 1
 fi
 
 cat >/etc/cron.d/postmanpat <<EOF
 SHELL=/bin/sh
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-POSTMANPAT_CONFIG=${POSTMANPAT_CONFIG}
+POSTMANPAT_RULES_CONFIG=${POSTMANPAT_RULES_CONFIG}
 POSTMANPAT_IMAP_HOST=${POSTMANPAT_IMAP_HOST}
 POSTMANPAT_IMAP_PORT=${POSTMANPAT_IMAP_PORT}
 POSTMANPAT_IMAP_USER=${POSTMANPAT_IMAP_USER}
@@ -20,7 +20,7 @@ POSTMANPAT_S3_BUCKET=${POSTMANPAT_S3_BUCKET}
 POSTMANPAT_S3_KEY=${POSTMANPAT_S3_KEY}
 POSTMANPAT_S3_SECRET=${POSTMANPAT_S3_SECRET}
 
-0 * * * * /usr/local/bin/postmanpat cleanup --config "$POSTMANPAT_CONFIG" >>/proc/1/fd/1 2>>/proc/1/fd/2
+0 * * * * /usr/local/bin/postmanpat cleanup --config "$POSTMANPAT_RULES_CONFIG" >>/proc/1/fd/1 2>>/proc/1/fd/2
 EOF
 
 chmod 0644 /etc/cron.d/postmanpat

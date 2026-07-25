@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PostmanPat Rules Generator</title>
+    <style>
+        :root {
+            --primary-color: #2196f3;
+            --success-color: #4CAF50;
+            --text-color: #333;
+            --text-light: #666;
+            --border-color: #eee;
+            --background-light: #f5f5f5;
+            --card-background: white;
+            --shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        
+        * {
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: var(--background-light);
+            color: var(--text-color);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        
+        .container {
+            background: var(--card-background);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            margin: 0 auto;
+            max-width: 1200px;
+        }
+        
+        .header-info {
+            margin-bottom: 24px;
+        }
+        
+        .header-title h1 {
+            margin: 0;
+            font-size: 1.75rem;
+            line-height: 1.2;
+        }
+        
+        .header-title p {
+            margin: 8px 0 0 0;
+            color: var(--text-light);
+            font-size: 1rem;
+        }
+        
+        .total-badge {
+            background: var(--primary-color);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            display: inline-block;
+            margin-top: 12px;
+        }
+        
+        .table-container {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            margin-top: 24px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 600px;
+        }
+        
+        th, td {
+            padding: 16px 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #495057;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        td {
+            font-size: 0.9375rem;
+            vertical-align: top;
+        }
+        
+        .cluster-id {
+            font-family: 'SF Mono', 'Menlo', 'Monaco', 'Cascadia Mono', monospace;
+            font-size: 0.8125rem;
+            color: #6c757d;
+            word-break: break-all;
+        }
+        
+        .lens-badge {
+            display: inline-block;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            margin-right: 8px;
+            line-height: 1;
+        }
+        
+        .lens-list {
+            background: #e8f5e8;
+            color: #2e7d32;
+        }
+        
+        .lens-sender {
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+        
+        .lens-template {
+            background: #f3e5f5;
+            color: #7b1fa2;
+        }
+        
+        .lens-recipient {
+            background: #fff3e0;
+            color: #ef6c00;
+        }
+        
+        .lens-name {
+            font-size: 0.875rem;
+            color: var(--text-light);
+            margin-top: 4px;
+        }
+        
+        .count {
+            font-weight: 700;
+            color: var(--text-color);
+            font-size: 1rem;
+        }
+        
+        .count-label {
+            display: block;
+            font-size: 0.875rem;
+            color: var(--text-light);
+            margin-top: 2px;
+        }
+        
+        .examples {
+            font-size: 0.875rem;
+            color: var(--text-light);
+        }
+        
+        .example-group {
+            margin-bottom: 12px;
+        }
+        
+        .example-group:last-child {
+            margin-bottom: 0;
+        }
+        
+        .example-group strong {
+            display: block;
+            font-size: 0.8125rem;
+            color: var(--text-color);
+            margin-bottom: 4px;
+            font-weight: 600;
+        }
+        
+        .example-item {
+            display: block;
+            padding: 4px 0;
+            line-height: 1.4;
+            word-break: break-word;
+        }
+        
+        /* YAML Preview Section */
+        .yaml-preview {
+            margin-top: 16px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .yaml-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: #f8f9fa;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        .yaml-header:hover {
+            background: #e9ecef;
+        }
+        
+        .yaml-title {
+            font-weight: 600;
+            color: var(--text-color);
+            font-size: 0.9375rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .yaml-icon {
+            font-size: 0.75rem;
+            transition: transform 0.3s ease;
+        }
+        
+        .yaml-header.collapsed .yaml-icon {
+            transform: rotate(-90deg);
+        }
+        
+        .yaml-content {
+            padding: 16px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            font-family: 'SF Mono', 'Menlo', 'Monaco', 'Cascadia Mono', monospace;
+            font-size: 0.8125rem;
+            line-height: 1.5;
+            overflow-x: auto;
+            white-space: pre;
+            display: none;
+        }
+        
+        .yaml-content.expanded {
+            display: block;
+        }
+        
+        .no-clusters {
+            text-align: center;
+            padding: 48px 24px;
+            color: var(--text-light);
+        }
+        
+        .no-clusters h3 {
+            margin: 0 0 12px 0;
+            font-size: 1.25rem;
+            color: var(--text-color);
+            font-weight: 600;
+        }
+        
+        .no-clusters p {
+            margin: 0 0 24px 0;
+            font-size: 1rem;
+            max-width: 400px;
+            margin-left: auto;
+            margin-right: auto;
+            line-height: 1.5;
+        }
+        
+        @media (max-width: 767px) {
+            body {
+                padding: 12px;
+            }
+            
+            .container {
+                padding: 16px;
+            }
+            
+            th, td {
+                padding: 12px 8px;
+            }
+            
+            .header-title h1 {
+                font-size: 1.5rem;
+            }
+        }
+        
+        /* Responsive table adjustments */
+        @media (max-width: 767px) {
+            .lens-badge {
+                padding: 4px 8px;
+                font-size: 0.75rem;
+            }
+            
+            .count {
+                font-size: 0.9375rem;
+            }
+            
+            .count-label {
+                font-size: 0.8125rem;
+            }
+            
+            .examples {
+                font-size: 0.8125rem;
+            }
+            
+            .example-group strong {
+                font-size: 0.75rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-info">
+            <div class="header-title">
+                <h1>PostmanPat Rules Generator</h1>
+                <p>Review email clusters and view generated rules</p>
+            </div>
+            {{if .Total}}
+            <span class="total-badge">{{.Total}} cluster{{if ne .Total 1}}s{{end}} to review</span>
+            {{end}}
+        </div>
+        
+        {{if .Clusters}}
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Cluster</th>
+                        <th>Lens</th>
+                        <th>Count</th>
+                        <th>Examples</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Clusters}}
+                    <tr id="cluster-{{.ClusterID | js}}">
+                        <td>
+                            <div class="cluster-id">{{.ClusterID}}</div>
+                        </td>
+                        <td>
+                            <div>
+                                {{if eq .Lens "list_lens"}}
+                                <span class="lens-badge lens-list">List</span>
+                                {{else if eq .Lens "sender_unsub_lens"}}
+                                <span class="lens-badge lens-sender">Sender</span>
+                                {{else if eq .Lens "recipient_tag_lens"}}
+                                <span class="lens-badge lens-recipient">Recipient</span>
+                                {{else}}
+                                <span class="lens-badge lens-template">Template</span>
+                                {{end}}
+                                <span class="lens-name">{{.Lens}}</span>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="count">{{.Count}}</span>
+                            <span class="count-label">emails</span>
+                        </td>
+                        <td>
+                            <div class="examples">
+                                {{if .Examples.SubjectRaw}}
+                                <div class="example-group">
+                                    <strong>Subjects:</strong>
+                                    {{range .Examples.SubjectRaw}}
+                                    <span class="example-item">"{{.}}"</span>
+                                    {{end}}
+                                </div>
+                                {{end}}
+                                {{if .Examples.SenderDomains}}
+                                <div class="example-group">
+                                    <strong>Senders:</strong>
+                                    {{range .Examples.SenderDomains}}
+                                    <span class="example-item">{{.}}</span>
+                                    {{end}}
+                                </div>
+                                {{end}}
+                                {{if .Examples.ListUnsubscribeTargets}}
+                                <div class="example-group">
+                                    <strong>Unsubscribe:</strong>
+                                    {{range .Examples.ListUnsubscribeTargets}}
+                                    <span class="example-item">{{.}}</span>
+                                    {{end}}
+                                </div>
+                                {{end}}
+                            </div>
+                            
+                            <!-- YAML Previews -->
+                            {{if .WatchYAML}}
+                            <div class="yaml-preview">
+                                <div class="yaml-header collapsed" onclick="toggleYaml('watch-{{.ClusterID | js}}')">
+                                    <div class="yaml-title">
+                                        <span class="yaml-icon">▼</span>
+                                        <span>Watch Rule (Delete action)</span>
+                                    </div>
+                                </div>
+                                <div class="yaml-content" id="watch-{{.ClusterID | js}}">
+{{.WatchYAML}}
+                                </div>
+                            </div>
+                            {{end}}
+                            
+                            {{if .CleanupYAML}}
+                            <div class="yaml-preview">
+                                <div class="yaml-header collapsed" onclick="toggleYaml('cleanup-{{.ClusterID | js}}')">
+                                    <div class="yaml-title">
+                                        <span class="yaml-icon">▼</span>
+                                        <span>Cleanup Rule (30d age window)</span>
+                                    </div>
+                                </div>
+                                <div class="yaml-content" id="cleanup-{{.ClusterID | js}}">
+{{.CleanupYAML}}
+                                </div>
+                            </div>
+                            {{end}}
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <div class="no-clusters">
+            <h3>No clusters to review</h3>
+            <p>All email clusters have been reviewed or no clusters were found in your mailbox.</p>
+            <span class="status">Analysis complete</span>
+        </div>
+        {{end}}
+    </div>
+    
+    <script>
+    function toggleYaml(id) {
+        const element = document.getElementById(id);
+        const header = element.previousElementSibling;
+        
+        element.classList.toggle('expanded');
+        header.classList.toggle('collapsed');
+    }
+    
+    // Show all YAML previews on page load for testing
+    document.addEventListener('DOMContentLoaded', function() {
+        // Uncomment to expand all YAML previews by default
+        // document.querySelectorAll('.yaml-content').forEach(el => {
+        //     el.classList.add('expanded');
+        //     el.previousElementSibling.classList.remove('collapsed');
+        // });
+    });
+    </script>
+</body>
+</html>

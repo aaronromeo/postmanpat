@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 
-	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/envmgr"
 	"github.com/aaronromeo/postmanpat/imap"
 	"github.com/aaronromeo/postmanpat/watchrunner"
+	"github.com/stretchr/testify/assert"
 )
 
 const watchSenderHostValue = "example.com"
@@ -24,20 +27,23 @@ func TestWatchProcessUIDsMove(t *testing.T) {
 		t.Fatalf("select inbox: %v", err)
 	}
 
-	rule := appconfig.Rule{
-		Name: "MoveRule",
-		Client: &appconfig.ClientMatchers{
-			SenderRegex: []string{watchSenderHostPattern},
-		},
-		Actions: []appconfig.Action{{
-			Type:        appconfig.MOVE,
-			Destination: "Archive",
-		}},
-	}
+	path := writeTempFile(t, fmt.Sprintf(`
+rules:
+  - name: "MoveRule"
+    client:
+      sender_regex:
+        - %s
+    actions:
+      - type: "move"
+        destination: "Archive"
+`, watchSenderHostPattern))
+
+	cfg, err := envmgr.Load(path)
+	assert.NoError(t, err, "Unable to parse file")
 
 	deps := watchrunner.Deps{
 		Ctx:   context.Background(),
-		Rules: []appconfig.Rule{rule},
+		Rules: cfg.Rules,
 		Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 
@@ -62,19 +68,19 @@ func TestWatchProcessUIDsDelete(t *testing.T) {
 		t.Fatalf("select inbox: %v", err)
 	}
 
-	rule := appconfig.Rule{
+	rule := envmgr.Rule{
 		Name: "DeleteRule",
-		Client: &appconfig.ClientMatchers{
+		Client: &envmgr.ClientMatchers{
 			SenderRegex: []string{watchSenderHostPattern},
 		},
-		Actions: []appconfig.Action{{
-			Type: appconfig.DELETE,
+		Actions: []envmgr.Action{{
+			Type: envmgr.DELETE,
 		}},
 	}
 
 	deps := watchrunner.Deps{
 		Ctx:   context.Background(),
-		Rules: []appconfig.Rule{rule},
+		Rules: []envmgr.Rule{rule},
 		Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 
@@ -96,20 +102,20 @@ func TestWatchProcessUIDsMoveMissingDestination(t *testing.T) {
 		t.Fatalf("select inbox: %v", err)
 	}
 
-	rule := appconfig.Rule{
+	rule := envmgr.Rule{
 		Name: "MoveRule",
-		Client: &appconfig.ClientMatchers{
+		Client: &envmgr.ClientMatchers{
 			SenderRegex: []string{watchSenderHostPattern},
 		},
-		Actions: []appconfig.Action{{
-			Type:        appconfig.MOVE,
+		Actions: []envmgr.Action{{
+			Type:        envmgr.MOVE,
 			Destination: "MissingFolder",
 		}},
 	}
 
 	deps := watchrunner.Deps{
 		Ctx:   context.Background(),
-		Rules: []appconfig.Rule{rule},
+		Rules: []envmgr.Rule{rule},
 		Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 
@@ -127,19 +133,19 @@ func TestWatchProcessUIDsUnsupportedAction(t *testing.T) {
 		t.Fatalf("select inbox: %v", err)
 	}
 
-	rule := appconfig.Rule{
+	rule := envmgr.Rule{
 		Name: "UnsupportedRule",
-		Client: &appconfig.ClientMatchers{
+		Client: &envmgr.ClientMatchers{
 			SenderRegex: []string{watchSenderHostPattern},
 		},
-		Actions: []appconfig.Action{{
-			Type: appconfig.ActionName("archive"),
+		Actions: []envmgr.Action{{
+			Type: envmgr.ActionName("archive"),
 		}},
 	}
 
 	deps := watchrunner.Deps{
 		Ctx:   context.Background(),
-		Rules: []appconfig.Rule{rule},
+		Rules: []envmgr.Rule{rule},
 		Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 
@@ -150,7 +156,7 @@ func TestWatchProcessUIDsUnsupportedAction(t *testing.T) {
 }
 
 func assertWatchMailboxCount(ctx context.Context, client *watchrunner.Client, mailbox, senderHost string, expected int) error {
-	matchers := appconfig.ServerMatchers{
+	matchers := envmgr.ServerMatchers{
 		Folders:         []string{mailbox},
 		SenderSubstring: []string{senderHost},
 	}
@@ -186,4 +192,15 @@ func setupWatchRunnerServer(t *testing.T, extraMailboxes []string) (*watchrunner
 		cleanup()
 	}
 	return client, ids, combinedCleanup
+}
+
+func writeTempFile(t *testing.T, contents string) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "appconfig.yaml")
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+	return path
 }

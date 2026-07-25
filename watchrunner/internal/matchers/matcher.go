@@ -5,11 +5,11 @@ import (
 	"regexp"
 	"strings"
 
-	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/envmgr"
 )
 
 type MessageMatcher interface {
-	Match(matchers *appconfig.ClientMatchers) (bool, error)
+	Match(matchers *envmgr.ClientMatchers) (bool, error)
 }
 
 type ClientMessage struct {
@@ -26,7 +26,7 @@ type ClientMessage struct {
 }
 
 // Match returns true if the message satisfies all configured client matchers.
-func (data ClientMessage) Match(matchers *appconfig.ClientMatchers) (bool, error) {
+func (data ClientMessage) Match(matchers *envmgr.ClientMatchers) (bool, error) {
 	if matchers == nil || matchers.IsEmpty() {
 		return true, nil
 	}

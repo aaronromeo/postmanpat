@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
-	appconfig "github.com/aaronromeo/postmanpat/appconfig"
+	"github.com/aaronromeo/postmanpat/envmgr"
 	"github.com/emersion/go-imap/v2"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 )
 
 type ServerSearcher interface {
-	SearchByServerMatchers(ctx context.Context, matchers appconfig.ServerMatchers) (map[string][]uint32, error)
+	SearchByServerMatchers(ctx context.Context, matchers envmgr.ServerMatchers) (map[string][]uint32, error)
 }
 
 type ClientSearcher interface {
@@ -35,7 +35,7 @@ func New(provider ClientProvider) *IMAPSearchManager {
 
 // SearchByServerMatchers returns UIDs for messages matching the provided matchers via IMAP SEARCH.
 // Results are grouped by mailbox to avoid UID collisions across folders.
-func (m *IMAPSearchManager) SearchByServerMatchers(ctx context.Context, matchers appconfig.ServerMatchers) (map[string][]uint32, error) {
+func (m *IMAPSearchManager) SearchByServerMatchers(ctx context.Context, matchers envmgr.ServerMatchers) (map[string][]uint32, error) {
 	if m.provider == nil {
 		return nil, errors.New("IMAP client is not connected")
 	}
@@ -84,20 +84,20 @@ func (m *IMAPSearchManager) SearchByServerMatchers(ctx context.Context, matchers
 	return matches, nil
 }
 
-func buildSearchCriteria(matchers appconfig.ServerMatchers) (*imap.SearchCriteria, error) {
+func buildSearchCriteria(matchers envmgr.ServerMatchers) (*imap.SearchCriteria, error) {
 	criteria := &imap.SearchCriteria{}
 	criteria.NotFlag = append(criteria.NotFlag, imap.FlagDeleted)
 
 	if matchers.AgeWindow != nil && !matchers.AgeWindow.IsEmpty() {
 		if strings.TrimSpace(matchers.AgeWindow.Max) != "" {
-			dur, err := appconfig.ParseRelativeDuration(matchers.AgeWindow.Max)
+			dur, err := envmgr.ParseRelativeDuration(matchers.AgeWindow.Max)
 			if err != nil {
 				return nil, fmt.Errorf("invalid age_window.max: %w", err)
 			}
 			criteria.Since = time.Now().Add(-dur)
 		}
 		if strings.TrimSpace(matchers.AgeWindow.Min) != "" {
-			dur, err := appconfig.ParseRelativeDuration(matchers.AgeWindow.Min)
+			dur, err := envmgr.ParseRelativeDuration(matchers.AgeWindow.Min)
 			if err != nil {
 				return nil, fmt.Errorf("invalid age_window.min: %w", err)
 			}

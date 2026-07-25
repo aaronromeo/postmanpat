@@ -11,8 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/aaronromeo/postmanpat/imap/internal/maildata"
-	"github.com/emersion/go-imap/v2"
+	foo "github.com/aaronromeo/postmanpat/imap/internal/maildata"
 	giimap "github.com/emersion/go-imap/v2"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-message"
@@ -54,7 +53,7 @@ func New(provider ClientProvider) *IMAPSelectorManager {
 }
 
 // SelectMailbox selects a mailbox and returns its metadata.
-func (c *IMAPSelectorManager) SelectMailbox(ctx context.Context, mailbox string) (*imap.SelectData, error) {
+func (c *IMAPSelectorManager) SelectMailbox(ctx context.Context, mailbox string) (*giimap.SelectData, error) {
 	if c.provider == nil || c.provider() == nil {
 		return nil, errors.New("IMAP client is not connected")
 	}
@@ -111,24 +110,24 @@ func (c *IMAPSelectorManager) FetchSenderData(ctx context.Context, uids []uint32
 		return nil, err
 	}
 
-	var uidSet imap.UIDSet
+	var uidSet giimap.UIDSet
 	for _, uid := range uids {
-		uidSet.AddNum(imap.UID(uid))
+		uidSet.AddNum(giimap.UID(uid))
 	}
 
-	headerSection := &imap.FetchItemBodySection{
-		Specifier:    imap.PartSpecifierHeader,
+	headerSection := &giimap.FetchItemBodySection{
+		Specifier:    giimap.PartSpecifierHeader,
 		HeaderFields: []string{"List-ID", "List-Unsubscribe", "Precedence", "X-Mailer", "User-Agent", "Reply-To", "Return-Path"},
 		Peek:         true,
 	}
-	bodySection := &imap.FetchItemBodySection{
-		Specifier: imap.PartSpecifierText,
+	bodySection := &giimap.FetchItemBodySection{
+		Specifier: giimap.PartSpecifierText,
 		Peek:      true,
 	}
-	fetchOptions := &imap.FetchOptions{
+	fetchOptions := &giimap.FetchOptions{
 		Envelope:    true,
 		UID:         true,
-		BodySection: []*imap.FetchItemBodySection{headerSection, bodySection},
+		BodySection: []*giimap.FetchItemBodySection{headerSection, bodySection},
 	}
 
 	fetchCmd := c.provider().Fetch(uidSet, fetchOptions)
@@ -144,7 +143,7 @@ func (c *IMAPSelectorManager) FetchSenderData(ctx context.Context, uids []uint32
 			break
 		}
 
-		var envelope *imap.Envelope
+		var envelope *giimap.Envelope
 		var header *mail.Header
 		var body string
 		var uid uint32
@@ -246,7 +245,7 @@ func (c *IMAPSelectorManager) FetchSenderData(ctx context.Context, uids []uint32
 	return rows, nil
 }
 
-func readHeader(literal imap.LiteralReader) (*mail.Header, error) {
+func readHeader(literal giimap.LiteralReader) (*mail.Header, error) {
 	if literal == nil {
 		return nil, errors.New("missing header literal")
 	}
