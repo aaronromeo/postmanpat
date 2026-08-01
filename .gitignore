@@ -5,3 +5,4 @@ tmp/
 config/config_analyze.yaml
 config/config_cleanup.yaml
 config/config_watch.yaml
+bin/postmanpat
