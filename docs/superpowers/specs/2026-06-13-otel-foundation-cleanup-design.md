@@ -1,7 +1,8 @@
 # OpenTelemetry Foundation + Cleanup & Watch Instrumentation — Design
 
-**Status:** Draft (in progress)
+**Status:** Approved — implementation plan: docs/superpowers/plans/2026-08-01-otel-traces-watch-cleanup.md
 **Date:** 2026-06-13
+**Date updated:** 2026-08-01
 **Scope:** Foundation (the `obs` package, SDK wiring, slog bridge) plus full instrumentation of both the `cleanup` and `watch` commands. Watch is included because it is the runtime mode of highest debugging interest.
 
 > Sections are appended as they are approved during brainstorming. Unapproved sections are marked `(pending)`.
@@ -30,7 +31,7 @@ S3 archival is not implemented in this branch; this spec leaves a documented sea
 | Default behavior | Disabled (no-op providers) when OTLP endpoint env var unset |
 | Cleanup trace shape | One root span per invocation; child spans per rule, mailbox, action |
 | Watch trace shape | Per-cycle root spans (new_mail, reconnect, config_reload); long-lived IDLE wait is not a span |
-| Metrics scope | RED (rate/errors/duration) per dependency + domain counters |
+| Metrics scope | RED (rate/errors/duration) per IMAP operation + domain counters (logs bridge deferred) |
 | Logs strategy | Bridge slog → OTel logs; keep stdout text output as well |
 | Wiring | New `obs/` package, initialized in `cmd/postmanpat/main.go` |
 | Configuration | Standard `OTEL_*` env vars only (no YAML knobs) |
@@ -192,6 +193,8 @@ All metrics use the meter named `github.com/aaronromeo/postmanpat/cleanuprunner`
 
 Histograms use OTel SDK default latency boundaries; no custom views in v1.
 
+> DEFERRED to a follow-up plan — the slog→OTel bridge is out of scope for the 2026-08-01 implementation plan (traces + metrics only).
+
 ### 3.3 Logs
 
 `cli/cleanup.go` constructs its slog logger via `obs.NewSlogHandler(stdoutTextHandler)` instead of the current `slog.NewTextHandler(out, ...)` directly. The wrapper:
@@ -309,6 +312,7 @@ PostmanPat itself does not read these — the OTel SDK does. The spec commits to
 | `OTEL_EXPORTER_OTLP_COMPRESSION` | `gzip` or `none` | Default per SDK |
 | `OTEL_EXPORTER_OTLP_TIMEOUT` | Per-export timeout (ms) | Default per SDK |
 | `OTEL_SDK_DISABLED` | Kill switch | `true` = no-op providers even if endpoint set |
+| `OTEL_EXPORTER_OTLP_INSECURE` | Force plaintext gRPC (no TLS) | `true` for self-hosted SigNoz; also implied when the endpoint scheme is `http://` |
 | `OTEL_SERVICE_NAME` | Service name override | Defaults to `postmanpat` (set in §5) |
 | `OTEL_SERVICE_VERSION` | Version override | Defaults from build info (§5) |
 | `OTEL_RESOURCE_ATTRIBUTES` | Extra resource attributes | Comma-separated `k=v`; merged with defaults |
@@ -321,7 +325,7 @@ Per-signal endpoint/header overrides (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, etc.
 
 ### 4.3 Variables explicitly not honored
 
-- **`OTEL_EXPORTER_OTLP_INSECURE`** — not honored in v1. PostmanPat's OTLP endpoints are expected to be TLS-protected; the gRPC exporter defaults to TLS when the endpoint scheme is `https://`. Add as an additive change if a plaintext use case appears.
+- **`OTEL_EXPORTER_OTLP_INSECURE`** — honored in this plan (deviation). Self-hosted SigNoz's OTLP gRPC receiver (`:4317`) is plaintext by default, so TLS-only would break the primary deployment target.
 - **`OTEL_METRIC_EXPORT_INTERVAL` / `OTEL_METRIC_EXPORT_TIMEOUT`** — SDK defaults stand. Stated for clarity; not blocking anything.
 - **`OTEL_TRACES_EXPORTER` / `OTEL_METRICS_EXPORTER` / `OTEL_LOGS_EXPORTER`** — we hard-wire `otlp` for all three. The app doesn't bundle alternative exporters. Set to anything other than `otlp` (or unset) and you get our `otlp` defaults; we do not error on this.
 
@@ -331,8 +335,24 @@ There is no per-signal on/off toggle in v1. If OTel is enabled, all three signal
 
 ---
 
-## 5. Resource attribution (pending)
+## 5. Resource attribution
 
-## 6. Testing strategy (pending)
+- `service.name=postmanpat` (overridable via `OTEL_SERVICE_NAME`).
+- `service.version` from `debug.ReadBuildInfo()` main module version; `dev` fallback.
+- `service.instance.id` = random 128-bit hex per process (crypto/rand).
+- `process.command` = `os.Args[1]` (e.g. `cleanup`, `watch`).
+- `OTEL_RESOURCE_ATTRIBUTES` merged in via `resource.WithFromEnv()`; env wins over defaults.
 
-## 7. Out of scope (pending)
+## 6. Testing strategy
+
+- `obs` unit tests: in-memory span recorder (`tracetest.NewSpanRecorder`) + manual metric reader (`sdkmetric.NewManualReader`); fakes for the runner interfaces; `otel.SetTracerProvider`/`SetMeterProvider` swapped in tests and restored.
+- Watch message processing: unit test `watchrunner.ProcessUIDs` against a fake runner asserting `watch.message` span + `watch.rule_evaluated` events; `ftest/` integration against the in-memory TLS IMAP server.
+- Cleanup: full `cleanup` command execution (cobra) against the in-memory IMAP server with an in-memory tracer, asserting `cleanup.invocation`→`cleanup.rule`→`cleanup.action` parenting and `action.message_identified` events.
+- The IDLE loop itself (`cli/watch.go` select on `updateCh`/`ctx.Done()`/`reloadTicker.C`) is not unit-testable; its span-shaping pieces (search, ProcessUIDs) are covered by the above, and the loop is verified manually against SigNoz.
+
+## 7. Out of scope
+
+- slog→OTel logs bridge and OTLP logs export (deferred).
+- OTLP/HTTP exporter (gRPC only for v1).
+- Per-message *spans* for cleanup (events are used to bound cardinality on large initial runs).
+- S3 archival instrumentation (`obs.WrapArchiveClient` seam remains documented but unused).
