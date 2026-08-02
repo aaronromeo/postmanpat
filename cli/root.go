@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -14,10 +15,16 @@ var rootCmd = &cobra.Command{
 
 // Execute runs the root command.
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
+	os.Exit(ExecuteWithContext(context.Background()))
+}
+
+// ExecuteWithContext runs the root command with context.
+func ExecuteWithContext(ctx context.Context) int {
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func init() {
