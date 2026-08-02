@@ -1,4 +1,41 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["superpowers@git+https://github.com/obra/superpowers.git"]
+  "plugin": ["superpowers@git+https://github.com/obra/superpowers.git"],
+  "instructions": ["AGENTS.md"],
+  "permission": {
+    "bash": {
+      "*": "allow",
+      "git diff *": "allow",
+      "git log *": "allow",
+      "git status *": "allow",
+      "git add *": "allow",
+      "git commit *": "allow",
+      "git push *": "ask",
+      "git checkout *": "allow",
+      "git branch *": "allow",
+      "docker *": "allow",
+      "go build *": "allow",
+      "go test *": "allow",
+      "go get *": "allow",
+      "go mod *": "allow",
+      "go vet *": "allow",
+      "go clean *": "allow",
+      "gofmt *": "allow",
+      "mkdir *": "allow",
+      "find *": "allow",
+      "sh *": "allow",
+      "cat *": "allow",
+      "ls *": "allow",
+      "echo *": "allow",
+      "rm *": "ask"
+    },
+    "edit": "allow",
+    "write": "allow",
+    "read": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "task": "allow",
+    "webfetch": "allow",
+    "question": "allow"
+  }
 }
