@@ -40,7 +40,8 @@
 - `repomix-output.xml` is a generated repo dump; do not edit.
 
 ## OTel Status
-- `docs/superpowers/specs/2026-06-13-otel-foundation-cleanup-design.md` specifies a planned `obs/` package (OTel tracing/metrics/logs, slog bridge, runner decorators), but it is NOT implemented — no `obs/` package or OTel deps exist in `go.mod` yet.
+- Implemented: `obs/` package (Init, env config, resource, `WrapCleanupRunner`, `WrapWatchRunner`), trace instrumentation for `watch` (cycle/message/rule_evaluated/action) and `cleanup` (invocation/rule/action + per-message events), IMAP RED metrics, OTLP gRPC export (plaintext via `OTEL_EXPORTER_OTLP_INSECURE` or `http://` scheme), docker-compose + cron OTLP env wiring.
+- Deferred: slog→OTel logs bridge (see `docs/superpowers/specs/2026-06-13-otel-foundation-cleanup-design.md` §3.3), OTLP/HTTP exporter.
 
 ## Operating Constraints
 - `context/roles_and_constraints.md` defines the working mode: Plan/Act split (start in Plan, share a plan before edits, only make changes on an explicit `ACT`), and ask permission before running state-changing commands.
