@@ -9,6 +9,8 @@ import (
 
 	appconfig "github.com/aaronromeo/postmanpat/appconfig"
 	"github.com/aaronromeo/postmanpat/imap"
+	giimap "github.com/emersion/go-imap/v2"
+	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
@@ -16,17 +18,15 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
-	giimapclient "github.com/emersion/go-imap/v2/imapclient"
-	giimap "github.com/emersion/go-imap/v2"
 )
 
 type fakeRunner struct {
 	fetchData []imap.MailData
 }
 
-func (f *fakeRunner) Connect() error                                   { return nil }
-func (f *fakeRunner) Close() error                                     { return nil }
-func (f *fakeRunner) Idle() (*giimapclient.IdleCommand, error)           { return nil, nil }
+func (f *fakeRunner) Connect() error                           { return nil }
+func (f *fakeRunner) Close() error                             { return nil }
+func (f *fakeRunner) Idle() (*giimapclient.IdleCommand, error) { return nil, nil }
 func (f *fakeRunner) SelectMailbox(ctx context.Context, m string) (*giimap.SelectData, error) {
 	return nil, nil
 }
@@ -51,10 +51,10 @@ func TestProcessUIDsEmitsRuleEvaluationTrace(t *testing.T) {
 	runner := &fakeRunner{
 		fetchData: []imap.MailData{
 			{
-				UID:     123,
-				MessageID: "<test@example.com>",
-				From:    []string{"sender@example.com"},
-				SubjectRaw: "Test Subject",
+				UID:         123,
+				MessageID:   "<test@example.com>",
+				From:        []string{"sender@example.com"},
+				SubjectRaw:  "Test Subject",
 				MessageDate: time.Date(2026, 8, 2, 15, 58, 57, 0, time.UTC),
 			},
 		},

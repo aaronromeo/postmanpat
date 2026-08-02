@@ -18,9 +18,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"gopkg.in/yaml.v3"
 )
@@ -185,14 +185,14 @@ func runCleanupLogic(ctx context.Context, cfgPath string, dryRun bool) error {
 	port := os.Getenv("POSTMANPAT_IMAP_PORT")
 	user := os.Getenv("POSTMANPAT_IMAP_USER")
 	pass := os.Getenv("POSTMANPAT_IMAP_PASS")
-	
+
 	imapEnv := appconfig.IMAPEnv{
 		Host: host,
 		Port: 0, // Will be parsed from env var
 		User: user,
 		Pass: pass,
 	}
-	
+
 	fmt.Sscanf(port, "%d", &imapEnv.Port)
 
 	var client serverrunner.ServerRunner = serverrunner.New(

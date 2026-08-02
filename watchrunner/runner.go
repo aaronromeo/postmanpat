@@ -11,13 +11,13 @@ import (
 	appconfig "github.com/aaronromeo/postmanpat/appconfig"
 	"github.com/aaronromeo/postmanpat/imap"
 	"github.com/aaronromeo/postmanpat/watchrunner/internal/matchers"
+	giimap "github.com/emersion/go-imap/v2"
+	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
-	giimap "github.com/emersion/go-imap/v2"
-	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 )
 
 type WatchRunner interface {

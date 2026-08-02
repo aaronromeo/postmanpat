@@ -30,10 +30,10 @@ func TestIsEnabled(t *testing.T) {
 
 func TestOTLPEndpoint(t *testing.T) {
 	cases := []struct {
-		name        string
-		endpoint    string
-		insecureEnv string
-		wantHost    string
+		name         string
+		endpoint     string
+		insecureEnv  string
+		wantHost     string
 		wantInsecure bool
 	}{
 		{name: "http scheme implies insecure", endpoint: "http://localhost:4317", wantHost: "localhost:4317", wantInsecure: true},

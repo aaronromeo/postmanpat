@@ -31,8 +31,8 @@ func TestWatchProcessUIDsEmitsMessageSpan(t *testing.T) {
 	}
 
 	rule := appconfig.Rule{
-		Name:   "MoveRule",
-		Client: &appconfig.ClientMatchers{SenderRegex: []string{watchSenderHostPattern}},
+		Name:    "MoveRule",
+		Client:  &appconfig.ClientMatchers{SenderRegex: []string{watchSenderHostPattern}},
 		Actions: []appconfig.Action{{Type: appconfig.MOVE, Destination: "Archive"}},
 	}
 	deps := watchrunner.Deps{

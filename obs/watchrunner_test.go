@@ -5,10 +5,10 @@ import (
 	"testing"
 
 	"github.com/aaronromeo/postmanpat/imap"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	giimap "github.com/emersion/go-imap/v2"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -17,9 +17,9 @@ import (
 
 type fakeWatchRunner struct{}
 
-func (f *fakeWatchRunner) Connect() error                                   { return nil }
-func (f *fakeWatchRunner) Close() error                                     { return nil }
-func (f *fakeWatchRunner) Idle() (*giimapclient.IdleCommand, error)         { return nil, nil }
+func (f *fakeWatchRunner) Connect() error                           { return nil }
+func (f *fakeWatchRunner) Close() error                             { return nil }
+func (f *fakeWatchRunner) Idle() (*giimapclient.IdleCommand, error) { return nil, nil }
 func (f *fakeWatchRunner) SelectMailbox(ctx context.Context, m string) (*giimap.SelectData, error) {
 	return nil, nil
 }

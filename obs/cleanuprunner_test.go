@@ -25,8 +25,12 @@ func (f *fakeCleanupRunner) Close() error   { return nil }
 func (f *fakeCleanupRunner) SearchByServerMatchers(ctx context.Context, m appconfig.ServerMatchers) (map[string][]uint32, error) {
 	return f.searchResult, f.searchErr
 }
-func (f *fakeCleanupRunner) MoveByMailbox(ctx context.Context, m map[string][]uint32, d string) error { return nil }
-func (f *fakeCleanupRunner) DeleteByMailbox(ctx context.Context, m map[string][]uint32, e bool) error { return nil }
+func (f *fakeCleanupRunner) MoveByMailbox(ctx context.Context, m map[string][]uint32, d string) error {
+	return nil
+}
+func (f *fakeCleanupRunner) DeleteByMailbox(ctx context.Context, m map[string][]uint32, e bool) error {
+	return nil
+}
 func (f *fakeCleanupRunner) FetchSenderDataByMailbox(ctx context.Context, m map[string][]uint32) (map[string][]imap.MailData, error) {
 	return nil, nil
 }
