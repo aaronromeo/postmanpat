@@ -42,7 +42,7 @@ func TestWatchProcessUIDsMove(t *testing.T) {
 	}
 
 	state := &watchrunner.State{}
-	if err := client.ProcessUIDs(deps, state, []uint32{ids.NewsUID}); err != nil {
+	if err := watchrunner.ProcessUIDs(client, deps, state, []uint32{ids.NewsUID}); err != nil {
 		t.Fatalf("process uids: %v", err)
 	}
 
@@ -79,7 +79,7 @@ func TestWatchProcessUIDsDelete(t *testing.T) {
 	}
 
 	state := &watchrunner.State{}
-	if err := client.ProcessUIDs(deps, state, []uint32{ids.NewsUID}); err != nil {
+	if err := watchrunner.ProcessUIDs(client, deps, state, []uint32{ids.NewsUID}); err != nil {
 		t.Fatalf("process uids: %v", err)
 	}
 
@@ -114,7 +114,7 @@ func TestWatchProcessUIDsMoveMissingDestination(t *testing.T) {
 	}
 
 	state := &watchrunner.State{}
-	if err := client.ProcessUIDs(deps, state, []uint32{ids.NewsUID}); err == nil {
+	if err := watchrunner.ProcessUIDs(client, deps, state, []uint32{ids.NewsUID}); err == nil {
 		t.Fatal("expected move to missing destination to fail")
 	}
 }
@@ -144,7 +144,7 @@ func TestWatchProcessUIDsUnsupportedAction(t *testing.T) {
 	}
 
 	state := &watchrunner.State{}
-	if err := client.ProcessUIDs(deps, state, []uint32{ids.NewsUID}); err == nil {
+	if err := watchrunner.ProcessUIDs(client, deps, state, []uint32{ids.NewsUID}); err == nil {
 		t.Fatal("expected unsupported action to fail")
 	}
 }

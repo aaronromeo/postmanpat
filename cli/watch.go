@@ -156,7 +156,7 @@ var watchCmd = &cobra.Command{
 			idleCmd, err := client.Idle()
 			if err != nil {
 				if watchrunner.IsBenignIdleError(err) {
-					if err := client.Reconnect(deps, state, defaultMailbox); err != nil {
+					if err := watchrunner.Reconnect(client, deps, state, defaultMailbox); err != nil {
 						return err
 					}
 					continue
@@ -178,7 +178,7 @@ var watchCmd = &cobra.Command{
 					if err != nil {
 						return err
 					}
-					if err := client.ProcessUIDs(deps, state, uids); err != nil {
+					if err := watchrunner.ProcessUIDs(client, deps, state, uids); err != nil {
 						return err
 					}
 				}

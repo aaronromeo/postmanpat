@@ -44,12 +44,12 @@ func New(opts ...imap.Option) *Client {
 	return &Client{Client: imap.NewWatch(opts...)}
 }
 
-func (c *Client) ProcessUIDs(deps Deps, state *State, uids []uint32) error {
+func ProcessUIDs(client WatchRunner, deps Deps, state *State, uids []uint32) error {
 	deps.Log.Debug("search newer than uid", "last_uid", state.LastUID, "uids", len(uids))
 	if len(uids) == 0 {
 		return nil
 	}
-	data, err := c.FetchSenderData(deps.Ctx, uids)
+	data, err := client.FetchSenderData(deps.Ctx, uids)
 	if err != nil {
 		return err
 	}
@@ -78,7 +78,7 @@ func (c *Client) ProcessUIDs(deps Deps, state *State, uids []uint32) error {
 				if deps.Announce != nil {
 					deps.Announce(rule.Name)
 				}
-				if err := applyActions(c, deps, rule, message.UID); err != nil {
+				if err := applyActions(deps.Ctx, client, deps, rule, message.UID); err != nil {
 					return err
 				}
 			}
@@ -95,21 +95,21 @@ func (c *Client) ProcessUIDs(deps Deps, state *State, uids []uint32) error {
 	return nil
 }
 
-func (c *Client) Reconnect(deps Deps, state *State, mailbox string) error {
-	_ = c.Close()
-	if err := c.Connect(); err != nil {
+func Reconnect(client WatchRunner, deps Deps, state *State, mailbox string) error {
+	_ = client.Close()
+	if err := client.Connect(); err != nil {
 		return err
 	}
-	selection, err := c.SelectMailbox(deps.Ctx, mailbox)
+	selection, err := client.SelectMailbox(deps.Ctx, mailbox)
 	if err != nil {
 		return err
 	}
 	deps.Log.Info("reconnected", "mailbox", mailbox, "messages", selection.NumMessages)
-	uids, err := c.SearchUIDsNewerThan(deps.Ctx, state.LastUID)
+	uids, err := client.SearchUIDsNewerThan(deps.Ctx, state.LastUID)
 	if err != nil {
 		return err
 	}
-	if err := c.ProcessUIDs(deps, state, uids); err != nil {
+	if err := ProcessUIDs(client, deps, state, uids); err != nil {
 		return err
 	}
 	state.LastCount = selection.NumMessages
@@ -133,7 +133,7 @@ func maxUID(current uint32, uids []uint32) uint32 {
 	return max
 }
 
-func applyActions(client WatchRunner, deps Deps, rule appconfig.Rule, uid uint32) error {
+func applyActions(ctx context.Context, client WatchRunner, deps Deps, rule appconfig.Rule, uid uint32) error {
 	if uid == 0 {
 		return nil
 	}
@@ -144,7 +144,7 @@ func applyActions(client WatchRunner, deps Deps, rule appconfig.Rule, uid uint32
 			if action.ExpungeAfterDelete != nil {
 				expungeAfterDelete = *action.ExpungeAfterDelete
 			}
-			if err := client.DeleteUIDs(deps.Ctx, []uint32{uid}, expungeAfterDelete); err != nil {
+			if err := client.DeleteUIDs(ctx, []uint32{uid}, expungeAfterDelete); err != nil {
 				return err
 			}
 		case appconfig.MOVE:
@@ -152,7 +152,7 @@ func applyActions(client WatchRunner, deps Deps, rule appconfig.Rule, uid uint32
 			if destination == "" {
 				return fmt.Errorf("Action move missing destination for rule %q", rule.Name)
 			}
-			if err := client.MoveUIDs(deps.Ctx, []uint32{uid}, destination); err != nil {
+			if err := client.MoveUIDs(ctx, []uint32{uid}, destination); err != nil {
 				return err
 			}
 		default:
