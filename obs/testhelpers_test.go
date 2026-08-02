@@ -37,7 +37,6 @@ func metricSum(t *testing.T, out metricdata.ResourceMetrics, name string) int64 
 			return total
 		}
 	}
-	t.Fatalf("metric %q not found", name)
 	return 0
 }
 

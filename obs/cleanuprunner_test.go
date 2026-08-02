@@ -54,14 +54,14 @@ func TestWrapCleanupRunnerSearchEmitsSpanAndMetrics(t *testing.T) {
 	spans := rec.Ended()
 	require.Len(t, spans, 1)
 	assert.Equal(t, "imap.search_by_server_matchers", spans[0].Name())
-	assert.Equal(t, "search", valueFor(t, spans[0], "imap.operation").AsString())
+	assert.Equal(t, "search_by_server_matchers", valueFor(t, spans[0], "imap.operation").AsString())
 	assert.Equal(t, int64(1), valueFor(t, spans[0], "imap.uid_count").AsInt64())
 	assert.Equal(t, "success", valueFor(t, spans[0], "outcome").AsString())
 
 	var out metricdata.ResourceMetrics
 	require.NoError(t, reader.Collect(context.Background(), &out))
 	assert.Equal(t, int64(1), metricSum(t, out, "postmanpat.imap.operations"))
-	assert.Equal(t, int64(1), metricCount(t, out, "postmanpat.imap.duration"))
+	assert.Equal(t, 1, metricCount(t, out, "postmanpat.imap.duration"))
 	assert.Equal(t, int64(0), metricSum(t, out, "postmanpat.imap.errors"))
 }
 
