@@ -5,10 +5,17 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
+	"time"
 
 	appconfig "github.com/aaronromeo/postmanpat/appconfig"
 	"github.com/aaronromeo/postmanpat/imap"
 	"github.com/aaronromeo/postmanpat/watchrunner/internal/matchers"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 	giimap "github.com/emersion/go-imap/v2"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 )
@@ -23,6 +30,20 @@ type WatchRunner interface {
 	MoveUIDs(ctx context.Context, uids []uint32, destination string) error
 	DeleteUIDs(ctx context.Context, uids []uint32, expunge bool) error
 }
+
+type watchInstruments struct {
+	messages       metric.Int64Counter
+	ruleMatches    metric.Int64Counter
+	actionMessages metric.Int64Counter
+}
+
+var watchInstrumentsOnce = sync.OnceValue(func() watchInstruments {
+	meter := otel.Meter("github.com/aaronromeo/postmanpat/watchrunner")
+	messages, _ := meter.Int64Counter("postmanpat.watch.messages.processed", metric.WithUnit("{message}"))
+	ruleMatches, _ := meter.Int64Counter("postmanpat.watch.rule.matches", metric.WithUnit("{message}"))
+	actionMessages, _ := meter.Int64Counter("postmanpat.watch.action.messages", metric.WithUnit("{message}"))
+	return watchInstruments{messages: messages, ruleMatches: ruleMatches, actionMessages: actionMessages}
+})
 
 type Client struct {
 	*imap.Client
@@ -54,7 +75,18 @@ func ProcessUIDs(client WatchRunner, deps Deps, state *State, uids []uint32) err
 		return err
 	}
 	deps.Log.Debug("fetched messages for processing", "messages", len(data))
+	tracer := otel.Tracer("github.com/aaronromeo/postmanpat/watchrunner")
 	for _, message := range data {
+		messageCtx, msgSpan := tracer.Start(deps.Ctx, "watch.message",
+			trace.WithAttributes(
+				attribute.Int64("imap.uid", int64(message.UID)),
+				attribute.String("email.message_id", message.MessageID),
+				attribute.StringSlice("email.from", message.From),
+				attribute.String("email.subject", message.SubjectRaw),
+				attribute.String("email.internal_date", message.MessageDate.UTC().Format(time.RFC3339)),
+			))
+		watchInstrumentsOnce().messages.Add(messageCtx, 1)
+
 		matchedAny := false
 		for _, rule := range deps.Rules {
 			ok, err := (matchers.ClientMessage{
@@ -70,25 +102,39 @@ func ProcessUIDs(client WatchRunner, deps Deps, state *State, uids []uint32) err
 				ListUnsubscribe:  message.ListUnsubscribe,
 			}).Match(rule.Client)
 			if err != nil {
+				msgSpan.RecordError(err)
+				msgSpan.SetStatus(codes.Error, err.Error())
+				msgSpan.End()
 				return err
 			}
+			msgSpan.AddEvent("watch.rule_evaluated",
+				trace.WithAttributes(
+					attribute.String("rule.name", rule.Name),
+					attribute.Bool("matched", ok),
+				))
 			if ok {
 				matchedAny = true
-				deps.Log.Info("rule matched", "rule", rule.Name, "list_id", message.ListID)
+				watchInstrumentsOnce().ruleMatches.Add(messageCtx, 1,
+					metric.WithAttributes(attribute.String("rule.name", rule.Name)))
+				deps.Log.InfoContext(messageCtx, "rule matched", "rule", rule.Name, "list_id", message.ListID)
 				if deps.Announce != nil {
 					deps.Announce(rule.Name)
 				}
-				if err := applyActions(deps.Ctx, client, deps, rule, message.UID); err != nil {
+				if err := applyActions(messageCtx, client, deps, rule, message.UID); err != nil {
+					msgSpan.RecordError(err)
+					msgSpan.SetStatus(codes.Error, err.Error())
+					msgSpan.End()
 					return err
 				}
 			}
 		}
 		if !matchedAny {
-			deps.Log.Info("no rule matched")
+			deps.Log.InfoContext(messageCtx, "no rule matched")
 			if deps.Announce != nil {
 				deps.Announce("")
 			}
 		}
+		msgSpan.End()
 	}
 	state.LastUID = maxUID(state.LastUID, uids)
 	deps.Log.Debug("updated last uid", "last_uid", state.LastUID)
@@ -137,27 +183,44 @@ func applyActions(ctx context.Context, client WatchRunner, deps Deps, rule appco
 	if uid == 0 {
 		return nil
 	}
+	tracer := otel.Tracer("github.com/aaronromeo/postmanpat/watchrunner")
 	for _, action := range rule.Actions {
+		actionCtx, span := tracer.Start(ctx, "watch.action",
+			trace.WithAttributes(
+				attribute.String("rule.name", rule.Name),
+				attribute.String("action.type", string(action.Type)),
+				attribute.String("action.destination", action.Destination),
+			))
+		var err error
 		switch action.Type {
 		case appconfig.DELETE:
 			expungeAfterDelete := true
 			if action.ExpungeAfterDelete != nil {
 				expungeAfterDelete = *action.ExpungeAfterDelete
 			}
-			if err := client.DeleteUIDs(ctx, []uint32{uid}, expungeAfterDelete); err != nil {
-				return err
-			}
+			err = client.DeleteUIDs(actionCtx, []uint32{uid}, expungeAfterDelete)
 		case appconfig.MOVE:
 			destination := strings.TrimSpace(action.Destination)
 			if destination == "" {
-				return fmt.Errorf("Action move missing destination for rule %q", rule.Name)
-			}
-			if err := client.MoveUIDs(ctx, []uint32{uid}, destination); err != nil {
-				return err
+				err = fmt.Errorf("Action move missing destination for rule %q", rule.Name)
+			} else {
+				err = client.MoveUIDs(actionCtx, []uint32{uid}, destination)
 			}
 		default:
-			return fmt.Errorf("unsupported action type %q for rule %q", action.Type, rule.Name)
+			err = fmt.Errorf("unsupported action type %q for rule %q", action.Type, rule.Name)
 		}
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			span.End()
+			return err
+		}
+		watchInstrumentsOnce().actionMessages.Add(actionCtx, 1, metric.WithAttributes(
+			attribute.String("action.type", string(action.Type)),
+			attribute.String("rule.name", rule.Name),
+			attribute.String("destination", action.Destination),
+		))
+		span.End()
 	}
 	return nil
 }
