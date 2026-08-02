@@ -24,15 +24,9 @@ var cleanupCmd = &cobra.Command{
 	Use:   "cleanup",
 	Short: "Process IMAP folders based on configured rules",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		cfgPath, err := cmd.Flags().GetString("config")
+		cfgPath, err := resolveConfigPath(cmd)
 		if err != nil {
 			return err
-		}
-		if cfgPath == "" {
-			cfgPath = os.Getenv("POSTMANPAT_CONFIG")
-		}
-		if cfgPath == "" {
-			cfgPath = defaultConfigFile
 		}
 
 		if err := loadEnvFile(); err != nil {

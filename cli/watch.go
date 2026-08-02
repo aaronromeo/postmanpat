@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,9 +15,14 @@ import (
 	"github.com/aaronromeo/postmanpat/announcer"
 	appconfig "github.com/aaronromeo/postmanpat/appconfig"
 	"github.com/aaronromeo/postmanpat/imap"
+	"github.com/aaronromeo/postmanpat/obs"
 	"github.com/aaronromeo/postmanpat/watchrunner"
 	giimapclient "github.com/emersion/go-imap/v2/imapclient"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const defaultMailbox = "INBOX"
@@ -100,7 +107,17 @@ var watchCmd = &cobra.Command{
 			tlsConfig = watchTLSConfigProvider()
 		}
 
-		client := watchrunner.New(
+		out := cmd.OutOrStdout()
+		logger := slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: logLevel}))
+
+		tracer := obs.Tracer("github.com/aaronromeo/postmanpat/cli")
+		meter := obs.Meter("github.com/aaronromeo/postmanpat/watchrunner")
+		cycleCounter, _ := meter.Int64Counter("postmanpat.watch.cycles", metric.WithUnit("{cycle}"))
+		cycleDuration, _ := meter.Float64Histogram("postmanpat.watch.cycle.duration", metric.WithUnit("s"))
+		reconnectCounter, _ := meter.Int64Counter("postmanpat.watch.reconnects", metric.WithUnit("{reconnect}"))
+		reloadCounter, _ := meter.Int64Counter("postmanpat.watch.config.reloads", metric.WithUnit("{reload}"))
+
+		var client watchrunner.WatchRunner = watchrunner.New(
 			imap.WithAddr(
 				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
 			),
@@ -108,25 +125,33 @@ var watchCmd = &cobra.Command{
 			imap.WithTLSConfig(tlsConfig),
 			imap.WithUnilateralDataHandler(handler),
 		)
+		client = obs.WrapWatchRunner(client)
+
+		sessionID := newSessionID()
+		connectCtx, connectSpan := tracer.Start(ctx, "watch.connect",
+			trace.WithAttributes(attribute.String("watch.session.id", sessionID)))
+
 		if err := client.Connect(); err != nil {
 			return err
 		}
 		defer client.Close()
 
-		out := cmd.OutOrStdout()
-		logger := slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: logLevel}))
-
 		if strings.TrimSpace(testRuleName) != "" {
+			connectSpan.End()
 			if err := runWatchTest(cmd.Context(), client, cfg, logger, testRuleName, testMailbox, limit); err != nil {
 				return err
 			}
 			return nil
 		}
 
-		selection, err := client.SelectMailbox(ctx, defaultMailbox)
+		selection, err := client.SelectMailbox(connectCtx, defaultMailbox)
 		if err != nil {
+			connectSpan.RecordError(err)
+			connectSpan.SetStatus(codes.Error, err.Error())
+			connectSpan.End()
 			return err
 		}
+		connectSpan.End()
 
 		state := &watchrunner.State{LastCount: selection.NumMessages}
 		if selection.UIDNext > 0 {
@@ -156,9 +181,19 @@ var watchCmd = &cobra.Command{
 			idleCmd, err := client.Idle()
 			if err != nil {
 				if watchrunner.IsBenignIdleError(err) {
+					sessionID = newSessionID()
+					rcCtx, rcSpan := tracer.Start(ctx, "watch.reconnect",
+						trace.WithAttributes(attribute.String("watch.session.id", sessionID)))
+					deps.Ctx = rcCtx
 					if err := watchrunner.Reconnect(client, deps, state, defaultMailbox); err != nil {
+						rcSpan.RecordError(err)
+						rcSpan.SetStatus(codes.Error, err.Error())
+						rcSpan.End()
+						reconnectCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "error")))
 						return err
 					}
+					rcSpan.End()
+					reconnectCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "success")))
 					continue
 				}
 				return err
@@ -173,14 +208,34 @@ var watchCmd = &cobra.Command{
 					}
 				}
 				if newCount > state.LastCount {
+					cycleCtx, cycleSpan := tracer.Start(ctx, "watch.cycle",
+						trace.WithAttributes(
+							attribute.String("cycle.trigger", "new_mail"),
+							attribute.String("watch.session.id", sessionID),
+						))
+					cycleStarted := time.Now()
 					logger.Info("new mail detected", "messages", newCount)
-					uids, err := client.SearchUIDsNewerThan(ctx, state.LastUID)
+					uids, err := client.SearchUIDsNewerThan(cycleCtx, state.LastUID)
 					if err != nil {
+						cycleSpan.RecordError(err)
+						cycleSpan.SetStatus(codes.Error, err.Error())
+						cycleSpan.End()
+						cycleCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("trigger", "new_mail"), attribute.String("outcome", "error")))
+						cycleDuration.Record(ctx, time.Since(cycleStarted).Seconds(), metric.WithAttributes(attribute.String("trigger", "new_mail"), attribute.String("outcome", "error")))
 						return err
 					}
+					deps.Ctx = cycleCtx
 					if err := watchrunner.ProcessUIDs(client, deps, state, uids); err != nil {
+						cycleSpan.RecordError(err)
+						cycleSpan.SetStatus(codes.Error, err.Error())
+						cycleSpan.End()
+						cycleCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("trigger", "new_mail"), attribute.String("outcome", "error")))
+						cycleDuration.Record(ctx, time.Since(cycleStarted).Seconds(), metric.WithAttributes(attribute.String("trigger", "new_mail"), attribute.String("outcome", "error")))
 						return err
 					}
+					cycleSpan.End()
+					cycleCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("trigger", "new_mail"), attribute.String("outcome", "success")))
+					cycleDuration.Record(ctx, time.Since(cycleStarted).Seconds(), metric.WithAttributes(attribute.String("trigger", "new_mail"), attribute.String("outcome", "success")))
 				}
 				state.LastCount = newCount
 				logger.Info("ready for next update")
@@ -195,6 +250,8 @@ var watchCmd = &cobra.Command{
 				}
 				return ctx.Err()
 			case <-reloadTicker.C:
+				_, rlSpan := tracer.Start(ctx, "watch.config_reload",
+					trace.WithAttributes(attribute.String("watch.session.id", sessionID)))
 				logger.Debug("reload timer fired")
 				_ = idleCmd.Close()
 				if err := idleCmd.Wait(); err != nil {
@@ -205,19 +262,27 @@ var watchCmd = &cobra.Command{
 				updated, err := appconfig.Load(cfgPath)
 				if err != nil {
 					logger.Error("watch config reload failed", "error", err)
+					rlSpan.End()
+					reloadCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "error")))
 					continue
 				}
 				if err := appconfig.Validate(updated); err != nil {
 					logger.Error("watch config reload failed", "error", err)
+					rlSpan.End()
+					reloadCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "error")))
 					continue
 				}
 				if err := validateWatchRules(updated); err != nil {
 					logger.Error("watch config reload failed", "error", err)
+					rlSpan.End()
+					reloadCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "error")))
 					continue
 				}
 				cfg = updated
 				deps.Rules = updated.Rules
 				logger.Info("watch config reloaded")
+				rlSpan.End()
+				reloadCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "success")))
 			}
 		}
 	},
@@ -284,4 +349,12 @@ func findRuleByName(cfg appconfig.Config, ruleName string) (*appconfig.Rule, err
 		}
 	}
 	return nil, fmt.Errorf("rule %q not found", ruleName)
+}
+
+func newSessionID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(b)
 }
