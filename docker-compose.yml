@@ -18,6 +18,7 @@ services:
       start_period: 10s
     networks:
       - pi-services
+      - signoz-net
 
   postmanpat:
     build: .
@@ -43,6 +44,7 @@ services:
     restart: unless-stopped
     networks:
       - pi-services
+      - signoz-net
 
   postmanpat-watch:
     build: .
@@ -69,7 +71,11 @@ services:
     restart: unless-stopped
     networks:
       - pi-services
+      - signoz-net
 
 networks:
   pi-services:
     driver: bridge
+  signoz-net:
+    name: composeyourself_cys-service
+    external: true
