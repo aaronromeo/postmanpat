@@ -44,6 +44,7 @@ services:
     restart: unless-stopped
     networks:
       - pi-services
+      - signoz-net
 
   postmanpat-watch:
     build: .
