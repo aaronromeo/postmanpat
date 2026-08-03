@@ -118,7 +118,7 @@ func (c *IMAPSelectorManager) FetchSenderData(ctx context.Context, uids []uint32
 
 	headerSection := &imap.FetchItemBodySection{
 		Specifier:    imap.PartSpecifierHeader,
-		HeaderFields: []string{"List-ID", "List-Unsubscribe", "Precedence", "X-Mailer", "User-Agent", "Reply-To", "Return-Path"},
+		HeaderFields: []string{"List-ID", "List-Unsubscribe", "Precedence", "X-Mailer", "User-Agent", "Reply-To", "Return-Path", "Message-ID"},
 		Peek:         true,
 	}
 	bodySection := &imap.FetchItemBodySection{
@@ -214,6 +214,7 @@ func (c *IMAPSelectorManager) FetchSenderData(ctx context.Context, uids []uint32
 
 		data := foo.MailData{
 			UID:               uid,
+			MessageID:         headerText(header, "Message-ID"),
 			ReplyToDomains:    replyToHosts,
 			From:              from,
 			SenderDomains:     fromHosts,

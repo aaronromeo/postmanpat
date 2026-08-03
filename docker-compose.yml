@@ -34,6 +34,10 @@ services:
       POSTMANPAT_S3_KEY: ${POSTMANPAT_S3_KEY}
       POSTMANPAT_S3_SECRET: ${POSTMANPAT_S3_SECRET}
       POSTMANPAT_WEBHOOK_URL: ${POSTMANPAT_WEBHOOK_URL:-http://postmanpat-announcements:8091}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://signoz-otel-collector:4317}
+      OTEL_EXPORTER_OTLP_INSECURE: ${OTEL_EXPORTER_OTLP_INSECURE:-true}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-postmanpat}
     volumes:
       - ${POSTMANPAT_CLEANUP_CONFIG:-./config/config_cleanup.yaml}:/config/config_cleanup.yaml:ro
     restart: unless-stopped
@@ -56,6 +60,10 @@ services:
       POSTMANPAT_WEBHOOK_URL: ${POSTMANPAT_WEBHOOK_URL:-http://postmanpat-announcements:8091}
       POSTMANPAT_CONFIG: /config/config_watch.yaml
       POSTMANPAT_WATCH_CONFIG: ${POSTMANPAT_WATCH_CONFIG}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://signoz-otel-collector:4317}
+      OTEL_EXPORTER_OTLP_INSECURE: ${OTEL_EXPORTER_OTLP_INSECURE:-true}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-postmanpat}
     volumes:
       - ${POSTMANPAT_WATCH_CONFIG:-./config/config_watch.yaml}:/config/config_watch.yaml:ro
     restart: unless-stopped

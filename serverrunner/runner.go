@@ -13,6 +13,7 @@ type ServerRunner interface {
 	SearchByServerMatchers(ctx context.Context, matchers appconfig.ServerMatchers) (map[string][]uint32, error)
 	MoveByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32, destination string) error
 	DeleteByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32, expunge bool) error
+	FetchSenderDataByMailbox(ctx context.Context, uidsByMailbox map[string][]uint32) (map[string][]imap.MailData, error)
 }
 
 func New(opts ...imap.Option) *imap.Client {

@@ -125,6 +125,30 @@ This setup runs `postmanpat cleanup` every 15 minutes inside the container using
    ```
 
 5. **One-off cleanup run**
-   ```bash
-   docker compose run --rm postmanpat postmanpat cleanup --config /config/config_cleanup.yaml
-   ```
+    ```bash
+    docker compose run --rm postmanpat postmanpat cleanup --config /config/config_cleanup.yaml
+    ```
+
+## Observability (OpenTelemetry + SigNoz)
+
+postmanpat sends OpenTelemetry traces and metrics to any OTLP/gRPC backend.
+Self-hosted SigNoz on the same machine is the supported target.
+
+Set these in `.env` before `docker compose up`:
+
+```bash
+# Self-hosted SigNoz: collector gRPC endpoint (http:// scheme = plaintext)
+OTEL_EXPORTER_OTLP_ENDPOINT=http://signoz-otel-collector:4317
+OTEL_EXPORTER_OTLP_INSECURE=true
+# SigNoz Cloud instead: endpoint ingest.<region>.signoz.cloud:443 over TLS
+# with OTEL_EXPORTER_OTLP_HEADERS=signoz-ingestion-key=<key>
+```
+
+Telemetry is enabled only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Traces:
+
+- `watch` — a `watch.cycle` span per new-mail batch, a `watch.message` span per
+  email with one `watch.rule_evaluated` event per rule (`matched` attr), and a
+  `watch.action` span per applied action.
+- `cleanup` — one `cleanup.invocation` root span per run, with
+  `cleanup.rule` and `cleanup.action` children and one `action.message_identified`
+  event per matched email.

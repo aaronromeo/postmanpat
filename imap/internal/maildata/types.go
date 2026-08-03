@@ -4,6 +4,7 @@ import "time"
 
 type MailData struct {
 	UID                    uint32
+	MessageID              string
 	ReplyToDomains         []string
 	SenderDomains          []string
 	From                   []string

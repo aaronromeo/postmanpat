@@ -1,68 +1,49 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
-- `context/` contains the current project overview and operating constraints.
-- Top-level Go packages:
-  - `announcer/` webhook notification client.
-  - `appconfig/` configuration models, parsing, and validation.
-  - `cleanuprunner/` cleanup orchestration.
-  - `cli/` Cobra command wiring for `postmanpat`.
-  - `imap/` IMAP facade API.
-  - `watchrunner/` watch-mode orchestration and watch-specific internals.
-- Package internals:
-  - `imap/internal/` for IMAP implementation details (`actions`, `searches`, `selectors`, `sessionmgr`, `maildata`).
-  - `watchrunner/internal/` for watch-only internals (`matchers`).
+## Overview
+- PostmanPat is a single-user Go CLI (module `github.com/aaronromeo/postmanpat`) for IMAP email cleanup/archival, deployed as a Docker container on DigitalOcean.
+- Go 1.25.5 (pinned in `.tool-versions` and `go.mod`). IMAP via `github.com/emersion/go-imap/v2` (beta); tests use `stretchr/testify`.
 
-## Build, Test, and Development Commands
-- **TBD**: Build, test, and local run commands will be defined once the Go module layout and tooling are finalized.
-- **CI**: This repository will use GitHub Actions to run build/test workflows on every pull request.
+## Project Structure
+- `cmd/postmanpat/` — thin entrypoint; calls `cli.Execute()`.
+- `cli/` — Cobra command wiring: `root`, `cleanup`, `watch`, `analyze` (+ tests).
+- `appconfig/` — YAML config models, load/validate, env helpers.
+- `imap/` — vendor-neutral IMAP facade; `internal/` holds implementation (`actions`, `searches`, `selectors`, `sessionmgr`, `maildata`).
+- `serverrunner/` — cleanup orchestration; defines the `ServerRunner` interface.
+- `watchrunner/` — IDLE-watch orchestration; `internal/matchers` holds client-side matchers.
+- `announcer/` — webhook (Discord/Slack) reporting client.
+- `ftest/` — integration tests using an in-memory TLS IMAP server; no external services required.
+- `bin/` — Python helper scripts (require PyYAML) for converting watch configs to cleanup configs and generating rules.
+- `context/` — project brief and operating constraints (`overview.md`, `requirements_stage1.md`, `roles_and_constraints.md`).
+- `docs/superpowers/specs/` — approved design specs (see OTel status below).
 
-## Coding Style & Naming Conventions
-- Go formatting should follow `gofmt` and standard Go naming conventions.
-- Keep package names short and lowercase; exported identifiers should use PascalCase.
-- When adding linting/formatting tools, document them here.
+## Build, Test, and Verify
+- Build: `go build -o bin ./...` → binary at `bin/postmanpat`.
+- Test: `go test ./...` — 71 tests across 14 packages; this is the only CI step (`.github/workflows/ci.yml`, runs on every push). Integration tests in `ftest/` run by default (no build tags/skips).
+- Single package: `go test ./ftest/` (or `./appconfig/`, `./watchrunner/...`).
+- No Makefile or linter config in the repo; use `gofmt -l .` and `go vet ./...` for verification.
 
-## Testing Guidelines
-- **TBD**: Define test framework(s), coverage expectations, and naming conventions once tests are added.
-- Prefer deterministic tests for IMAP interactions; consider local fixtures or mocks instead of live servers.
+## CLI Behavior
+- Config path: `--config` flag or `POSTMANPAT_CONFIG` env. A local `.env` file is auto-loaded (godotenv) when present.
+- `cleanup` (`--dry-run`): processes rules in order, applies all actions. Server-side matchers only — rules with `client` matchers are rejected. Actions supported at runtime: `delete`, `move` only. Non-idempotent (deletes/moves mail), so use `--dry-run` for validation.
+- `watch` (`--verbose`, `--test "Rule"` `--limit` `--mailbox`): long-lived IDLE loop on a single mailbox (INBOX). Client-side matchers only — rules with `server` matchers are rejected. Reloads config every 5 minutes; reconnects after benign IDLE errors and resumes from last UID.
+- `analyze` (`--top` `--examples` `--min-count`): scans via server matchers and writes a JSON report to a temp file, printing its path.
+- `age_window` uses IMAP INTERNALDATE, not the `Date:` header.
 
-## Commit & Pull Request Guidelines
-- **Commits**: No history to infer conventions yet. Use imperative, scoped messages (for example `email: handle duplicates`).
-- **PRs**: Include a concise description, test evidence (commands or CI link), and any operational notes.
+## Environment Variables
+- IMAP: `POSTMANPAT_IMAP_HOST/PORT/USER/PASS`; S3/Spaces: `POSTMANPAT_S3_ENDPOINT/REGION/BUCKET/KEY/SECRET`; reporting: `POSTMANPAT_WEBHOOK_URL`.
+- Real per-environment configs (`config/config_cleanup.yaml`, `config/config_watch.yaml`, `config/config_analyze.yaml`) are gitignored.
 
-## Roadmap / Stages (MVP Focus)
-- Stage 1: Functional IMAP ingestion and basic archival to DigitalOcean Spaces.
-- Stage 2: Scalable cleanup rules to triage large inboxes (bulk actions, safe defaults).
-- Stage 3: Assisted manual review tooling for selective cleanup to reach inbox zero.
-- Stage 4: Migration tooling to move mail from Gmail to Fastmail after cleanup.
+## Gotchas
+- `config/config_example.yaml` and parts of `README.md` are aspirational: the `archive` action type and `archive.path_template` are NOT implemented (runtime errors with "unsupported action type"), there is no `.env.sample`, and the Docker cron runs hourly (`docker/entrypoint.sh`) not every 15 minutes as the README claims.
+- `docker-compose.yml` builds an `announcements` git submodule — initialize it (`git submodule update --init --recursive`) before `docker compose up --build`.
+- `repomix-output.xml` is a generated repo dump; do not edit.
 
-## Stage 1 Requirements (Cleanup CLI)
-- CLI: `postmanpat cleanup` runs on a schedule (cron) with a YAML config file.
-- Config includes IMAP credentials, DO Spaces credentials, rules, and reporting.
-- Scope: process all IMAP folders (Gmail labels treated as folders).
-- Rules: ordered, apply-all; each rule must include folder selection criteria.
-- Matchers:
-  - Server (IMAP search): age, sender/domain substrings, recipients, body substrings, reply-to substrings, list-id substrings, folders.
-  - Client (post-fetch): regex-capable matchers (subject/body/sender/recipient/reply-to/list-id).
-- Actions: archive to Spaces, move to folder, delete; action order is defined per rule.
-- Archive format: store `.eml` plus decoded `.txt`/`.html` and attachments.
-- Archive path: rule-defined template path with variables.
-- Attachments: `<message-id>/<attachment-name>.<ext>`; email as `<message-id>.eml`.
-- Dedupe: hash of raw `.eml` across folders per run.
-- Checkpoint: per-folder last UID in a separate local file; allow reset/ignore.
-- Reporting: per-rule stats and errors via Slack or Discord webhook.
+## OTel Status
+- Implemented: `obs/` package (Init, env config, resource, `WrapCleanupRunner`, `WrapWatchRunner`), trace instrumentation for `watch` (cycle/message/rule_evaluated/action) and `cleanup` (invocation/rule/action + per-message events), IMAP RED metrics, OTLP gRPC export (plaintext via `OTEL_EXPORTER_OTLP_INSECURE` or `http://` scheme), docker-compose + cron OTLP env wiring.
+- Deferred: slog→OTel logs bridge (see `docs/superpowers/specs/2026-06-13-otel-foundation-cleanup-design.md` §3.3), OTLP/HTTP exporter.
 
-## IMAP Callback / Watcher (Realtime)
-- Goal: IMAP "callback" equivalent using a long-lived IMAP session with IDLE to trigger rule processing on new inbox mail.
-- Scope: single mailbox (INBOX) only for the watcher; no multi-mailbox support needed initially.
-- Transport: use IDLE only (no polling fallback) for initial implementation.
-- Reliability: handle reconnects with backoff and resume from last UID to avoid missing messages.
-
-## Deployment (DigitalOcean)
-- Target deployment is a Docker container on DigitalOcean.
-- Decide on hosting form factor (App Platform vs. Droplet) and document environment configuration.
-
-## Agent-Specific Instructions
-- Work in small, discussed steps; requirements and stages should be agreed before implementation.
+## Operating Constraints
+- `context/roles_and_constraints.md` defines the working mode: Plan/Act split (start in Plan, share a plan before edits, only make changes on an explicit `ACT`), and ask permission before running state-changing commands.
 - Keep this document updated as new directories, commands, and workflows are introduced.
 - IMAP logic must remain vendor-neutral; avoid provider-specific assumptions or headers unless explicitly documented and optional.
