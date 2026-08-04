@@ -19,6 +19,14 @@ def yaml_quote(value: str) -> str:
     return f"\"{escaped}\""
 
 
+def yaml_scalar(value: Any) -> str:
+    # YAML booleans must be emitted unquoted and lowercase; the Go config
+    # parser rejects quoted strings like "True"/"False" for bool fields.
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return yaml_quote(str(value))
+
+
 def yaml_lines(value: Any, indent: int = 0) -> List[str]:
     prefix = " " * indent
     lines: List[str] = []
@@ -30,7 +38,7 @@ def yaml_lines(value: Any, indent: int = 0) -> List[str]:
                 lines.append(f"{prefix}{key}:")
                 lines.extend(yaml_lines(item, indent + 2))
             else:
-                lines.append(f"{prefix}{key}: {yaml_quote(str(item))}")
+                lines.append(f"{prefix}{key}: {yaml_scalar(item)}")
         return lines
     if isinstance(value, list):
         for item in value:
@@ -45,13 +53,13 @@ def yaml_lines(value: Any, indent: int = 0) -> List[str]:
                     lines.append(f"{prefix}- {first_key}:")
                     lines.extend(yaml_lines(first_val, indent + 2))
                 else:
-                    lines.append(f"{prefix}- {first_key}: {yaml_quote(str(first_val))}")
+                    lines.append(f"{prefix}- {first_key}: {yaml_scalar(first_val)}")
                 if rest:
                     lines.extend(yaml_lines(rest, indent + 2))
             else:
-                lines.append(f"{prefix}- {yaml_quote(str(item))}")
+                lines.append(f"{prefix}- {yaml_scalar(item)}")
         return lines
-    lines.append(f"{prefix}{yaml_quote(str(value))}")
+    lines.append(f"{prefix}{yaml_scalar(value)}")
     return lines
 
 
