@@ -5,15 +5,55 @@
   "permission": {
     "bash": {
       "*": "allow",
+
+      "cat *": "allow",
+      "ls *": "allow",
+      "echo *": "allow",
+      "head *": "allow",
+      "tail *": "allow",
+      "find *": "allow",
+      "wc *": "allow",
+      "sort *": "allow",
+      "uniq *": "allow",
+      "comm *": "allow",
+      "diff *": "allow",
+      "tr *": "allow",
+      "awk *": "allow",
+      "sed *": "allow",
+      "stat *": "allow",
+      "date *": "allow",
+      "sleep *": "allow",
+      "xargs *": "allow",
+      "env *": "allow",
+      "jq *": "allow",
+      "sh *": "allow",
+      "mkdir *": "allow",
+      "whoami": "allow",
+      "id": "allow",
+      "true": "allow",
+
+      "python3 *": "allow",
+      "curl *": "allow",
+
+      "git status *": "allow",
       "git diff *": "allow",
       "git log *": "allow",
-      "git status *": "allow",
+      "git show *": "allow",
+      "git fetch *": "allow",
+      "git pull *": "allow",
       "git add *": "allow",
       "git commit *": "allow",
-      "git push *": "ask",
       "git checkout *": "allow",
       "git branch *": "allow",
+      "git remote *": "allow",
+      "git cherry-pick *": "allow",
+      "git merge-base *": "allow",
+      "git submodule *": "allow",
+
+      "gh *": "allow",
+
       "docker *": "allow",
+
       "go build *": "allow",
       "go test *": "allow",
       "go get *": "allow",
@@ -21,13 +61,12 @@
       "go vet *": "allow",
       "go clean *": "allow",
       "gofmt *": "allow",
-      "mkdir *": "allow",
-      "find *": "allow",
-      "sh *": "allow",
-      "cat *": "allow",
-      "ls *": "allow",
-      "echo *": "allow",
+
+      "git push *": "ask",
       "rm *": "ask"
+    },
+    "external_directory": {
+      "/opt/docker/**": "allow"
     },
     "edit": "allow",
     "write": "allow",
@@ -36,6 +75,8 @@
     "grep": "allow",
     "task": "allow",
     "webfetch": "allow",
-    "question": "allow"
+    "websearch": "allow",
+    "question": "allow",
+    "skill": "allow"
   }
 }
