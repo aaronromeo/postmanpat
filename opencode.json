@@ -25,6 +25,7 @@
       "sleep *": "allow",
       "xargs *": "allow",
       "env *": "allow",
+      "timeout *": "allow",
       "jq *": "allow",
       "sh *": "allow",
       "mkdir *": "allow",
