@@ -129,6 +129,67 @@ This setup runs `postmanpat cleanup` every 15 minutes inside the container using
     docker compose run --rm postmanpat postmanpat cleanup --config /config/config_cleanup.yaml
     ```
 
+### Docker (Analyze)
+
+Use a one-off container to run `postmanpat analyze`, which scans a mailbox using server matchers and writes a JSON report clustering senders and mailing lists (`list_lens`, `sender_unsub_lens`, `template_lens`, `recipient_tag_lens`). One report is written per rule; the mailbox scanned is the first entry in the rule's `server.folders`.
+
+1. **Create an analyze config**
+   - Rules must define `server` matchers only — `analyze` rejects rules with `client` matchers. `actions` are not required.
+   - Example (`config/config_analyze.yaml`, gitignored):
+
+     ```yaml
+     rules:
+       - name: "Analyze INBOX"
+         server:
+           age_window:
+             min: "3d"
+           folders:
+             - "INBOX"
+     ```
+
+2. **Run a one-off analyze container**
+
+   `analyze` writes the report to a temp file inside the container and prints its path. Set `TMPDIR` and mount a host directory at that path so the report survives `--rm` cleanup:
+
+   ```bash
+   mkdir -p analyze-out
+   docker compose run --rm \
+     -v ./config/config_analyze.yaml:/config/config_analyze.yaml:ro \
+     -v ./analyze-out:/analyze-out \
+     -e TMPDIR=/analyze-out \
+     postmanpat postmanpat analyze --config /config/config_analyze.yaml
+   ```
+
+   - Flags: `--top` (max clusters per lens, default 100), `--examples` (max examples per field, default 20), `--min-count` (minimum cluster size, default 2).
+   - Only the IMAP env vars are required; the S3 and webhook vars are unused by `analyze`.
+
+3. **Run on rocketman (production)**
+
+   Production configs live in the [rocketman repo](https://github.com/aaronromeo/rocketman/tree/main/postmanpat-config). From the postmanpat checkout on that host:
+
+   ```bash
+   sudo -u dockerops docker compose run --rm \
+     -v /home/aaron/workspace/rocketman/postmanpat-config/config_analyze.yaml:/config/config_analyze.yaml:ro \
+     -v /home/aaron/workspace/rocketman/postmanpat-config/analyze-out:/analyze-out \
+     -e TMPDIR=/analyze-out \
+     postmanpat postmanpat analyze --config /config/config_analyze.yaml
+   ```
+
+4. **Turn the report into rules**
+
+   Feed the report into the helper script (requires PyYAML), which interactively generates watch and cleanup rules:
+
+   ```bash
+   python3 bin/postmanpat-generate-rules.py \
+     --analyze analyze-out/postmanpat-analyze-*.json \
+     --watch-out watch-new.yml \
+     --cleanup-out cleanup-new.yml
+   ```
+
+   Review the generated rules, then merge them into the rocketman repo:
+   - Watch rules → `postmanpat-config/watch.yml`
+   - Cleanup rules → `postmanpat-config/cleanup-onetime.yml`
+
 ## Observability (OpenTelemetry + SigNoz)
 
 postmanpat sends OpenTelemetry traces and metrics to any OTLP/gRPC backend.
