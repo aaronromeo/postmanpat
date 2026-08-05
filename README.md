@@ -129,6 +129,20 @@ This setup runs `postmanpat cleanup` every 15 minutes inside the container using
     docker compose run --rm postmanpat postmanpat cleanup --config /config/config_cleanup.yaml
     ```
 
+**Overriding the cleanup config for a one-off run**
+
+The bind-mounted cleanup config is set by the `POSTMANPAT_CLEANUP_CONFIG` env var (see `docker-compose.yml`). Prefer it over `-v` when running a one-off with a different config:
+
+```bash
+POSTMANPAT_CLEANUP_CONFIG=/path/to/cleanup-new.yml \
+  docker compose run --rm postmanpat postmanpat cleanup --config /config/config_cleanup.yaml --dry-run
+```
+
+Notes:
+- A missing host file becomes a root-owned directory: with `-v /host/file.yml:/config/config_cleanup.yaml`, the Docker daemon auto-creates a nonexistent host source **as a directory owned by root**. The container then mounts that directory over `/config/config_cleanup.yaml`, and the leftover directory must be removed with `sudo rmdir`. `docker compose run -v` behaves the same, and `:ro` does not prevent it (read-only applies only inside the container).
+- `docker compose run -v` *adds* a mount instead of replacing the service's volume, so both the compose-defined config and the `-v` path target `/config/config_cleanup.yaml` and shadow each other.
+- Always create the host config file before running.
+
 ### Docker (Analyze)
 
 Use a one-off container to run `postmanpat analyze`, which scans a mailbox using server matchers and writes a JSON report clustering senders and mailing lists (`list_lens`, `sender_unsub_lens`, `template_lens`, `recipient_tag_lens`). One report is written per rule; the mailbox scanned is the first entry in the rule's `server.folders`.
