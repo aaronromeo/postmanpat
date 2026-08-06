@@ -141,6 +141,8 @@ POSTMANPAT_CLEANUP_CONFIG=/path/to/cleanup-new.yml \
 Notes:
 - A missing host file becomes a root-owned directory: with `-v /host/file.yml:/config/config_cleanup.yaml`, the Docker daemon auto-creates a nonexistent host source **as a directory owned by root**. The container then mounts that directory over `/config/config_cleanup.yaml`, and the leftover directory must be removed with `sudo rmdir`. `docker compose run -v` behaves the same, and `:ro` does not prevent it (read-only applies only inside the container).
 - `docker compose run -v` *adds* a mount instead of replacing the service's volume, so both the compose-defined config and the `-v` path target `/config/config_cleanup.yaml` and shadow each other.
+- Only ad-hoc `compose run -v` mounts are exposed to this. The long-lived services mount `${POSTMANPAT_CLEANUP_CONFIG}` / `${POSTMANPAT_WATCH_CONFIG}` from `.env` (existing files under `/opt/docker/rocketman/postmanpat-config/`), and a compose-managed volume whose source already exists can never trigger auto-creation — which is why the watch config has never hit this problem.
+- Beware the two rocketman checkouts: `bin/postmanpat-generate-rules.py` writes `--watch-out`/`--cleanup-out` relative to where it is run (e.g. `../rocketman/…` → `/opt/docker/rocketman/`), **not** your working clone (e.g. `/home/aaron/workspace/rocketman/`). Mounting the filename from the wrong tree means the file is "missing" even though it was generated — `ls` the exact mount path before running.
 - Always create the host config file before running.
 
 ### Docker (Analyze)
