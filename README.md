@@ -131,16 +131,23 @@ This setup runs `postmanpat cleanup` every 15 minutes inside the container using
 
 **Overriding the cleanup config for a one-off run**
 
-The bind-mounted cleanup config is set by the `POSTMANPAT_CLEANUP_CONFIG` env var (see `docker-compose.yml`). Prefer it over `-v` when running a one-off with a different config:
+When running on the production host (via `sudo -u dockerops docker compose ...`), use an explicit `-v` bind mount to shadow the compose-defined cleanup config:
 
 ```bash
-POSTMANPAT_CLEANUP_CONFIG=/path/to/cleanup-new.yml \
-  docker compose run --rm postmanpat postmanpat cleanup --config /config/config_cleanup.yaml --dry-run
+# Make sure the host file exists first — a missing source becomes a root-owned directory.
+ls /path/to/cleanup-new.yml
+sudo -u dockerops docker compose run --rm \
+  -v /path/to/cleanup-new.yml:/config/config_cleanup.yaml:ro \
+  postmanpat postmanpat cleanup --config /config/config_cleanup.yaml --dry-run
 ```
+
+Drop `--dry-run` for the real run.
+
+The env-var form (`POSTMANPAT_CLEANUP_CONFIG=... docker compose run ...`) only works when compose runs directly as the deploy user. Under `sudo -u dockerops`, sudo's `env_reset` strips the variable before compose sees it, so the one-off config is silently ignored. If you prefer the env-var route, pass it through sudo explicitly: `sudo -u dockerops env POSTMANPAT_CLEANUP_CONFIG=/path/to/cleanup-new.yml docker compose run --rm postmanpat postmanpat cleanup --config /config/config_cleanup.yaml --dry-run`.
 
 Notes:
 - A missing host file becomes a root-owned directory: with `-v /host/file.yml:/config/config_cleanup.yaml`, the Docker daemon auto-creates a nonexistent host source **as a directory owned by root**. The container then mounts that directory over `/config/config_cleanup.yaml`, and the leftover directory must be removed with `sudo rmdir`. `docker compose run -v` behaves the same, and `:ro` does not prevent it (read-only applies only inside the container).
-- `docker compose run -v` *adds* a mount instead of replacing the service's volume, so both the compose-defined config and the `-v` path target `/config/config_cleanup.yaml` and shadow each other.
+- `docker compose run -v` *adds* a mount instead of replacing the service's volume, so both the compose-defined config and the `-v` path target `/config/config_cleanup.yaml` and shadow each other. This is why the `-v` form above works: the extra bind mount takes precedence over the compose-defined one.
 - Only ad-hoc `compose run -v` mounts are exposed to this. The long-lived services mount `${POSTMANPAT_CLEANUP_CONFIG}` / `${POSTMANPAT_WATCH_CONFIG}` from `.env` (existing files under `/opt/docker/rocketman/postmanpat-config/`), and a compose-managed volume whose source already exists can never trigger auto-creation — which is why the watch config has never hit this problem.
 - Beware the two rocketman checkouts: `bin/postmanpat-generate-rules.py` writes `--watch-out`/`--cleanup-out` relative to where it is run (e.g. `../rocketman/…` → `/opt/docker/rocketman/`), **not** your working clone (e.g. `/home/aaron/workspace/rocketman/`). Mounting the filename from the wrong tree means the file is "missing" even though it was generated — `ls` the exact mount path before running.
 - Always create the host config file before running.
