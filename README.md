@@ -143,8 +143,6 @@ sudo -u dockerops docker compose run --rm \
 
 Drop `--dry-run` for the real run.
 
-The env-var form (`POSTMANPAT_CLEANUP_CONFIG=... docker compose run ...`) only works when compose runs directly as the deploy user. Under `sudo -u dockerops`, sudo's `env_reset` strips the variable before compose sees it, so the one-off config is silently ignored. If you prefer the env-var route, pass it through sudo explicitly: `sudo -u dockerops env POSTMANPAT_CLEANUP_CONFIG=/path/to/cleanup-new.yml docker compose run --rm postmanpat postmanpat cleanup --config /config/config_cleanup.yaml --dry-run`.
-
 Notes:
 - A missing host file becomes a root-owned directory: with `-v /host/file.yml:/config/config_cleanup.yaml`, the Docker daemon auto-creates a nonexistent host source **as a directory owned by root**. The container then mounts that directory over `/config/config_cleanup.yaml`, and the leftover directory must be removed with `sudo rmdir`. `docker compose run -v` behaves the same, and `:ro` does not prevent it (read-only applies only inside the container).
 - `docker compose run -v` *adds* a mount instead of replacing the service's volume, so both the compose-defined config and the `-v` path target `/config/config_cleanup.yaml` and shadow each other. This is why the `-v` form above works: the extra bind mount takes precedence over the compose-defined one.
