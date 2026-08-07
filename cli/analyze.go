@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"crypto/sha1"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,8 @@ import (
 	"github.com/aaronromeo/postmanpat/serverrunner"
 	"github.com/spf13/cobra"
 )
+
+var analyzeTLSConfigProvider func() *tls.Config
 
 var analyzeCmd = &cobra.Command{
 	Use:   "analyze",
@@ -58,12 +61,16 @@ var analyzeCmd = &cobra.Command{
 			ctx = context.Background()
 		}
 
-		client := serverrunner.New(
+		clientOpts := []imap.Option{
 			imap.WithAddr(
 				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
 			),
 			imap.WithCreds(imapEnv.User, imapEnv.Pass),
-		)
+		}
+		if analyzeTLSConfigProvider != nil {
+			clientOpts = append(clientOpts, imap.WithTLSConfig(analyzeTLSConfigProvider()))
+		}
+		client := serverrunner.New(clientOpts...)
 		if err := client.Connect(); err != nil {
 			return err
 		}
@@ -78,6 +85,10 @@ var analyzeCmd = &cobra.Command{
 			return err
 		}
 		minCount, err := cmd.Flags().GetInt("min-count")
+		if err != nil {
+			return err
+		}
+		noIgnore, err := cmd.Flags().GetBool("no-ignore")
 		if err != nil {
 			return err
 		}
@@ -108,6 +119,9 @@ var analyzeCmd = &cobra.Command{
 			}
 
 			data := dataByMailbox[mailbox]
+			if !noIgnore {
+				data = filterFullyDecided(data, cfg.Ignore)
+			}
 			report, err := buildAnalyzeReport(data, analyzeReportParams{
 				Mailbox:   mailbox,
 				Account:   imapEnv.User,
@@ -136,6 +150,7 @@ func init() {
 	analyzeCmd.Flags().Int("top", 100, "Maximum clusters per lens")
 	analyzeCmd.Flags().Int("examples", 20, "Maximum examples per field")
 	analyzeCmd.Flags().Int("min-count", 2, "Minimum cluster count to include")
+	analyzeCmd.Flags().Bool("no-ignore", false, "Disable ignore-list filtering")
 }
 
 type analyzeReportParams struct {
