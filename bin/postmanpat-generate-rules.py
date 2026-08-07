@@ -322,42 +322,49 @@ def process_cluster(
     for line in format_examples(cluster):
         print(f"  {line}")
 
+    suppressed = cluster.get("suppressed", []) or []
     rule_name: Optional[str] = None
 
-    watch_response = prompt_yes_no("Generate watch rule?", default=False)
-    if watch_response == "q":
-        return False, default_folders
-    if watch_response == "y":
-        rule_name = rule_name or rule_name_prompt(lens, cluster)
-        if lens == "list_lens":
-            rule = build_watch_rule_list(cluster, rule_name)
-        elif lens == "sender_unsub_lens":
-            rule = build_watch_rule_sender(cluster, rule_name)
-        elif lens == "recipient_tag_lens":
-            rule = build_watch_rule_recipient_tag(cluster, rule_name)
-        else:
-            print(f"Unsupported lens for watch rules: {lens}")
-            rule = None
-        if rule:
-            watch_rules.append(rule)
+    if "watch" in suppressed:
+        print("Watch rule suppressed by ignore list.")
+    else:
+        watch_response = prompt_yes_no("Generate watch rule?", default=False)
+        if watch_response == "q":
+            return False, default_folders
+        if watch_response == "y":
+            rule_name = rule_name or rule_name_prompt(lens, cluster)
+            if lens == "list_lens":
+                rule = build_watch_rule_list(cluster, rule_name)
+            elif lens == "sender_unsub_lens":
+                rule = build_watch_rule_sender(cluster, rule_name)
+            elif lens == "recipient_tag_lens":
+                rule = build_watch_rule_recipient_tag(cluster, rule_name)
+            else:
+                print(f"Unsupported lens for watch rules: {lens}")
+                rule = None
+            if rule:
+                watch_rules.append(rule)
 
-    cleanup_response = prompt_yes_no("Generate cleanup rule?", default=False)
-    if cleanup_response == "q":
-        return False, default_folders
-    if cleanup_response == "y":
-        rule_name = rule_name or rule_name_prompt(lens, cluster)
-        if lens == "list_lens":
-            rule, default_folders = build_cleanup_rule_list(cluster, rule_name, default_folders)
-        elif lens == "sender_unsub_lens":
-            rule, default_folders = build_cleanup_rule_sender(cluster, rule_name, default_folders)
-        elif lens == "recipient_tag_lens":
-            print("recipient_tag_lens does not support server-side cleanup rules.")
-            rule = None
-        else:
-            print(f"Unsupported lens for cleanup rules: {lens}")
-            rule = None
-        if rule:
-            cleanup_rules.append(rule)
+    if "cleanup" in suppressed:
+        print("Cleanup rule suppressed by ignore list.")
+    else:
+        cleanup_response = prompt_yes_no("Generate cleanup rule?", default=False)
+        if cleanup_response == "q":
+            return False, default_folders
+        if cleanup_response == "y":
+            rule_name = rule_name or rule_name_prompt(lens, cluster)
+            if lens == "list_lens":
+                rule, default_folders = build_cleanup_rule_list(cluster, rule_name, default_folders)
+            elif lens == "sender_unsub_lens":
+                rule, default_folders = build_cleanup_rule_sender(cluster, rule_name, default_folders)
+            elif lens == "recipient_tag_lens":
+                print("recipient_tag_lens does not support server-side cleanup rules.")
+                rule = None
+            else:
+                print(f"Unsupported lens for cleanup rules: {lens}")
+                rule = None
+            if rule:
+                cleanup_rules.append(rule)
 
     return True, default_folders
 
@@ -408,12 +415,19 @@ def main() -> int:
     cleanup_rules: List[Dict[str, Any]] = []
     default_folders: Optional[str] = "INBOX"
 
+    suppressed_count = 0
+
     for lens, cluster in clusters:
         if not enabled_lenses.get(lens, True):
             continue
         cluster_id = str(cluster.get("cluster_id", ""))
         if cluster_id in processed_ids:
             continue
+
+        suppressed = cluster.get("suppressed", []) or []
+        if "watch" in suppressed and "cleanup" in suppressed:
+            suppressed_count += 1
+            continue  # not prompted -> not written to the Generation Checkpoint
 
         proceed, default_folders = process_cluster(
             lens,
@@ -426,6 +440,9 @@ def main() -> int:
             break
         processed_ids.add(cluster_id)
         save_checkpoint(checkpoint_path, processed_ids)
+
+    if suppressed_count:
+        print(f"Skipped {suppressed_count} clusters suppressed by ignore list")
 
     watch_config = {"rules": watch_rules}
     cleanup_config = {"rules": cleanup_rules}
