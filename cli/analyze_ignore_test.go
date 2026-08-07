@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -199,5 +201,117 @@ func TestFilterFullyDecidedCrossIdentityBothLists(t *testing.T) {
 	}
 	if got := filterFullyDecided(data, ignore); len(got) != 0 {
 		t.Fatal("cross-identity both-lists match should be filtered (spec: conservative)")
+	}
+}
+
+func TestBuildAnalyzeReportWatchSuppressed(t *testing.T) {
+	now := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+	data := []imap.MailData{
+		{
+			SenderDomains: []string{"github.com"},
+			From:          []string{"noreply@github.com"},
+			SubjectRaw:    "Hello",
+			MessageDate:   time.Date(2024, 1, 10, 12, 0, 0, 0, time.UTC),
+		},
+	}
+	ignore := &appconfig.IgnoreConfig{
+		Watch: appconfig.IgnoreMatchers{SenderDomains: []string{"github.com"}},
+	}
+	report, err := buildAnalyzeReport(data, analyzeReportParams{
+		Mailbox:   "INBOX",
+		Account:   "user@example.com",
+		Generated: now,
+		Options: analyzeOptions{
+			Top:      100,
+			Examples: 20,
+			MinCount: 1,
+		},
+		Ignore: ignore,
+	})
+	if err != nil {
+		t.Fatalf("build report: %v", err)
+	}
+	clusters := report.Indexes.SenderLens.Clusters
+	if len(clusters) != 1 {
+		t.Fatalf("expected 1 sender_unsub_lens cluster, got %d", len(clusters))
+	}
+	if len(clusters[0].Suppressed) != 1 || clusters[0].Suppressed[0] != "watch" {
+		t.Fatalf("expected Suppressed=[watch], got %v", clusters[0].Suppressed)
+	}
+}
+
+func TestBuildAnalyzeReportBothSuppressed(t *testing.T) {
+	now := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+	data := []imap.MailData{
+		{
+			SenderDomains: []string{"github.com"},
+			From:          []string{"noreply@github.com"},
+			ListID:        "<announce.github.com>",
+			SubjectRaw:    "Hello",
+			MessageDate:   time.Date(2024, 1, 10, 12, 0, 0, 0, time.UTC),
+		},
+	}
+	ignore := &appconfig.IgnoreConfig{
+		Watch:   appconfig.IgnoreMatchers{SenderDomains: []string{"github.com"}},
+		Cleanup: appconfig.IgnoreMatchers{ListIDs: []string{"announce.github"}},
+	}
+	report, err := buildAnalyzeReport(data, analyzeReportParams{
+		Mailbox:   "INBOX",
+		Account:   "user@example.com",
+		Generated: now,
+		Options: analyzeOptions{
+			Top:      100,
+			Examples: 20,
+			MinCount: 1,
+		},
+		Ignore: ignore,
+	})
+	if err != nil {
+		t.Fatalf("build report: %v", err)
+	}
+	// The message matches both watch (github.com domain) and cleanup (announce.github list-id).
+	// In the normal flow, filterFullyDecided would remove it. Here the cluster is built
+	// but annotated with both suppression flags.
+	listClusters := report.Indexes.ListLens.Clusters
+	if len(listClusters) != 1 {
+		t.Fatalf("expected 1 list_lens cluster, got %d", len(listClusters))
+	}
+	if len(listClusters[0].Suppressed) != 2 ||
+		listClusters[0].Suppressed[0] != "watch" ||
+		listClusters[0].Suppressed[1] != "cleanup" {
+		t.Fatalf("expected Suppressed=[watch,cleanup], got %v", listClusters[0].Suppressed)
+	}
+}
+
+func TestBuildAnalyzeReportNilIgnoreNoSuppressed(t *testing.T) {
+	now := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+	data := []imap.MailData{
+		{
+			SenderDomains: []string{"github.com"},
+			From:          []string{"noreply@github.com"},
+			SubjectRaw:    "Hello",
+			MessageDate:   time.Date(2024, 1, 10, 12, 0, 0, 0, time.UTC),
+		},
+	}
+	report, err := buildAnalyzeReport(data, analyzeReportParams{
+		Mailbox:   "INBOX",
+		Account:   "user@example.com",
+		Generated: now,
+		Options: analyzeOptions{
+			Top:      100,
+			Examples: 20,
+			MinCount: 1,
+		},
+		Ignore: nil,
+	})
+	if err != nil {
+		t.Fatalf("build report: %v", err)
+	}
+	payload, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(payload), "suppressed") {
+		t.Fatal("report must not contain 'suppressed' field when Ignore is nil")
 	}
 }

@@ -63,6 +63,12 @@ func runAnalyzeToReport(t *testing.T, extraArgs ...string) map[string]any {
 		t.Fatalf("write config: %v", err)
 	}
 
+	// Reset analyze flags to defaults to avoid cross-test pollution.
+	_ = analyzeCmd.Flags().Set("no-ignore", "false")
+	_ = analyzeCmd.Flags().Set("min-count", "2")
+	_ = analyzeCmd.Flags().Set("top", "100")
+	_ = analyzeCmd.Flags().Set("examples", "20")
+
 	var output bytes.Buffer
 	args := append([]string{"analyze", "--config", cfgPath}, extraArgs...)
 	rootCmd.SetArgs(args)
@@ -125,5 +131,51 @@ func TestAnalyzeNoIgnoreBypassesFiltering(t *testing.T) {
 
 	if got := analyzeTotalScanned(t, report); got != 3 {
 		t.Fatalf("expected all 3 messages with --no-ignore, got %v", got)
+	}
+}
+
+func TestAnalyzeAnnotatesWatchSuppressedCluster(t *testing.T) {
+	report := runAnalyzeToReport(t, "--min-count", "1")
+
+	indexes, ok := report["indexes"].(map[string]any)
+	if !ok {
+		t.Fatal("report missing indexes")
+	}
+	senderLens, ok := indexes["sender_unsub_lens"].(map[string]any)
+	if !ok {
+		t.Fatal("report missing sender_unsub_lens")
+	}
+	clusters, ok := senderLens["clusters"].([]any)
+	if !ok {
+		t.Fatal("sender_unsub_lens.clusters is invalid")
+	}
+
+	var found bool
+	for _, c := range clusters {
+		cluster := c.(map[string]any)
+		keys := cluster["keys"].(map[string]any)
+		domains, ok := keys["SenderDomains"].([]any)
+		if ok && len(domains) == 1 && domains[0] == "github.com" {
+			suppressed, ok := cluster["suppressed"].([]any)
+			if !ok || len(suppressed) != 1 || suppressed[0] != "watch" {
+				t.Fatalf("expected suppress=[watch], got %v", cluster["suppressed"])
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected to find github.com cluster in sender_unsub_lens")
+	}
+}
+
+func TestAnalyzeNoIgnoreNoSuppressedField(t *testing.T) {
+	report := runAnalyzeToReport(t, "--no-ignore")
+
+	raw, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(raw), "suppressed") {
+		t.Fatal("report with --no-ignore must not contain 'suppressed' field")
 	}
 }
