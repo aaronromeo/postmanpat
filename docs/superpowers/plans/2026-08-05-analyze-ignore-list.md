@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a config-driven Ignore List (Watch Ignore List + Cleanup Ignore List) that filters Fully Decided messages out of `analyze` reports and suppresses per-rule-type prompts in `bin/postmanpat-generate-rules.py`.
+**Goal:** Add a config-driven Ignore List (Watch Ignore List + Cleanup Ignore List) that filters Fully Decided messages out of `analyze` reports, annotates surviving clusters with per-rule-type suppression, and lets the rule generator read the annotation (no config-side matching) while interactively authoring new ignore entries.
 
-**Architecture:** Split filtering per ADR 0001: `analyze` (Go) filters messages matching BOTH ignore lists before report aggregation (report stays silent; `--no-ignore` bypasses); the rule generator (Python) reads the same analyze YAML via a new `--config` flag and suppresses only the corresponding prompt for half-decided clusters, without touching the Generation Checkpoint.
+**Architecture:** Split filtering per ADR 0001: `analyze` (Go) filters Fully Decided messages before aggregation and annotates each surviving cluster with `"suppressed": ["watch"]` and/or `["cleanup"]` (ADR 0002). The rule generator (Python) reads the annotation from the report JSON — zero ignore-matching logic — and can author new ignore entries into an `--ignore-out` YAML fragment via an `"i"` answer on prompts. `--no-ignore` disables both filtering and annotation.
 
 **Tech Stack:** Go 1.25.5 (cobra, yaml.v3), Python 3.12 (stdlib + PyYAML), unittest (Python), in-memory IMAP server (ftest) for Go command-level tests.
 
-**Spec:** `docs/superpowers/specs/2026-08-05-analyze-ignore-list-design.md` · **Glossary:** `CONTEXT.md` · **ADR:** `docs/adr/0001-ignore-list-split-filtering.md`
+**Spec:** `docs/superpowers/specs/2026-08-05-analyze-ignore-list-design.md` · **Glossary:** `CONTEXT.md` · **ADR:** `docs/adr/0001-ignore-list-split-filtering.md`, `docs/adr/0002-suppression-via-report-annotation.md`
 
 ## Global Constraints
 
@@ -19,9 +19,10 @@
 - Conventional commit messages per `git log` (`feat(scope): ...`, `docs: ...`).
 - All Go code gofmt-clean; keep the `if __name__ == "__main__"` guard in bin/ scripts (tests load them via importlib).
 - IMAP logic stays vendor-neutral; no provider-specific assumptions.
-- Terminology follows `CONTEXT.md` (Ignore List, Watch Ignore List, Cleanup Ignore List, Fully Decided, Generation Checkpoint).
+- Terminology follows `CONTEXT.md` (Ignore List, Watch Ignore List, Cleanup Ignore List, Fully Decided, Generation Checkpoint, Suppressed).
+- JSON field `suppressed` uses `omitempty` — omitted when empty.
 
-**Task ordering:** Task 1 (appconfig) blocks Tasks 2–3 (Go cli). Tasks 4–6 (Python) are independent of the Go stream and can run in parallel with it. Task 7 (docs) comes last.
+**Task ordering:** Task 1 (appconfig) blocks Tasks 2–4 (Go cli). Task 5 conceptually depends on Task 4 (annotation must exist) but is unit-testable with hand-built cluster dicts. Task 6 is independent of Tasks 4–5 (pure functions + prompt flow can be tested in isolation). Task 7 (docs) comes last.
 
 ---
 
@@ -285,7 +286,7 @@ ignore:
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `go test ./appconfig/ -run "TestIgnore" -v`
-Expected: FAIL — package does not compile (`undefined: IgnoreConfig` etc. is NOT shown because tests reference only `cfg.Ignore`; the compile error is `cfg.Ignore undefined (type Config has no field or method Ignore)`). All 6 tests fail.
+Expected: FAIL — package does not compile (`cfg.Ignore undefined (type Config has no field or method Ignore)`). All 6 tests fail.
 
 - [ ] **Step 3: Write the minimal implementation**
 
@@ -300,8 +301,6 @@ type Config struct {
 	Ignore     *IgnoreConfig `yaml:"ignore"`
 }
 ```
-
-(Keep the existing field order/comments of `Config`; just add the `Ignore` line. If `Config` has doc comments on fields, match that style.)
 
 2. Add the new structs after the `Checkpoint` struct definition:
 
@@ -343,7 +342,7 @@ func validateIgnoreConfig(ic *IgnoreConfig) error {
 		return err
 	}
 	if err := validateIgnoreMatchers("ignore.cleanup", ic.Cleanup); err != nil {
-		return err
+			return err
 	}
 	return nil
 }
@@ -917,431 +916,506 @@ git commit -m "feat(cli): filter fully-decided mail in analyze; add --no-ignore"
 
 ---
 
-### Task 4: bin — `load_ignore_lists` for the rule generator
+### Task 4: cli — per-cluster suppression annotation (TDD + e2e)
 
 **Files:**
-- Modify: `bin/postmanpat-generate-rules.py` (add `import yaml`, add function)
-- Test: `bin/test_generate_rules.py` (create)
+- Modify: `cli/analyze.go` (struct fields, accumulateCluster, builders, finalizeClusters, buildAnalyzeReport, RunE)
+- Test: `cli/analyze_ignore_test.go` (add unit tests at buildAnalyzeReport seam)
+- Test: `cli/analyze_ignore_e2e_test.go` (add e2e assertions for suppressed annotation)
 
 **Interfaces:**
-- Consumes: path to the analyze YAML config (same file the Go side reads).
-- Produces (consumed by Tasks 5–6):
-  ```python
-  def load_ignore_lists(config_path: str) -> Dict[str, Dict[str, List[str]]]:
-      """Return {"watch": {field: [...]}, "cleanup": {field: [...]}} with all
-      five fields (sender_domains, sender_addresses, list_ids, recipient_tags,
-      subject_substrings) always present as lists. Missing file/section => empty."""
-  ```
+- Consumes: `matchesIgnoreMatchers` (Task 2), `appconfig.IgnoreConfig` (Task 1).
+- Produces: `analyzeCluster` gains `Suppressed []string` (omitempty, deterministic order: watch first); `clusterAccumulator` gains `suppressWatch`, `suppressCleanup` bools; `accumulateCluster` gains `ignore *appconfig.IgnoreConfig` param; all four lens builders gain `ignore` param; `buildAnalyzeReport` params gain `Ignore`; `--no-ignore` disables both filtering and annotation.
 
-- [ ] **Step 1: Write the failing tests**
+Semantics: per-message during accumulation, `if ignore != nil { if matchesIgnoreMatchers(item, ignore.Watch) { acc.suppressWatch = true }; if matchesIgnoreMatchers(item, ignore.Cleanup) { acc.suppressCleanup = true } }`. OR-aggregation: any matching message suppresses the cluster for that rule type. `finalizeClusters` maps booleans to `Suppressed` slice (watch first, cleanup second, omitted when empty). `--no-ignore` sets `ignore = nil` so no annotation is produced.
 
-Create `bin/test_generate_rules.py`:
+- [ ] **Step 1: Write the failing unit tests**
 
-```python
-#!/usr/bin/env python3
-"""Tests for ignore-list loading and cluster suppression in generate-rules."""
-import importlib.util
-import os
-import tempfile
-import unittest
-from pathlib import Path
+Append to `cli/analyze_ignore_test.go`:
 
-BIN = Path(__file__).resolve().parent
+```go
+func TestBuildAnalyzeReportWatchSuppressed(t *testing.T) {
+	now := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+	data := []imap.MailData{
+		{
+			SenderDomains: []string{"github.com"},
+			From:          []string{"noreply@github.com"},
+			SubjectRaw:    "Hello",
+			MessageDate:   time.Date(2024, 1, 10, 12, 0, 0, 0, time.UTC),
+		},
+	}
+	ignore := &appconfig.IgnoreConfig{
+		Watch: appconfig.IgnoreMatchers{SenderDomains: []string{"github.com"}},
+	}
+	report, err := buildAnalyzeReport(data, analyzeReportParams{
+		Mailbox:   "INBOX",
+		Account:   "user@example.com",
+		Generated: now,
+		Options: analyzeOptions{
+			Top:      100,
+			Examples: 20,
+			MinCount: 1,
+		},
+		Ignore: ignore,
+	})
+	if err != nil {
+		t.Fatalf("build report: %v", err)
+	}
+	clusters := report.Indexes.SenderLens.Clusters
+	if len(clusters) != 1 {
+		t.Fatalf("expected 1 sender_unsub_lens cluster, got %d", len(clusters))
+	}
+	if len(clusters[0].Suppressed) != 1 || clusters[0].Suppressed[0] != "watch" {
+		t.Fatalf("expected Suppressed=[watch], got %v", clusters[0].Suppressed)
+	}
+}
 
+func TestBuildAnalyzeReportBothSuppressed(t *testing.T) {
+	now := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+	data := []imap.MailData{
+		{
+			SenderDomains: []string{"github.com"},
+			From:          []string{"noreply@github.com"},
+			ListID:        "<announce.github.com>",
+			SubjectRaw:    "Hello",
+			MessageDate:   time.Date(2024, 1, 10, 12, 0, 0, 0, time.UTC),
+		},
+	}
+	ignore := &appconfig.IgnoreConfig{
+		Watch:   appconfig.IgnoreMatchers{SenderDomains: []string{"github.com"}},
+		Cleanup: appconfig.IgnoreMatchers{ListIDs: []string{"announce.github"}},
+	}
+	report, err := buildAnalyzeReport(data, analyzeReportParams{
+		Mailbox:   "INBOX",
+		Account:   "user@example.com",
+		Generated: now,
+		Options: analyzeOptions{
+			Top:      100,
+			Examples: 20,
+			MinCount: 1,
+		},
+		Ignore: ignore,
+	})
+	if err != nil {
+		t.Fatalf("build report: %v", err)
+	}
+	// The message matches both watch (github.com domain) and cleanup (announce.github list-id).
+	// In the normal flow, filterFullyDecided would remove it. Here the cluster is built
+	// but annotated with both suppression flags.
+	listClusters := report.Indexes.ListLens.Clusters
+	if len(listClusters) != 1 {
+		t.Fatalf("expected 1 list_lens cluster, got %d", len(listClusters))
+	}
+	if len(listClusters[0].Suppressed) != 2 ||
+		listClusters[0].Suppressed[0] != "watch" ||
+		listClusters[0].Suppressed[1] != "cleanup" {
+		t.Fatalf("expected Suppressed=[watch,cleanup], got %v", listClusters[0].Suppressed)
+	}
+}
 
-def load_module(name: str):
-    spec = importlib.util.spec_from_file_location(name, BIN / f"{name}.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-mod = load_module("postmanpat-generate-rules")
-
-IGNORE_FIELDS = (
-    "sender_domains",
-    "sender_addresses",
-    "list_ids",
-    "recipient_tags",
-    "subject_substrings",
-)
-
-
-class TestLoadIgnoreLists(unittest.TestCase):
-    def _write_config(self, content: str) -> str:
-        fd, path = tempfile.mkstemp(suffix=".yaml")
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(content)
-        self.addCleanup(os.remove, path)
-        return path
-
-    def test_missing_config_returns_empty(self):
-        result = mod.load_ignore_lists("/nonexistent/path.yaml")
-        for side in ("watch", "cleanup"):
-            for field in IGNORE_FIELDS:
-                self.assertEqual(result[side][field], [])
-
-    def test_no_ignore_section_returns_empty(self):
-        path = self._write_config("rules: []\n")
-        result = mod.load_ignore_lists(path)
-        for side in ("watch", "cleanup"):
-            for field in IGNORE_FIELDS:
-                self.assertEqual(result[side][field], [])
-
-    def test_watch_only_populates_watch(self):
-        path = self._write_config(
-            "ignore:\n"
-            "  watch:\n"
-            "    sender_domains: [github.com]\n"
-            "    sender_addresses: [noreply@github.com]\n"
-            "    list_ids: [github.lists]\n"
-            "    recipient_tags: [tag1]\n"
-            "    subject_substrings: [build failed]\n"
-        )
-        result = mod.load_ignore_lists(path)
-        self.assertEqual(result["watch"]["sender_domains"], ["github.com"])
-        self.assertEqual(result["watch"]["sender_addresses"], ["noreply@github.com"])
-        self.assertEqual(result["watch"]["list_ids"], ["github.lists"])
-        self.assertEqual(result["watch"]["recipient_tags"], ["tag1"])
-        self.assertEqual(result["watch"]["subject_substrings"], ["build failed"])
-        for field in IGNORE_FIELDS:
-            self.assertEqual(result["cleanup"][field], [])
-
-    def test_fully_populated(self):
-        path = self._write_config(
-            "ignore:\n"
-            "  watch:\n"
-            "    sender_domains: [github.com]\n"
-            "  cleanup:\n"
-            "    sender_domains: [spam.example.com]\n"
-            "    list_ids: [newsletter]\n"
-            "    subject_substrings: [unsubscribe]\n"
-        )
-        result = mod.load_ignore_lists(path)
-        self.assertEqual(result["watch"]["sender_domains"], ["github.com"])
-        self.assertEqual(result["cleanup"]["sender_domains"], ["spam.example.com"])
-        self.assertEqual(result["cleanup"]["list_ids"], ["newsletter"])
-        self.assertEqual(result["cleanup"]["subject_substrings"], ["unsubscribe"])
-        self.assertEqual(result["watch"]["sender_addresses"], [])
-        self.assertEqual(result["watch"]["list_ids"], [])
-        self.assertEqual(result["cleanup"]["sender_addresses"], [])
-
-    def test_empty_lists_stay_empty(self):
-        path = self._write_config("ignore:\n  watch: {}\n  cleanup: {}\n")
-        result = mod.load_ignore_lists(path)
-        for side in ("watch", "cleanup"):
-            for field in IGNORE_FIELDS:
-                self.assertEqual(result[side][field], [])
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
+func TestBuildAnalyzeReportNilIgnoreNoSuppressed(t *testing.T) {
+	now := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+	data := []imap.MailData{
+		{
+			SenderDomains: []string{"github.com"},
+			From:          []string{"noreply@github.com"},
+			SubjectRaw:    "Hello",
+			MessageDate:   time.Date(2024, 1, 10, 12, 0, 0, 0, time.UTC),
+		},
+	}
+	report, err := buildAnalyzeReport(data, analyzeReportParams{
+		Mailbox:   "INBOX",
+		Account:   "user@example.com",
+		Generated: now,
+		Options: analyzeOptions{
+			Top:      100,
+			Examples: 20,
+			MinCount: 1,
+		},
+		Ignore: nil,
+	})
+	if err != nil {
+		t.Fatalf("build report: %v", err)
+	}
+	payload, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(payload), "suppressed") {
+		t.Fatal("report must not contain 'suppressed' field when Ignore is nil")
+	}
+}
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `python3 bin/test_generate_rules.py`
-Expected: FAIL — `AttributeError: module ... has no attribute 'load_ignore_lists'`.
+Run: `go test ./cli/ -run "TestBuildAnalyzeReport" -v`
+Expected: FAIL — compile errors (`analyzeReportParams has no field Ignore`, `clusterAccumulator has no field suppressWatch`, etc.).
 
-- [ ] **Step 3: Write the minimal implementation**
+- [ ] **Step 3: Write the implementation**
 
-In `bin/postmanpat-generate-rules.py`:
+In `cli/analyze.go`:
 
-1. Add the yaml import after the existing `from typing import ...` line (matching the style used in `bin/postmanpat-convert-watch-to-cleanup.py`):
+1. Add `Suppressed` field to `analyzeCluster`:
 
-```python
-import yaml  # type: ignore
+```go
+type analyzeCluster struct {
+	ClusterID  string                 `json:"cluster_id"`
+	Count      int                    `json:"count"`
+	LatestDate time.Time              `json:"latest_date"`
+	Keys       map[string]any         `json:"keys"`
+	Signals    analyzeClusterSignals  `json:"signals"`
+	Examples   analyzeClusterExamples `json:"examples"`
+	Suppressed []string               `json:"suppressed,omitempty"`
+}
 ```
 
-2. Add the function (place it near `load_checkpoint`):
+2. Add `suppressWatch` and `suppressCleanup` to `clusterAccumulator`:
 
-```python
-def load_ignore_lists(config_path: str) -> Dict[str, Dict[str, List[str]]]:
-    """Return {"watch": {field: [...]}, "cleanup": {...}}; all five fields
-    always present as lists (possibly empty). Missing file/section => empty."""
-    fields = (
-        "sender_domains",
-        "sender_addresses",
-        "list_ids",
-        "recipient_tags",
-        "subject_substrings",
-    )
-    result: Dict[str, Dict[str, List[str]]] = {
-        side: {f: [] for f in fields} for side in ("watch", "cleanup")
-    }
-    if not os.path.exists(config_path):
-        return result
-    with open(config_path, "r", encoding="utf-8") as fh:
-        cfg = yaml.safe_load(fh)
-    if not isinstance(cfg, dict):
-        return result
-    ignore = cfg.get("ignore")
-    if not isinstance(ignore, dict):
-        return result
-    for side in ("watch", "cleanup"):
-        section = ignore.get(side)
-        if not isinstance(section, dict):
-            continue
-        for field in fields:
-            value = section.get(field)
-            if isinstance(value, list):
-                result[side][field] = [str(v) for v in value]
-    return result
+```go
+type clusterAccumulator struct {
+	count          int
+	keys           map[string]any
+	hasListID      bool
+	hasUnsubscribe bool
+	precedence     map[string]int
+	latestDate     time.Time
+	examples       analyzeClusterExamples
+	exampleSets    map[string]map[string]struct{}
+	suppressWatch  bool
+	suppressCleanup bool
+}
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+3. Add `Ignore` to `analyzeReportParams`:
 
-Run: `python3 bin/test_generate_rules.py`
-Expected: PASS (5 tests). Existing `python3 bin/test_yaml_scalar.py` still passes.
+```go
+type analyzeReportParams struct {
+	Mailbox   string
+	Account   string
+	Generated time.Time
+	AgeWindow *appconfig.AgeWindow
+	Options   analyzeOptions
+	Ignore    *appconfig.IgnoreConfig
+}
+```
 
-- [ ] **Step 5: Commit**
+4. Update `accumulateCluster` — add `ignore` param and per-message check:
+
+```go
+func accumulateCluster(acc *clusterAccumulator, item imap.MailData, hasListID bool, maxExamples int, ignore *appconfig.IgnoreConfig) {
+	acc.count++
+	if !hasListID {
+		acc.hasListID = false
+	}
+	if !item.ListUnsubscribe {
+		acc.hasUnsubscribe = false
+	}
+	if !item.MessageDate.IsZero() && (acc.latestDate.IsZero() || item.MessageDate.After(acc.latestDate)) {
+		acc.latestDate = item.MessageDate
+	}
+
+	precedence := normalizePrecedenceCategory(item.PrecedenceCategory)
+	acc.precedence[precedence]++
+
+	if ignore != nil {
+		if matchesIgnoreMatchers(item, ignore.Watch) {
+			acc.suppressWatch = true
+		}
+		if matchesIgnoreMatchers(item, ignore.Cleanup) {
+			acc.suppressCleanup = true
+		}
+	}
+
+	addExample(acc, ExampleKeySubjectRaw, strings.TrimSpace(item.SubjectRaw), maxExamples)
+	for _, recipient := range item.Recipients {
+		addExample(acc, ExampleKeyRecipients, recipient, maxExamples)
+	}
+	for _, replyTo := range item.ReplyToDomains {
+		addExample(acc, ExampleKeyReplyToDomains, replyTo, maxExamples)
+	}
+	for _, senderDomain := range item.SenderDomains {
+		addExample(acc, ExampleKeySenderDomains, senderDomain, maxExamples)
+	}
+	if strings.TrimSpace(item.ReturnPathDomain) != "" {
+		addExample(acc, ExampleKeyReturnPathDomains, item.ReturnPathDomain, maxExamples)
+	}
+	for _, target := range splitAndTrim(item.ListUnsubscribeTargets) {
+		addExample(acc, ExampleKeyListUnsubscribeTargets, target, maxExamples)
+	}
+}
+```
+
+5. Update all four lens builders — add `ignore` param and pass through to `accumulateCluster`:
+
+```go
+func buildListLens(data []imap.MailData, options analyzeOptions, ignore *appconfig.IgnoreConfig) analyzeLens {
+	clusters := make(map[string]*clusterAccumulator)
+	for _, item := range data {
+		listID := normalizeListID(item.ListID)
+		if listID == "" {
+			continue
+		}
+		keyString := fmt.Sprintf("ListID=%s", listID)
+		clusterID := makeClusterID("list_lens", keyString)
+		acc := ensureClusterAccumulator(clusters, clusterID, map[string]any{
+			"ListID": listID,
+		})
+		accumulateCluster(acc, item, true, options.Examples, ignore)
+	}
+
+	return analyzeLens{
+		KeyFields: []string{"ListID"},
+		Clusters:  finalizeClusters(clusters, options),
+	}
+}
+
+func buildSenderUnsubLens(data []imap.MailData, options analyzeOptions, ignore *appconfig.IgnoreConfig) analyzeLens {
+	clusters := make(map[string]*clusterAccumulator)
+	for _, item := range data {
+		senderDomains := normalizeDomains(item.SenderDomains)
+		if len(senderDomains) == 1 && strings.TrimSpace(senderDomains[0]) == "" {
+			continue
+		}
+		hasUnsub := item.ListUnsubscribe
+		keyString := fmt.Sprintf("SenderDomains=%s|HasListUnsubscribe=%s", strings.Join(senderDomains, ","), boolString(hasUnsub))
+		clusterID := makeClusterID("sender_unsub_lens", keyString)
+		acc := ensureClusterAccumulator(clusters, clusterID, map[string]any{
+			"SenderDomains":      senderDomains,
+			"HasListUnsubscribe": hasUnsub,
+			"FromList":           item.From,
+		})
+		accumulateCluster(acc, item, item.ListID != "", options.Examples, ignore)
+	}
+
+	return analyzeLens{
+		KeyFields: []string{"SenderDomains", "HasListUnsubscribe"},
+		Clusters:  finalizeClusters(clusters, options),
+	}
+}
+
+func buildTemplateLens(data []imap.MailData, options analyzeOptions, ignore *appconfig.IgnoreConfig) analyzeLens {
+	clusters := make(map[string]*clusterAccumulator)
+	for _, item := range data {
+		senderDomains := normalizeDomains(item.SenderDomains)
+		subject := strings.TrimSpace(item.SubjectNormalized)
+		keyString := fmt.Sprintf("SenderDomains=%s|SubjectNormalized=%s", strings.Join(senderDomains, ","), subject)
+		clusterID := makeClusterID("template_lens", keyString)
+		acc := ensureClusterAccumulator(clusters, clusterID, map[string]any{
+			"SenderDomains":     senderDomains,
+			"SubjectNormalized": subject,
+		})
+		accumulateCluster(acc, item, item.ListID != "", options.Examples, ignore)
+	}
+
+	return analyzeLens{
+		KeyFields: []string{"SenderDomains", "SubjectNormalized"},
+		Clusters:  finalizeClusters(clusters, options),
+	}
+}
+
+func buildRecipientTagLens(data []imap.MailData, options analyzeOptions, ignore *appconfig.IgnoreConfig) analyzeLens {
+	clusters := make(map[string]*clusterAccumulator)
+	for _, item := range data {
+		tags := normalizeRecipientTags(item.RecipientTags)
+		if len(tags) == 0 {
+			continue
+		}
+		joined := strings.Join(tags, ",")
+		keyString := fmt.Sprintf("recipient_tag=%s", joined)
+		clusterID := makeClusterID("recipient_tag_lens", keyString)
+		acc := ensureClusterAccumulator(clusters, clusterID, map[string]any{
+			"recipient_tag": joined,
+		})
+		accumulateCluster(acc, item, item.ListID != "", options.Examples, ignore)
+	}
+
+	return analyzeLens{
+		KeyFields: []string{"recipient_tag"},
+		Clusters:  finalizeClusters(clusters, options),
+	}
+}
+```
+
+6. Update `finalizeClusters` — map booleans to `Suppressed` slice:
+
+```go
+func finalizeClusters(clusters map[string]*clusterAccumulator, options analyzeOptions) []analyzeCluster {
+	minCount := options.MinCount
+	if minCount <= 0 {
+		minCount = 1
+	}
+	all := make([]analyzeCluster, 0, len(clusters))
+	for clusterID, acc := range clusters {
+		if acc.count < minCount {
+			continue
+		}
+		suppressed := make([]string, 0, 2)
+		if acc.suppressWatch {
+			suppressed = append(suppressed, "watch")
+		}
+		if acc.suppressCleanup {
+			suppressed = append(suppressed, "cleanup")
+		}
+		all = append(all, analyzeCluster{
+			ClusterID:  clusterID,
+			Count:      acc.count,
+			LatestDate: acc.latestDate,
+			Keys:       acc.keys,
+			Signals: analyzeClusterSignals{
+				HasListID:            acc.hasListID,
+				HasListUnsubscribe:   acc.hasUnsubscribe,
+				PrecedenceCategories: acc.precedence,
+			},
+			Examples:   acc.examples,
+			Suppressed: suppressed,
+		})
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].Count != all[j].Count {
+			return all[i].Count > all[j].Count
+		}
+		return all[i].ClusterID < all[j].ClusterID
+	})
+	if options.Top > 0 && len(all) > options.Top {
+		return all[:options.Top]
+	}
+	return all
+}
+```
+
+7. Update `buildAnalyzeReport` — pass `params.Ignore` to builders:
+
+Replace the four builder calls:
+
+```go
+	listLens := buildListLens(data, options)
+	senderLens := buildSenderUnsubLens(data, options)
+	templateLens := buildTemplateLens(data, options)
+	recipientTagLens := buildRecipientTagLens(data, options)
+```
+
+with:
+
+```go
+	listLens := buildListLens(data, options, params.Ignore)
+	senderLens := buildSenderUnsubLens(data, options, params.Ignore)
+	templateLens := buildTemplateLens(data, options, params.Ignore)
+	recipientTagLens := buildRecipientTagLens(data, options, params.Ignore)
+```
+
+8. Update RunE — compute `ignore` once and pass via params:
+
+After the `noIgnore` flag read (from Task 3), add:
+
+```go
+		ignore := cfg.Ignore
+		if noIgnore {
+			ignore = nil
+		}
+```
+
+And in the `buildAnalyzeReport` call, add `Ignore: ignore` to the params:
+
+```go
+			report, err := buildAnalyzeReport(data, analyzeReportParams{
+				Mailbox:   mailbox,
+				Account:   imapEnv.User,
+				Generated: time.Now().UTC(),
+				AgeWindow: rule.Server.AgeWindow,
+				Options:   options,
+				Ignore:    ignore,
+			})
+```
+
+- [ ] **Step 4: Run unit tests to verify they pass**
+
+Run: `go test ./cli/ -run "TestBuildAnalyzeReport" -v`
+Expected: PASS (3 new unit tests + the existing `TestBuildAnalyzeReportJSON` still passes).
+
+- [ ] **Step 5: Add e2e tests for the suppressed annotation**
+
+Append to `cli/analyze_ignore_e2e_test.go`:
+
+```go
+func TestAnalyzeAnnotatesWatchSuppressedCluster(t *testing.T) {
+	report := runAnalyzeToReport(t)
+
+	indexes, ok := report["indexes"].(map[string]any)
+	if !ok {
+		t.Fatal("report missing indexes")
+	}
+	senderLens, ok := indexes["sender_unsub_lens"].(map[string]any)
+	if !ok {
+		t.Fatal("report missing sender_unsub_lens")
+	}
+	clusters, ok := senderLens["clusters"].([]any)
+	if !ok {
+		t.Fatal("sender_unsub_lens.clusters is invalid")
+	}
+
+	var found bool
+	for _, c := range clusters {
+		cluster := c.(map[string]any)
+		keys := cluster["keys"].(map[string]any)
+		domains, ok := keys["SenderDomains"].([]any)
+		if ok && len(domains) == 1 && domains[0] == "github.com" {
+			suppressed, ok := cluster["suppressed"].([]any)
+			if !ok || len(suppressed) != 1 || suppressed[0] != "watch" {
+				t.Fatalf("expected suppressed=[watch], got %v", cluster["suppressed"])
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected to find github.com cluster in sender_unsub_lens")
+	}
+}
+
+func TestAnalyzeNoIgnoreNoSuppressedField(t *testing.T) {
+	report := runAnalyzeToReport(t, "--no-ignore")
+
+	raw, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(raw), "suppressed") {
+		t.Fatal("report with --no-ignore must not contain 'suppressed' field")
+	}
+}
+```
+
+- [ ] **Step 6: Run all tests to verify they pass**
+
+Run: `go test ./cli/ -v`
+Expected: all tests pass. Then `go test ./...` — full suite green. `gofmt -l cli/` prints nothing, `go vet ./cli/` clean.
+
+- [ ] **Step 7: Commit**
 
 ```bash
-git add bin/postmanpat-generate-rules.py bin/test_generate_rules.py
-git commit -m "feat(bin): load ignore lists from analyze config"
+git add cli/analyze.go cli/analyze_ignore_test.go cli/analyze_ignore_e2e_test.go
+git commit -m "feat(cli): annotate clusters with per-rule-type suppression"
 ```
 
 ---
 
-### Task 5: bin — `cluster_rule_suppression` per-lens matching
+### Task 5: generator — reads suppression annotation from report (TDD)
 
 **Files:**
-- Modify: `bin/postmanpat-generate-rules.py` (add function)
-- Test: `bin/test_generate_rules.py` (add test class)
+- Modify: `bin/postmanpat-generate-rules.py` (process_cluster reads `suppressed`; main loop skips both-suppressed)
+- Test: `bin/test_generate_rules.py` (add `TestProcessClusterSuppression`)
 
 **Interfaces:**
-- Consumes: `load_ignore_lists` output shape (Task 4). Cluster dicts as written by analyze: `keys["ListID"]` (str, list_lens), `keys["SenderDomains"]` (list[str], sender_unsub_lens), `keys["FromList"]` (list[str], sender_unsub_lens), `keys["recipient_tag"]` (str, recipient_tag_lens), `examples["subject_raw"]` (list[str], all lenses).
-- Produces (consumed by Task 6):
-  ```python
-  def cluster_rule_suppression(cluster: dict, lens_name: str, ignore_lists: dict) -> tuple[bool, bool]:
-      """Return (suppress_watch, suppress_cleanup) for one cluster."""
-  ```
-
-Matching: `sender_domains` exact (case-insensitive, any element of `SenderDomains`); `sender_addresses` substring against any `FromList` element; `list_ids` substring against `ListID`; `recipient_tags` substring against `recipient_tag`; `subject_substrings` best-effort substring against `examples.subject_raw`. A side suppresses when ANY of its entries matches. (`lens_name` is accepted for call-site clarity; key presence per lens makes the matching lens-specific naturally.)
+- Consumes: `process_cluster` (existing), `prompt_yes_no` (existing).
+- Produces: `process_cluster` reads `cluster.get("suppressed", [])`; if `"watch" in suppressed` → print note and skip watch prompt; if `"cleanup" in suppressed` → print note and skip cleanup prompt. Main loop: if both in suppressed → increment counter, `continue` without prompting/checkpointing; after loop print summary when N>0.
 
 - [ ] **Step 1: Write the failing tests**
 
-Add to `bin/test_generate_rules.py` (before the `if __name__` guard):
+Add to `bin/test_generate_rules.py` (add `from unittest import mock` and `from io import StringIO` to imports, and `import contextlib`):
 
 ```python
-class TestClusterRuleSuppression(unittest.TestCase):
-    def _ignore(self, watch=None, cleanup=None):
-        result = {side: {f: [] for f in IGNORE_FIELDS} for side in ("watch", "cleanup")}
-        if watch:
-            result["watch"].update(watch)
-        if cleanup:
-            result["cleanup"].update(cleanup)
-        return result
-
-    def _cluster(self, keys=None, examples=None):
-        return {
-            "cluster_id": "test:abc123",
-            "count": 5,
-            "keys": keys or {},
-            "examples": examples or {},
-        }
-
-    def test_list_lens_watch_suppressed_by_list_id(self):
-        cluster = self._cluster(keys={"ListID": "github.lists.announcements"})
-        ignore = self._ignore(watch={"list_ids": ["github.lists"]})
-        sw, sc = mod.cluster_rule_suppression(cluster, "list_lens", ignore)
-        self.assertTrue(sw)
-        self.assertFalse(sc)
-
-    def test_list_lens_cleanup_suppressed_by_list_id(self):
-        cluster = self._cluster(keys={"ListID": "github.lists.announcements"})
-        ignore = self._ignore(cleanup={"list_ids": ["github.lists"]})
-        sw, sc = mod.cluster_rule_suppression(cluster, "list_lens", ignore)
-        self.assertFalse(sw)
-        self.assertTrue(sc)
-
-    def test_list_lens_case_insensitive(self):
-        cluster = self._cluster(keys={"ListID": "GitHub.LISTS.Announcements"})
-        ignore = self._ignore(watch={"list_ids": ["github.lists"]})
-        sw, _ = mod.cluster_rule_suppression(cluster, "list_lens", ignore)
-        self.assertTrue(sw)
-
-    def test_list_lens_no_match(self):
-        cluster = self._cluster(keys={"ListID": "unique.sender.news"})
-        ignore = self._ignore(watch={"list_ids": ["github.lists"]})
-        sw, sc = mod.cluster_rule_suppression(cluster, "list_lens", ignore)
-        self.assertFalse(sw)
-        self.assertFalse(sc)
-
-    def test_sender_unsub_watch_suppressed_by_exact_domain(self):
-        cluster = self._cluster(keys={"SenderDomains": ["github.com", "actions.github.com"]})
-        ignore = self._ignore(watch={"sender_domains": ["github.com"]})
-        sw, _ = mod.cluster_rule_suppression(cluster, "sender_unsub_lens", ignore)
-        self.assertTrue(sw)
-
-    def test_sender_unsub_no_partial_domain_match(self):
-        cluster = self._cluster(keys={"SenderDomains": ["notgithub.com"]})
-        ignore = self._ignore(watch={"sender_domains": ["github.com"]})
-        sw, _ = mod.cluster_rule_suppression(cluster, "sender_unsub_lens", ignore)
-        self.assertFalse(sw)
-
-    def test_sender_unsub_case_insensitive_exact(self):
-        cluster = self._cluster(keys={"SenderDomains": ["GitHub.COM"]})
-        ignore = self._ignore(watch={"sender_domains": ["github.com"]})
-        sw, _ = mod.cluster_rule_suppression(cluster, "sender_unsub_lens", ignore)
-        self.assertTrue(sw)
-
-    def test_sender_unsub_suppressed_by_from_address_substring(self):
-        cluster = self._cluster(keys={"FromList": ["noreply@github.com", "alerts@github.com"]})
-        ignore = self._ignore(watch={"sender_addresses": ["noreply@github"]})
-        sw, _ = mod.cluster_rule_suppression(cluster, "sender_unsub_lens", ignore)
-        self.assertTrue(sw)
-
-    def test_recipient_tag_suppressed(self):
-        cluster = self._cluster(keys={"recipient_tag": "newsletter,weekly-digest"})
-        ignore = self._ignore(cleanup={"recipient_tags": ["newsletter"]})
-        sw, sc = mod.cluster_rule_suppression(cluster, "recipient_tag_lens", ignore)
-        self.assertFalse(sw)
-        self.assertTrue(sc)
-
-    def test_subject_suppressed_via_examples(self):
-        cluster = self._cluster(
-            keys={"ListID": "some.list"},
-            examples={"subject_raw": ["Your weekly build failed report"]},
-        )
-        ignore = self._ignore(watch={"subject_substrings": ["build failed"]})
-        sw, _ = mod.cluster_rule_suppression(cluster, "list_lens", ignore)
-        self.assertTrue(sw)
-
-    def test_subject_case_insensitive(self):
-        cluster = self._cluster(
-            keys={"ListID": "some.list"},
-            examples={"subject_raw": ["BUILD FAILED: project-x"]},
-        )
-        ignore = self._ignore(watch={"subject_substrings": ["build failed"]})
-        sw, _ = mod.cluster_rule_suppression(cluster, "list_lens", ignore)
-        self.assertTrue(sw)
-
-    def test_subject_no_match_when_examples_empty(self):
-        cluster = self._cluster(keys={"ListID": "some.list"}, examples={})
-        ignore = self._ignore(watch={"subject_substrings": ["build failed"]})
-        sw, sc = mod.cluster_rule_suppression(cluster, "list_lens", ignore)
-        self.assertFalse(sw)
-        self.assertFalse(sc)
-
-    def test_both_lists_suppressed(self):
-        cluster = self._cluster(keys={"ListID": "newsletter.weekly"})
-        ignore = self._ignore(
-            watch={"list_ids": ["newsletter"]},
-            cleanup={"list_ids": ["newsletter"]},
-        )
-        sw, sc = mod.cluster_rule_suppression(cluster, "list_lens", ignore)
-        self.assertTrue(sw)
-        self.assertTrue(sc)
-
-    def test_empty_ignore_no_suppression(self):
-        cluster = self._cluster(keys={"ListID": "anything"})
-        sw, sc = mod.cluster_rule_suppression(cluster, "list_lens", self._ignore())
-        self.assertFalse(sw)
-        self.assertFalse(sc)
-```
-
-- [ ] **Step 2: Run tests to verify they fail**
-
-Run: `python3 bin/test_generate_rules.py`
-Expected: FAIL — `AttributeError: module ... has no attribute 'cluster_rule_suppression'`.
-
-- [ ] **Step 3: Write the minimal implementation**
-
-Add to `bin/postmanpat-generate-rules.py` (after `load_ignore_lists`):
-
-```python
-def _matches_ignore_side(keys: Dict[str, Any], examples: Dict[str, Any], side: Dict[str, List[str]]) -> bool:
-    """True when the cluster matches ANY entry of one ignore side."""
-    domains = keys.get("SenderDomains")
-    if domains and side.get("sender_domains"):
-        cluster_domains = {str(d).lower() for d in domains}
-        if any(str(e).lower() in cluster_domains for e in side["sender_domains"]):
-            return True
-
-    from_list = keys.get("FromList")
-    if from_list and side.get("sender_addresses"):
-        for entry in side["sender_addresses"]:
-            needle = str(entry).lower()
-            if any(needle in str(addr).lower() for addr in from_list):
-                return True
-
-    list_id = str(keys.get("ListID") or "")
-    if list_id and side.get("list_ids"):
-        for entry in side["list_ids"]:
-            if str(entry).lower() in list_id.lower():
-                return True
-
-    tag = str(keys.get("recipient_tag") or "")
-    if tag and side.get("recipient_tags"):
-        for entry in side["recipient_tags"]:
-            if str(entry).lower() in tag.lower():
-                return True
-
-    subjects = examples.get("subject_raw") or []
-    if subjects and side.get("subject_substrings"):
-        for entry in side["subject_substrings"]:
-            needle = str(entry).lower()
-            if any(needle in str(s).lower() for s in subjects):
-                return True
-
-    return False
-
-
-def cluster_rule_suppression(cluster: dict, lens_name: str, ignore_lists: dict) -> tuple[bool, bool]:
-    """Return (suppress_watch, suppress_cleanup) for one cluster. Matching is
-    against Lens Keys (plus best-effort subject matching via examples); key
-    presence per lens makes the match lens-specific."""
-    keys = cluster.get("keys") or {}
-    examples = cluster.get("examples") or {}
-    suppress_watch = _matches_ignore_side(keys, examples, ignore_lists.get("watch", {}))
-    suppress_cleanup = _matches_ignore_side(keys, examples, ignore_lists.get("cleanup", {}))
-    return suppress_watch, suppress_cleanup
-```
-
-- [ ] **Step 4: Run tests to verify they pass**
-
-Run: `python3 bin/test_generate_rules.py`
-Expected: PASS (all tests: Task 4's 5 + this task's 14).
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add bin/postmanpat-generate-rules.py bin/test_generate_rules.py
-git commit -m "feat(bin): add per-cluster rule suppression matching"
-```
-
----
-
-### Task 6: bin — wire `--config` + suppression into the generator main loop
-
-**Files:**
-- Modify: `bin/postmanpat-generate-rules.py` (argparse `--config`; rename `process_cluster` → `process_cluster_prompts` with `ask_watch`/`ask_cleanup`; main loop suppression + skip summary)
-- Test: `bin/test_generate_rules.py` (add `TestProcessClusterPromptsSuppression`)
-
-**Interfaces:**
-- Consumes: `load_ignore_lists` (Task 4), `cluster_rule_suppression` (Task 5), existing helpers `cluster_summary`, `format_examples`, `prompt_yes_no`, `rule_name_prompt`, `build_watch_rule_list/sender/recipient_tag`, `build_cleanup_rule_list/sender`, `save_checkpoint`.
-- Produces:
-  ```python
-  def process_cluster_prompts(
-      lens: str,
-      cluster: Dict[str, Any],
-      watch_rules: List[Dict[str, Any]],
-      cleanup_rules: List[Dict[str, Any]],
-      default_folders: Optional[str],
-      ask_watch: bool = True,
-      ask_cleanup: bool = True,
-  ) -> Tuple[bool, Optional[str]]:
-  ```
-  New optional CLI arg `--config`. Without `--config`, behavior is byte-for-byte identical to today. Suppressed clusters are never written to the Generation Checkpoint.
-
-- [ ] **Step 1: Write the failing tests**
-
-Add to `bin/test_generate_rules.py` (before the `if __name__` guard; add `from unittest import mock` to the test file's imports):
-
-```python
-class TestProcessClusterPromptsSuppression(unittest.TestCase):
-    def _cluster(self):
+class TestProcessClusterSuppression(unittest.TestCase):
+    def _cluster(self, suppressed=None):
         return {
             "cluster_id": "list_lens:abc",
             "count": 5,
@@ -1350,81 +1424,140 @@ class TestProcessClusterPromptsSuppression(unittest.TestCase):
             "signals": {"has_list_id": True, "has_list_unsubscribe": True, "precedence_categories": {}},
             "examples": {"subject_raw": ["Hello"], "recipients": [], "reply_to_domains": [],
                          "sender_domains": [], "returnpath_domains": [], "list_unsubscribe_targets": []},
+            "suppressed": suppressed or [],
         }
 
-    def _run_prompts(self, ask_watch=True, ask_cleanup=True):
+    def test_watch_suppressed_skips_watch_prompt(self):
         asked = []
-
-        def fake_prompt_yes_no(message, default=False):
+        def fake_prompt(message, default=False, allow_ignore=False):
             asked.append(message)
             return "n"
 
-        watch_rules: list = []
-        cleanup_rules: list = []
-        with mock.patch.object(mod, "prompt_yes_no", side_effect=fake_prompt_yes_no):
-            proceed, _ = mod.process_cluster_prompts(
-                "list_lens",
-                self._cluster(),
-                watch_rules,
-                cleanup_rules,
-                "INBOX",
-                ask_watch=ask_watch,
-                ask_cleanup=ask_cleanup,
-            )
-        return proceed, asked, watch_rules, cleanup_rules
-
-    def test_default_asks_both(self):
-        proceed, asked, _, _ = self._run_prompts()
-        self.assertTrue(proceed)
-        self.assertIn("Generate watch rule?", asked)
-        self.assertIn("Generate cleanup rule?", asked)
-
-    def test_watch_suppressed_skips_watch_prompt(self):
-        proceed, asked, watch_rules, cleanup_rules = self._run_prompts(ask_watch=False)
+        watch_rules = []
+        cleanup_rules = []
+        buf = StringIO()
+        with mock.patch.object(mod, "prompt_yes_no", side_effect=fake_prompt):
+            with contextlib.redirect_stdout(buf):
+                proceed, _ = mod.process_cluster(
+                    "list_lens", self._cluster(suppressed=["watch"]),
+                    watch_rules, cleanup_rules, "INBOX",
+                )
         self.assertTrue(proceed)
         self.assertNotIn("Generate watch rule?", asked)
         self.assertIn("Generate cleanup rule?", asked)
         self.assertEqual(watch_rules, [])
-        self.assertEqual(cleanup_rules, [])
+        output = buf.getvalue()
+        self.assertIn("Watch rule suppressed by ignore list.", output)
 
     def test_cleanup_suppressed_skips_cleanup_prompt(self):
-        proceed, asked, watch_rules, cleanup_rules = self._run_prompts(ask_cleanup=False)
+        asked = []
+        def fake_prompt(message, default=False, allow_ignore=False):
+            asked.append(message)
+            return "n"
+
+        watch_rules = []
+        cleanup_rules = []
+        buf = StringIO()
+        with mock.patch.object(mod, "prompt_yes_no", side_effect=fake_prompt):
+            with contextlib.redirect_stdout(buf):
+                proceed, _ = mod.process_cluster(
+                    "list_lens", self._cluster(suppressed=["cleanup"]),
+                    watch_rules, cleanup_rules, "INBOX",
+                )
         self.assertTrue(proceed)
         self.assertIn("Generate watch rule?", asked)
         self.assertNotIn("Generate cleanup rule?", asked)
-        self.assertEqual(watch_rules, [])
         self.assertEqual(cleanup_rules, [])
+        output = buf.getvalue()
+        self.assertIn("Cleanup rule suppressed by ignore list.", output)
+
+    def test_both_suppressed_skips_both_prompts(self):
+        asked = []
+        def fake_prompt(message, default=False, allow_ignore=False):
+            asked.append(message)
+            return "n"
+
+        watch_rules = []
+        cleanup_rules = []
+        buf = StringIO()
+        with mock.patch.object(mod, "prompt_yes_no", side_effect=fake_prompt):
+            with contextlib.redirect_stdout(buf):
+                proceed, _ = mod.process_cluster(
+                    "list_lens", self._cluster(suppressed=["watch", "cleanup"]),
+                    watch_rules, cleanup_rules, "INBOX",
+                )
+        self.assertTrue(proceed)
+        self.assertNotIn("Generate watch rule?", asked)
+        self.assertNotIn("Generate cleanup rule?", asked)
+        output = buf.getvalue()
+        self.assertIn("Watch rule suppressed by ignore list.", output)
+        self.assertIn("Cleanup rule suppressed by ignore list.", output)
+
+    def test_no_suppression_asks_both(self):
+        asked = []
+        def fake_prompt(message, default=False, allow_ignore=False):
+            asked.append(message)
+            return "n"
+
+        watch_rules = []
+        cleanup_rules = []
+        with mock.patch.object(mod, "prompt_yes_no", side_effect=fake_prompt):
+            proceed, _ = mod.process_cluster(
+                "list_lens", self._cluster(suppressed=[]),
+                watch_rules, cleanup_rules, "INBOX",
+            )
+        self.assertTrue(proceed)
+        self.assertIn("Generate watch rule?", asked)
+        self.assertIn("Generate cleanup rule?", asked)
+
+    def test_no_suppressed_field_asks_both(self):
+        asked = []
+        def fake_prompt(message, default=False, allow_ignore=False):
+            asked.append(message)
+            return "n"
+
+        cluster = self._cluster()
+        del cluster["suppressed"]
+        watch_rules = []
+        cleanup_rules = []
+        with mock.patch.object(mod, "prompt_yes_no", side_effect=fake_prompt):
+            proceed, _ = mod.process_cluster(
+                "list_lens", cluster,
+                watch_rules, cleanup_rules, "INBOX",
+            )
+        self.assertTrue(proceed)
+        self.assertIn("Generate watch rule?", asked)
+        self.assertIn("Generate cleanup rule?", asked)
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `python3 bin/test_generate_rules.py`
-Expected: FAIL — `AttributeError: module ... has no attribute 'process_cluster_prompts'`.
+Run: `python3 bin/test_generate_rules.py -k TestProcessClusterSuppression -v`
+Expected: FAIL — assertions fail because `process_cluster` doesn't read `suppressed` yet.
 
 - [ ] **Step 3: Write the implementation**
 
-In `bin/postmanpat-generate-rules.py`:
-
-1. Replace the whole existing `process_cluster` function (currently lines 313–362) with:
+Replace the entire `process_cluster` function in `bin/postmanpat-generate-rules.py` with:
 
 ```python
-def process_cluster_prompts(
+def process_cluster(
     lens: str,
     cluster: Dict[str, Any],
     watch_rules: List[Dict[str, Any]],
     cleanup_rules: List[Dict[str, Any]],
     default_folders: Optional[str],
-    ask_watch: bool = True,
-    ask_cleanup: bool = True,
 ) -> Tuple[bool, Optional[str]]:
     print("\n=== Cluster ===")
     print(cluster_summary(cluster))
     for line in format_examples(cluster):
         print(f"  {line}")
 
+    suppressed = cluster.get("suppressed", []) or []
     rule_name: Optional[str] = None
 
-    if ask_watch:
+    if "watch" in suppressed:
+        print("Watch rule suppressed by ignore list.")
+    else:
         watch_response = prompt_yes_no("Generate watch rule?", default=False)
         if watch_response == "q":
             return False, default_folders
@@ -1441,10 +1574,10 @@ def process_cluster_prompts(
                 rule = None
             if rule:
                 watch_rules.append(rule)
-    else:
-        print("Watch rule suppressed by ignore list.")
 
-    if ask_cleanup:
+    if "cleanup" in suppressed:
+        print("Cleanup rule suppressed by ignore list.")
+    else:
         cleanup_response = prompt_yes_no("Generate cleanup rule?", default=False)
         if cleanup_response == "q":
             return False, default_folders
@@ -1462,37 +1595,26 @@ def process_cluster_prompts(
                 rule = None
             if rule:
                 cleanup_rules.append(rule)
-    else:
-        print("Cleanup rule suppressed by ignore list.")
 
     return True, default_folders
 ```
 
-2. Add the `--config` argument in `main()`, after the `--checkpoint` argument block:
+Replace the main cluster loop in `main()` (the `for lens, cluster in clusters:` block) with:
 
 ```python
-    parser.add_argument(
-        "--config",
-        default=None,
-        help="Path to analyze YAML config with ignore section (enables prompt suppression)",
-    )
-```
+    suppressed_count = 0
 
-3. In `main()`, after the `checkpoint_path = ...` line, add:
-
-```python
-    ignore_lists = load_ignore_lists(args.config) if args.config else None
-```
-
-4. Replace the main cluster loop:
-
-```python
     for lens, cluster in clusters:
         if not enabled_lenses.get(lens, True):
             continue
         cluster_id = str(cluster.get("cluster_id", ""))
         if cluster_id in processed_ids:
             continue
+
+        suppressed = cluster.get("suppressed", []) or []
+        if "watch" in suppressed and "cleanup" in suppressed:
+            suppressed_count += 1
+            continue  # not prompted -> not written to the Generation Checkpoint
 
         proceed, default_folders = process_cluster(
             lens,
@@ -1505,12 +1627,411 @@ def process_cluster_prompts(
             break
         processed_ids.add(cluster_id)
         save_checkpoint(checkpoint_path, processed_ids)
+
+    if suppressed_count:
+        print(f"Skipped {suppressed_count} clusters suppressed by ignore list")
 ```
 
-with:
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `python3 bin/test_generate_rules.py -v`
+Expected: all tests pass (Task 5's 5 + any pre-existing). Also `python3 bin/test_yaml_scalar.py` still passes.
+
+- [ ] **Step 5: Manual verification of both-suppressed skip**
+
+```bash
+cat > /tmp/pp-analyze-suppressed.json << 'EOF'
+{
+  "generated_at": "2026-08-06T00:00:00Z",
+  "source": {"mailbox": "INBOX", "account": "test@test.com", "time_window": {"after": "", "before": ""}},
+  "stats": {"total_messages_scanned": 10},
+  "indexes": {
+    "list_lens": {
+      "key_fields": ["ListID"],
+      "clusters": [
+        {"cluster_id": "list_lens:both", "count": 5, "latest_date": "2026-08-01T00:00:00Z", "keys": {"ListID": "ignored.both"}, "signals": {"has_list_id": true, "has_list_unsubscribe": true, "precedence_categories": {}}, "examples": {"subject_raw": ["News"], "recipients": [], "reply_to_domains": [], "sender_domains": [], "returnpath_domains": [], "list_unsubscribe_targets": []}, "suppressed": ["watch", "cleanup"]},
+        {"cluster_id": "list_lens:active", "count": 3, "latest_date": "2026-08-01T00:00:00Z", "keys": {"ListID": "active.sender"}, "signals": {"has_list_id": true, "has_list_unsubscribe": true, "precedence_categories": {}}, "examples": {"subject_raw": ["Hi"], "recipients": [], "reply_to_domains": [], "sender_domains": [], "returnpath_domains": [], "list_unsubscribe_targets": []}}
+      ]
+    },
+    "sender_unsub_lens": {"key_fields": ["SenderDomains", "HasListUnsubscribe"], "clusters": []},
+    "template_lens": {"key_fields": ["SenderDomains", "SubjectNormalized"], "clusters": []},
+    "recipient_tag_lens": {"key_fields": ["recipient_tag"], "clusters": []}
+  }
+}
+EOF
+
+printf 'y\nn\nn\nn\n' | python3 bin/postmanpat-generate-rules.py --analyze /tmp/pp-analyze-suppressed.json --watch-out /tmp/pp-watch.yml --cleanup-out /tmp/pp-cleanup.yml
+```
+
+Expected: "Skipped 1 clusters suppressed by ignore list" prints; only `active.sender` is prompted; checkpoint contains only `list_lens:active`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add bin/postmanpat-generate-rules.py bin/test_generate_rules.py
+git commit -m "feat(bin): read suppression annotation from analyze report"
+```
+
+---
+
+### Task 6: generator — authoring ("i" + scope follow-up + --ignore-out) (TDD)
+
+**Files:**
+- Modify: `bin/postmanpat-generate-rules.py` (prompt_yes_no extension, new pure functions, process_cluster authoring, argparse --ignore-out, end-of-main write/warning)
+- Test: `bin/test_generate_rules.py` (add `TestIgnorePureFunctions`, `TestProcessClusterAuthoring`)
+
+**Interfaces:**
+- Consumes: existing `prompt_yes_no`, `process_cluster`, `write_yaml`.
+- Produces: `prompt_yes_no` gains `allow_ignore` param (hint `[y/n/i/q]`, returns `"i"`); new pure functions `extract_ignore_identity`, `merge_ignore_entries`, `dedup_ignore_entries`, `build_ignore_fragment`; `process_cluster` gains `ignore_watch`/`ignore_cleanup` accumulator params; `--ignore-out` CLI arg; end-of-main writes fragment or prints warning.
+
+- [ ] **Step 1: Write the failing tests**
+
+Add to `bin/test_generate_rules.py`:
+
+```python
+class TestIgnorePureFunctions(unittest.TestCase):
+    def test_extract_list_lens(self):
+        cluster = {"keys": {"ListID": "github.notifications"}}
+        result = mod.extract_ignore_identity("list_lens", cluster)
+        self.assertEqual(result, {"list_ids": ["github.notifications"]})
+
+    def test_extract_sender_unsub_single_domain(self):
+        cluster = {"keys": {"SenderDomains": ["github.com"]}}
+        result = mod.extract_ignore_identity("sender_unsub_lens", cluster)
+        self.assertEqual(result, {"sender_domains": ["github.com"]})
+
+    def test_extract_sender_unsub_multi_domain(self):
+        cluster = {"keys": {"SenderDomains": ["github.com", "actions.githubusercontent.com"]}}
+        result = mod.extract_ignore_identity("sender_unsub_lens", cluster)
+        self.assertEqual(set(result["sender_domains"]), {"github.com", "actions.githubusercontent.com"})
+        self.assertEqual(len(result["sender_domains"]), 2)
+
+    def test_extract_recipient_tag(self):
+        cluster = {"keys": {"recipient_tag": "newsletter,weekly"}}
+        result = mod.extract_ignore_identity("recipient_tag_lens", cluster)
+        self.assertEqual(result, {"recipient_tags": ["newsletter,weekly"]})
+
+    def test_extract_unknown_lens(self):
+        cluster = {"keys": {"ListID": "x"}}
+        result = mod.extract_ignore_identity("template_lens", cluster)
+        self.assertEqual(result, {})
+
+    def test_extract_missing_key(self):
+        cluster = {"keys": {}}
+        result = mod.extract_ignore_identity("list_lens", cluster)
+        self.assertEqual(result, {})
+
+    def test_merge_entries(self):
+        acc = {"list_ids": ["a"]}
+        mod.merge_ignore_entries(acc, {"list_ids": ["b"], "sender_domains": ["x.com"]})
+        self.assertEqual(acc["list_ids"], ["a", "b"])
+        self.assertEqual(acc["sender_domains"], ["x.com"])
+
+    def test_merge_into_empty(self):
+        acc = {}
+        mod.merge_ignore_entries(acc, {"list_ids": ["a"]})
+        self.assertEqual(acc, {"list_ids": ["a"]})
+
+    def test_dedup_entries(self):
+        entries = {"list_ids": ["b", "a", "b"], "sender_domains": []}
+        result = mod.dedup_ignore_entries(entries)
+        self.assertEqual(result, {"list_ids": ["a", "b"]})
+
+    def test_dedup_drops_empty(self):
+        entries = {"list_ids": ["a"], "sender_domains": []}
+        result = mod.dedup_ignore_entries(entries)
+        self.assertEqual(result, {"list_ids": ["a"]})
+        self.assertNotIn("sender_domains", result)
+
+    def test_build_ignore_fragment_empty(self):
+        result = mod.build_ignore_fragment({}, {})
+        self.assertEqual(result, {})
+
+    def test_build_ignore_fragment_watch_only(self):
+        result = mod.build_ignore_fragment({"list_ids": ["a"]}, {})
+        self.assertEqual(result, {"ignore": {"watch": {"list_ids": ["a"]}}})
+
+    def test_build_ignore_fragment_both(self):
+        result = mod.build_ignore_fragment(
+            {"list_ids": ["a"]},
+            {"sender_domains": ["x.com"]},
+        )
+        self.assertIn("watch", result["ignore"])
+        self.assertIn("cleanup", result["ignore"])
+```
+
+```python
+class TestProcessClusterAuthoring(unittest.TestCase):
+    def _cluster(self, suppressed=None):
+        return {
+            "cluster_id": "list_lens:abc",
+            "count": 5,
+            "latest_date": "2026-08-01T00:00:00Z",
+            "keys": {"ListID": "some.list"},
+            "signals": {"has_list_id": True, "has_list_unsubscribe": True, "precedence_categories": {}},
+            "examples": {"subject_raw": ["Hello"], "recipients": [], "reply_to_domains": [],
+                         "sender_domains": [], "returnpath_domains": [], "list_unsubscribe_targets": []},
+            "suppressed": suppressed or [],
+        }
+
+    def test_watch_i_records_to_watch_accumulator(self):
+        ignore_watch = {}
+        ignore_cleanup = {}
+        responses = iter(["i", "n", "n"])
+        def fake_prompt(message, default=False, allow_ignore=False):
+            return next(responses)
+
+        watch_rules = []
+        cleanup_rules = []
+        with mock.patch.object(mod, "prompt_yes_no", side_effect=fake_prompt):
+            with mock.patch.object(mod, "_prompt_yes_no_simple", return_value=False):
+                proceed, _ = mod.process_cluster(
+                    "list_lens", self._cluster(),
+                    watch_rules, cleanup_rules, "INBOX",
+                    ignore_watch=ignore_watch,
+                    ignore_cleanup=ignore_cleanup,
+                )
+        self.assertTrue(proceed)
+        self.assertEqual(ignore_watch, {"list_ids": ["some.list"]})
+        self.assertEqual(ignore_cleanup, {})
+
+    def test_watch_i_followup_y_records_to_both_skips_cleanup_prompt(self):
+        ignore_watch = {}
+        ignore_cleanup = {}
+        responses = iter(["i"])
+        def fake_prompt(message, default=False, allow_ignore=False):
+            return next(responses)
+
+        watch_rules = []
+        cleanup_rules = []
+        with mock.patch.object(mod, "prompt_yes_no", side_effect=fake_prompt):
+            with mock.patch.object(mod, "_prompt_yes_no_simple", return_value=True):
+                proceed, _ = mod.process_cluster(
+                    "list_lens", self._cluster(),
+                    watch_rules, cleanup_rules, "INBOX",
+                    ignore_watch=ignore_watch,
+                    ignore_cleanup=ignore_cleanup,
+                )
+        self.assertTrue(proceed)
+        self.assertEqual(ignore_watch, {"list_ids": ["some.list"]})
+        self.assertEqual(ignore_cleanup, {"list_ids": ["some.list"]})
+        self.assertEqual(watch_rules, [])
+        self.assertEqual(cleanup_rules, [])
+
+    def test_cleanup_i_records_to_cleanup_only(self):
+        ignore_watch = {}
+        ignore_cleanup = {}
+        responses = iter(["n", "i"])
+        def fake_prompt(message, default=False, allow_ignore=False):
+            return next(responses)
+
+        watch_rules = []
+        cleanup_rules = []
+        with mock.patch.object(mod, "prompt_yes_no", side_effect=fake_prompt):
+            proceed, _ = mod.process_cluster(
+                "list_lens", self._cluster(),
+                watch_rules, cleanup_rules, "INBOX",
+                ignore_watch=ignore_watch,
+                ignore_cleanup=ignore_cleanup,
+            )
+        self.assertTrue(proceed)
+        self.assertEqual(ignore_watch, {})
+        self.assertEqual(ignore_cleanup, {"list_ids": ["some.list"]})
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `python3 bin/test_generate_rules.py -k "TestIgnorePureFunctions|TestProcessClusterAuthoring" -v`
+Expected: FAIL — `AttributeError` for missing functions.
+
+- [ ] **Step 3: Write the implementation**
+
+1. Extend `prompt_yes_no` — replace the existing function:
+
+```python
+def prompt_yes_no(message: str, default: bool = False, allow_ignore: bool = False) -> str:
+    if allow_ignore:
+        default_hint = "y" if default else "n"
+        response = input(f"{message} [y/n/i/q] (default {default_hint}): ").strip().lower()
+    else:
+        default_hint = "y" if default else "n"
+        response = input(f"{message} [y/n/q] (default {default_hint}): ").strip().lower()
+    if response == "":
+        return "y" if default else "n"
+    if response in ("q", "quit"):
+        return "q"
+    if allow_ignore and response == "i":
+        return "i"
+    if response not in ("y", "n"):
+        return "n"
+    return response
+```
+
+2. Add a simple follow-up helper (placed after `prompt_yes_no`):
+
+```python
+def _prompt_yes_no_simple(message: str, default: bool = False) -> bool:
+    """y/n prompt without quit/ignore options. Returns True for yes."""
+    hint = "y" if default else "n"
+    response = input(f"{message} [y/n] (default {hint}): ").strip().lower()
+    if response == "":
+        return default
+    return response == "y"
+```
+
+3. Add the pure functions (placed after `_prompt_yes_no_simple`):
+
+```python
+def extract_ignore_identity(lens: str, cluster: Dict[str, Any]) -> Dict[str, List[str]]:
+    """Extract the ignore-relevant identity from a cluster for a given lens.
+
+    list_lens -> {"list_ids": [keys.ListID]}
+    sender_unsub_lens -> {"sender_domains": [all of keys.SenderDomains]}
+    recipient_tag_lens -> {"recipient_tags": [keys["recipient_tag"]]}
+    else -> {}.
+    """
+    keys = cluster.get("keys", {}) or {}
+    if lens == "list_lens":
+        list_id = keys.get("ListID")
+        if list_id:
+            return {"list_ids": [str(list_id)]}
+    elif lens == "sender_unsub_lens":
+        domains = keys.get("SenderDomains")
+        if domains:
+            return {"sender_domains": [str(d) for d in domains]}
+    elif lens == "recipient_tag_lens":
+        tag = keys.get("recipient_tag")
+        if tag:
+            return {"recipient_tags": [str(tag)]}
+    return {}
+
+
+def merge_ignore_entries(acc: Dict[str, List[str]], new: Dict[str, List[str]]) -> None:
+    """Append new values into acc lists (in place)."""
+    for key, values in new.items():
+        if key not in acc:
+            acc[key] = []
+        acc[key].extend(values)
+
+
+def dedup_ignore_entries(entries: Dict[str, List[str]]) -> Dict[str, List[str]]:
+    """sorted(set(v)) per field, empty fields dropped."""
+    result = {}
+    for key, values in entries.items():
+        deduped = sorted(set(values))
+        if deduped:
+            result[key] = deduped
+    return result
+
+
+def build_ignore_fragment(ignore_watch: Dict[str, List[str]], ignore_cleanup: Dict[str, List[str]]) -> Dict[str, Any]:
+    """{"ignore": {"watch": deduped, "cleanup": deduped}} omitting empty sides; {} when both empty."""
+    watch = dedup_ignore_entries(ignore_watch)
+    cleanup = dedup_ignore_entries(ignore_cleanup)
+    result = {}
+    if watch:
+        result["watch"] = watch
+    if cleanup:
+        result["cleanup"] = cleanup
+    if result:
+        return {"ignore": result}
+    return {}
+```
+
+4. Replace `process_cluster` with the full authoring version:
+
+```python
+def process_cluster(
+    lens: str,
+    cluster: Dict[str, Any],
+    watch_rules: List[Dict[str, Any]],
+    cleanup_rules: List[Dict[str, Any]],
+    default_folders: Optional[str],
+    ignore_watch: Optional[Dict[str, List[str]]] = None,
+    ignore_cleanup: Optional[Dict[str, List[str]]] = None,
+) -> Tuple[bool, Optional[str]]:
+    print("\n=== Cluster ===")
+    print(cluster_summary(cluster))
+    for line in format_examples(cluster):
+        print(f"  {line}")
+
+    suppressed = cluster.get("suppressed", []) or []
+    rule_name: Optional[str] = None
+    skip_cleanup_prompt = False
+
+    # Watch section
+    if "watch" in suppressed:
+        print("Watch rule suppressed by ignore list.")
+    else:
+        watch_response = prompt_yes_no("Generate watch rule?", default=False, allow_ignore=True)
+        if watch_response == "q":
+            return False, default_folders
+        if watch_response == "i":
+            if ignore_watch is not None:
+                merge_ignore_entries(ignore_watch, extract_ignore_identity(lens, cluster))
+            if _prompt_yes_no_simple("Also ignore for cleanup?", default=False):
+                if ignore_cleanup is not None:
+                    merge_ignore_entries(ignore_cleanup, extract_ignore_identity(lens, cluster))
+                skip_cleanup_prompt = True
+        elif watch_response == "y":
+            rule_name = rule_name or rule_name_prompt(lens, cluster)
+            if lens == "list_lens":
+                rule = build_watch_rule_list(cluster, rule_name)
+            elif lens == "sender_unsub_lens":
+                rule = build_watch_rule_sender(cluster, rule_name)
+            elif lens == "recipient_tag_lens":
+                rule = build_watch_rule_recipient_tag(cluster, rule_name)
+            else:
+                print(f"Unsupported lens for watch rules: {lens}")
+                rule = None
+            if rule:
+                watch_rules.append(rule)
+
+    # Cleanup section
+    if not skip_cleanup_prompt:
+        if "cleanup" in suppressed:
+            print("Cleanup rule suppressed by ignore list.")
+        else:
+            cleanup_response = prompt_yes_no("Generate cleanup rule?", default=False, allow_ignore=True)
+            if cleanup_response == "q":
+                return False, default_folders
+            if cleanup_response == "i":
+                if ignore_cleanup is not None:
+                    merge_ignore_entries(ignore_cleanup, extract_ignore_identity(lens, cluster))
+            elif cleanup_response == "y":
+                rule_name = rule_name or rule_name_prompt(lens, cluster)
+                if lens == "list_lens":
+                    rule, default_folders = build_cleanup_rule_list(cluster, rule_name, default_folders)
+                elif lens == "sender_unsub_lens":
+                    rule, default_folders = build_cleanup_rule_sender(cluster, rule_name, default_folders)
+                elif lens == "recipient_tag_lens":
+                    print("recipient_tag_lens does not support server-side cleanup rules.")
+                    rule = None
+                else:
+                    print(f"Unsupported lens for cleanup rules: {lens}")
+                    rule = None
+                if rule:
+                    cleanup_rules.append(rule)
+
+    return True, default_folders
+```
+
+5. Add `--ignore-out` arg in `main()`, after the `--checkpoint` block:
+
+```python
+    parser.add_argument(
+        "--ignore-out",
+        default=None,
+        help="Path to write authored ignore entries as a YAML fragment",
+    )
+```
+
+6. Replace the main cluster loop (extending Task 5's loop with ignore accumulators):
 
 ```python
     suppressed_count = 0
+    ignore_watch_acc: Dict[str, List[str]] = {}
+    ignore_cleanup_acc: Dict[str, List[str]] = {}
 
     for lens, cluster in clusters:
         if not enabled_lenses.get(lens, True):
@@ -1519,22 +2040,19 @@ with:
         if cluster_id in processed_ids:
             continue
 
-        ask_watch, ask_cleanup = True, True
-        if ignore_lists is not None:
-            suppress_watch, suppress_cleanup = cluster_rule_suppression(cluster, lens, ignore_lists)
-            if suppress_watch and suppress_cleanup:
-                suppressed_count += 1
-                continue  # not prompted -> not written to the Generation Checkpoint
-            ask_watch, ask_cleanup = not suppress_watch, not suppress_cleanup
+        suppressed = cluster.get("suppressed", []) or []
+        if "watch" in suppressed and "cleanup" in suppressed:
+            suppressed_count += 1
+            continue
 
-        proceed, default_folders = process_cluster_prompts(
+        proceed, default_folders = process_cluster(
             lens,
             cluster,
             watch_rules,
             cleanup_rules,
             default_folders,
-            ask_watch=ask_watch,
-            ask_cleanup=ask_cleanup,
+            ignore_watch=ignore_watch_acc,
+            ignore_cleanup=ignore_cleanup_acc,
         )
         if not proceed:
             break
@@ -1545,25 +2063,38 @@ with:
         print(f"Skipped {suppressed_count} clusters suppressed by ignore list")
 ```
 
+7. Add end-of-main write/warning after the existing `write_yaml` / checkpoint print lines (before `return 0`):
+
+```python
+    fragment = build_ignore_fragment(ignore_watch_acc, ignore_cleanup_acc)
+    if fragment:
+        if args.ignore_out:
+            write_yaml(args.ignore_out, fragment)
+            print(f"Wrote ignore fragment to {args.ignore_out}")
+        else:
+            entry_count = sum(len(v) for v in fragment.get("ignore", {}).get("watch", {}).values())
+            entry_count += sum(len(v) for v in fragment.get("ignore", {}).get("cleanup", {}).values())
+            print(f"Warning: {entry_count} ignore entries were authored but not written. Use --ignore-out to save them.")
+```
+
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `python3 bin/test_generate_rules.py`
-Expected: PASS (all tests, including the 3 new prompt-flow tests). Also `python3 bin/test_yaml_scalar.py` still passes.
+Run: `python3 bin/test_generate_rules.py -v`
+Expected: all tests pass (pure functions + authoring + suppression + pre-existing). Also `python3 bin/test_yaml_scalar.py` still passes.
 
-- [ ] **Step 5: Manual verification of the interactive flow**
+- [ ] **Step 5: Manual verification of the interactive authoring flow**
 
 ```bash
-cat > /tmp/pp-analyze.json << 'EOF'
+cat > /tmp/pp-analyze-author.json << 'EOF'
 {
   "generated_at": "2026-08-06T00:00:00Z",
   "source": {"mailbox": "INBOX", "account": "test@test.com", "time_window": {"after": "", "before": ""}},
-  "stats": {"total_messages_scanned": 10},
+  "stats": {"total_messages_scanned": 5},
   "indexes": {
     "list_lens": {
       "key_fields": ["ListID"],
       "clusters": [
-        {"cluster_id": "list_lens:aaa", "count": 5, "latest_date": "2026-08-01T00:00:00Z", "keys": {"ListID": "ignored.newsletter"}, "signals": {"has_list_id": true, "has_list_unsubscribe": true, "precedence_categories": {}}, "examples": {"subject_raw": ["News"], "recipients": [], "reply_to_domains": [], "sender_domains": [], "returnpath_domains": [], "list_unsubscribe_targets": []}},
-        {"cluster_id": "list_lens:bbb", "count": 3, "latest_date": "2026-08-01T00:00:00Z", "keys": {"ListID": "active.sender"}, "signals": {"has_list_id": true, "has_list_unsubscribe": true, "precedence_categories": {}}, "examples": {"subject_raw": ["Hi"], "recipients": [], "reply_to_domains": [], "sender_domains": [], "returnpath_domains": [], "list_unsubscribe_targets": []}}
+        {"cluster_id": "list_lens:aaa", "count": 5, "latest_date": "2026-08-01T00:00:00Z", "keys": {"ListID": "ignore-me.list"}, "signals": {"has_list_id": true, "has_list_unsubscribe": true, "precedence_categories": {}}, "examples": {"subject_raw": ["News"], "recipients": [], "reply_to_domains": [], "sender_domains": [], "returnpath_domains": [], "list_unsubscribe_targets": []}}
       ]
     },
     "sender_unsub_lens": {"key_fields": ["SenderDomains", "HasListUnsubscribe"], "clusters": []},
@@ -1573,38 +2104,31 @@ cat > /tmp/pp-analyze.json << 'EOF'
 }
 EOF
 
-cat > /tmp/pp-config-watch-only.yaml << 'EOF'
-ignore:
-  watch:
-    list_ids: ["ignored.newsletter"]
-EOF
-
-cat > /tmp/pp-config-both.yaml << 'EOF'
-ignore:
-  watch:
-    list_ids: ["ignored.newsletter"]
-  cleanup:
-    list_ids: ["ignored.newsletter"]
-EOF
+# Answer: process list_lens (y), watch prompt "i" (ignore), follow-up "n" (cleanup only), cleanup prompt "n"
+printf 'y\ni\nn\nn\n' | python3 bin/postmanpat-generate-rules.py --analyze /tmp/pp-analyze-author.json --watch-out /tmp/pp-watch.yml --cleanup-out /tmp/pp-cleanup.yml --ignore-out /tmp/pp-ignore.yaml
 ```
 
-Run A (watch-only suppression) — answer "y" to processing `list_lens`, then `n` to prompts:
-`printf 'y\nn\nn\nn\n' | python3 bin/postmanpat-generate-rules.py --analyze /tmp/pp-analyze.json --watch-out /tmp/pp-watch.yml --cleanup-out /tmp/pp-cleanup.yml --config /tmp/pp-config-watch-only.yaml`
-Expected: for cluster `ignored.newsletter`, "Watch rule suppressed by ignore list." prints and only "Generate cleanup rule?" is asked; `active.sender` asks both; no "Skipped N clusters" line.
+Expected: no watch/cleanup rules generated; `/tmp/pp-ignore.yaml` contains:
+```yaml
+ignore:
+  watch:
+    list_ids:
+      - "ignore-me.list"
+```
+Checkpoint contains `list_lens:aaa`.
 
-Run B (both lists) :
-`printf 'y\nn\nn\n' | python3 bin/postmanpat-generate-rules.py --analyze /tmp/pp-analyze.json --watch-out /tmp/pp-watch2.yml --cleanup-out /tmp/pp-cleanup2.yml --config /tmp/pp-config-both.yaml`
-Expected: "Skipped 1 clusters suppressed by ignore list" prints; only `active.sender` is prompted.
+Now test the follow-up "y" path (skip cleanup prompt):
+```bash
+printf 'y\ni\ny\n' | python3 bin/postmanpat-generate-rules.py --analyze /tmp/pp-analyze-author.json --watch-out /tmp/pp-watch2.yml --cleanup-out /tmp/pp-cleanup2.yml --ignore-out /tmp/pp-ignore2.yaml
+```
 
-Run C (checkpoint separation): after Run B, `cat /tmp/pp-watch2.yml.checkpoint.json` must contain only `list_lens:bbb` — NOT `list_lens:aaa`.
-
-Run D (no --config): repeat Run A without `--config`; behavior is identical to today (both prompts for both clusters).
+Expected: `/tmp/pp-ignore2.yaml` contains both watch and cleanup entries with the same list_id.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add bin/postmanpat-generate-rules.py bin/test_generate_rules.py
-git commit -m "feat(bin): wire ignore-list suppression into rule generator"
+git commit -m "feat(bin): add ignore authoring via 'i' prompt and --ignore-out"
 ```
 
 ---
@@ -1624,8 +2148,8 @@ git commit -m "feat(bin): wire ignore-list suppression into rule generator"
 In the "Docker (Analyze)" section, after the flags bullet line ("Flags: `--top` ... `--min-count` ..."), add:
 
 ```markdown
-    - `--no-ignore`: disable ignore-list filtering for this run (audit what you're ignoring).
-    - Optional top-level `ignore` section filters Fully Decided mail out of the report. Identities on both the `watch` and `cleanup` lists are removed before aggregation; identities on one list stay in the report and the rule generator suppresses only that rule type's prompt. `sender_domains` match exactly; all other fields are case-insensitive substrings (`subject_substrings` match raw subjects):
+    - `--no-ignore`: disable ignore-list filtering and suppression annotation for this run (audit what you're ignoring).
+    - Optional top-level `ignore` section filters Fully Decided mail out of the report. Identities on both the `watch` and `cleanup` lists are removed before aggregation; identities on one list stay in the report and the rule generator suppresses only that rule type's prompt. Each cluster in the report carries a `"suppressed"` annotation (e.g. `"suppressed": ["watch"]`) so the generator knows which prompts to skip. `sender_domains` match exactly; all other fields are case-insensitive substrings (`subject_substrings` match raw subjects):
 
       ```yaml
       ignore:
@@ -1637,7 +2161,7 @@ In the "Docker (Analyze)" section, after the flags bullet line ("Flags: `--top` 
       ```
 ```
 
-In "Turn the report into rules", update the script example to include the optional config:
+In "Turn the report into rules", update the script example:
 
 ```markdown
     ```bash
@@ -1645,15 +2169,17 @@ In "Turn the report into rules", update the script example to include the option
       --analyze analyze-out/postmanpat-analyze-*.json \
       --watch-out watch-new.yml \
       --cleanup-out cleanup-new.yml \
-      --config config/config_analyze.yaml  # optional: enables ignore-list prompt suppression
+      --ignore-out ignore-new.yaml  # optional: writes authored "i" entries as a YAML fragment
     ```
+
+    Answer `i` at a rule prompt to ignore that identity instead of generating a rule. The script will ask whether to ignore for the other rule type too. Use `--ignore-out` to persist the authored fragment for review and merge into your config.
 ```
 
 - [ ] **Step 2: Update AGENTS.md**
 
-In "CLI Behavior", extend the `analyze` bullet's flag list from ``(--top` `--examples` `--min-count`)`` to ``(--top` `--examples` `--min-count` `--no-ignore`)`` and append: "An optional top-level `ignore:` section (`watch:`/`cleanup:` sub-lists) filters Fully Decided messages (on both lists) out of the report; see `CONTEXT.md` and `docs/adr/0001-ignore-list-split-filtering.md`."
+In "CLI Behavior", extend the `analyze` bullet's flag list from ``(--top` `--examples` `--min-count`)`` to ``(--top` `--examples` `--min-count` `--no-ignore`)`` and append: "An optional top-level `ignore:` section (`watch:`/`cleanup:` sub-lists) filters Fully Decided messages (on both lists) out of the report; each surviving cluster carries a `suppressed` annotation (`["watch"]`, `["cleanup"]`, or both) that the rule generator uses to skip prompts. See `CONTEXT.md` and `docs/adr/0002-suppression-via-report-annotation.md`."
 
-In "Project Structure", extend the `bin/` line to note `postmanpat-generate-rules.py` accepts `--config` for ignore-list prompt suppression.
+In "Project Structure", extend the `bin/` line to note `postmanpat-generate-rules.py` accepts `--ignore-out` for authoring ignore entries and reads the report's `suppressed` annotation (no config-side matching).
 
 - [ ] **Step 3: Verify and commit**
 
@@ -1662,5 +2188,5 @@ Expected: all green (docs-only change; full verification pass).
 
 ```bash
 git add README.md AGENTS.md
-git commit -m "docs: document ignore list for analyze and rule generator"
+git commit -m "docs: document ignore list, --no-ignore, suppression annotation, and --ignore-out"
 ```

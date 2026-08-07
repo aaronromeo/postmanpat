@@ -1,5 +1,7 @@
 # Ignore List filtering is split between analyze and the rule generator
 
+> Amended by [ADR 0002](0002-suppression-via-report-annotation.md): the generator learns per-type suppression from a report annotation computed by `analyze`, rather than reading the config and matching cluster keys itself; and the generator now authors ignore entries. The split-filtering principle below (`analyze` filters Fully Decided messages pre-aggregation) still stands.
+
 The Ignore List (see CONTEXT.md) blocks rule generation for already-decided identities, and is split into a Watch Ignore List and a Cleanup Ignore List. Filtering is deliberately split across two programs: `analyze` filters Fully Decided messages (on both lists) before aggregation, while `generate-rules.py` suppresses only the corresponding rule-type prompt for half-decided identities (on one list). A single-stage design is impossible: the report must stay silent about ignored mail (which requires removal before aggregation), yet half-decided mail must remain in the report so the other rule type can still be generated from it.
 
 ## Considered Options

@@ -29,12 +29,16 @@ The subset of the Ignore List that blocks generation of CLEANUP rules for matchi
 _Avoid_: cleanup exclude, cleanup skip
 
 **Fully Decided**:
-An identity appearing on both the Watch Ignore List and the Cleanup Ignore List. `analyze` filters fully-decided messages before aggregation, so they never appear in the report. Half-decided identities (one list only) stay in the report; the rule generator suppresses only the corresponding rule-type prompt.
+An identity appearing on both the Watch Ignore List and the Cleanup Ignore List. `analyze` filters fully-decided messages before aggregation, so they never appear in the report. Half-decided identities (one list only) stay in the report; `analyze` annotates their clusters as Suppressed and the generator does not offer that rule type.
+
+**Suppressed**:
+A per-cluster report annotation (`suppressed`) naming the rule types — watch and/or cleanup — the rule generator must not offer for that cluster. Computed by `analyze` during aggregation at message granularity; a cluster suppressed for both rule types is skipped without prompting.
+_Avoid_: blocked, filtered (filtering is what happens to Fully Decided messages)
 
 **Checkpoint**:
 The watch command's persisted IMAP UID position, letting it resume after reconnects. Configured via the top-level `checkpoint.path`.
 _Avoid_: state file, cursor
 
 **Generation Checkpoint**:
-The rule generator script's local JSON record of cluster IDs already presented interactively, so they are not re-prompted. Distinct from the Ignore List: the Generation Checkpoint remembers what was *asked*; the Ignore List records what was *decided*. Clusters suppressed by an Ignore List are never written to the Generation Checkpoint.
+The rule generator script's local JSON record of cluster IDs already presented interactively, so they are not re-prompted. Distinct from the Ignore List: the Generation Checkpoint remembers what was *asked*; the Ignore List records what was *decided*. Fully Decided clusters never appear in reports and never reach it; clusters skipped via a Suppressed annotation are not checkpointed; clusters the user answers — including ones they mark ignored — are checkpointed.
 _Avoid_: checkpoint (ambiguous with the watch Checkpoint)
