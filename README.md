@@ -169,6 +169,10 @@ Use a one-off container to run `postmanpat analyze`, which scans a mailbox using
 
    ```bash
    mkdir -p analyze-out
+   # The config file MUST exist before this runs — Docker auto-creates a missing
+   # host source as a root-owned directory. See "Overriding the cleanup config
+   # for a one-off run" above for the full gotcha notes.
+   ls config/config_analyze.yaml
    docker compose run --rm \
      -v ./config/config_analyze.yaml:/config/config_analyze.yaml:ro \
      -v ./analyze-out:/analyze-out \
@@ -178,15 +182,21 @@ Use a one-off container to run `postmanpat analyze`, which scans a mailbox using
 
    - Flags: `--top` (max clusters per lens, default 100), `--examples` (max examples per field, default 20), `--min-count` (minimum cluster size, default 2).
    - Only the IMAP env vars are required; the S3 and webhook vars are unused by `analyze`.
+   - Don't skip the `ls` guard: a typo'd filename (e.g. `analyze.yaml` vs `analysis.yml`) silently becomes a root-owned directory mounted at `/config/config_analyze.yaml` instead of an error.
 
 3. **Run on rocketman (production)**
 
    Production configs live in the [rocketman repo](https://github.com/aaronromeo/rocketman/tree/main/postmanpat-config). From the postmanpat checkout on that host:
 
    ```bash
+   # Use the deployment checkout (/opt/docker/rocketman), NOT your working clone —
+   # and make sure both the config file and output dir exist first (see the
+   # gotcha notes in "Overriding the cleanup config for a one-off run" above).
+   ls /opt/docker/rocketman/postmanpat-config/config_analyze.yaml
+   sudo -u dockerops mkdir -p /opt/docker/rocketman/postmanpat-config/analyze-out
    sudo -u dockerops docker compose run --rm \
-     -v /home/aaron/workspace/rocketman/postmanpat-config/config_analyze.yaml:/config/config_analyze.yaml:ro \
-     -v /home/aaron/workspace/rocketman/postmanpat-config/analyze-out:/analyze-out \
+     -v /opt/docker/rocketman/postmanpat-config/config_analyze.yaml:/config/config_analyze.yaml:ro \
+     -v /opt/docker/rocketman/postmanpat-config/analyze-out:/analyze-out \
      -e TMPDIR=/analyze-out \
      postmanpat postmanpat analyze --config /config/config_analyze.yaml
    ```
