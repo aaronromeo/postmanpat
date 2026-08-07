@@ -160,7 +160,18 @@ Use a one-off container to run `postmanpat analyze`, which scans a mailbox using
      postmanpat postmanpat analyze --config /config/config_analyze.yaml
    ```
 
-   - Flags: `--top` (max clusters per lens, default 100), `--examples` (max examples per field, default 20), `--min-count` (minimum cluster size, default 2).
+    - Flags: `--top` (max clusters per lens, default 100), `--examples` (max examples per field, default 20), `--min-count` (minimum cluster size, default 2).
+    - `--no-ignore`: disable ignore-list filtering and suppression annotation for this run (audit what you're ignoring).
+    - Optional top-level `ignore` section filters Fully Decided mail out of the report. Identities on both the `watch` and `cleanup` lists are removed before aggregation; identities on one list stay in the report and the rule generator suppresses only that rule type's prompt. Each cluster in the report carries a `"suppressed"` annotation (e.g. `"suppressed": ["watch"]`) so the generator knows which prompts to skip. `sender_domains` match exactly; all other fields are case-insensitive substrings (`subject_substrings` match raw subjects):
+
+      ```yaml
+      ignore:
+        watch:
+          sender_domains: ["github.com"]
+        cleanup:
+          sender_domains: ["github.com"]
+          list_ids: ["weekly-digest"]
+      ```
    - Only the IMAP env vars are required; the S3 and webhook vars are unused by `analyze`.
 
 3. **Run on rocketman (production)**
@@ -179,12 +190,15 @@ Use a one-off container to run `postmanpat analyze`, which scans a mailbox using
 
    Feed the report into the helper script (requires PyYAML), which interactively generates watch and cleanup rules:
 
-   ```bash
-   python3 bin/postmanpat-generate-rules.py \
-     --analyze analyze-out/postmanpat-analyze-*.json \
-     --watch-out watch-new.yml \
-     --cleanup-out cleanup-new.yml
-   ```
+    ```bash
+    python3 bin/postmanpat-generate-rules.py \
+      --analyze analyze-out/postmanpat-analyze-*.json \
+      --watch-out watch-new.yml \
+      --cleanup-out cleanup-new.yml \
+      --ignore-out ignore-new.yaml  # optional: writes authored "i" entries as a YAML fragment
+    ```
+
+    Answer `i` at a rule prompt to ignore that identity instead of generating a rule. The script will ask whether to ignore for the other rule type too. Use `--ignore-out` to persist the authored fragment for review and merge into your config.
 
    Review the generated rules, then merge them into the rocketman repo:
    - Watch rules → `postmanpat-config/watch.yml`
