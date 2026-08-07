@@ -117,3 +117,227 @@ func writeTempFile(t *testing.T, contents string) string {
 	}
 	return path
 }
+
+func TestIgnoreSectionAbsentIsValid(t *testing.T) {
+	path := writeTempFile(t, `
+rules:
+  - name: "Rule"
+    server:
+      folders:
+        - "INBOX"
+    actions: []
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("expected config to load, got error: %v", err)
+	}
+
+	if cfg.Ignore != nil {
+		t.Fatalf("expected Ignore to be nil when section absent, got: %+v", cfg.Ignore)
+	}
+
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("expected validation to pass with no ignore section, got: %v", err)
+	}
+}
+
+func TestIgnoreSectionParsesBothSubsections(t *testing.T) {
+	path := writeTempFile(t, `
+rules:
+  - name: "Rule"
+    server:
+      folders:
+        - "INBOX"
+    actions: []
+ignore:
+  watch:
+    sender_domains:
+      - "github.com"
+    sender_addresses:
+      - "noreply@github.com"
+    list_ids:
+      - "github-notifications"
+    recipient_tags:
+      - "dev"
+    subject_substrings:
+      - "[GitHub]"
+  cleanup:
+    sender_domains:
+      - "mailer.example.com"
+    sender_addresses:
+      - "bulk@mailer.example.com"
+    list_ids:
+      - "weekly-digest"
+    recipient_tags:
+      - "promo"
+    subject_substrings:
+      - "Newsletter"
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("expected config to load, got error: %v", err)
+	}
+
+	if cfg.Ignore == nil {
+		t.Fatal("expected Ignore to be non-nil")
+	}
+
+	w := cfg.Ignore.Watch
+	if len(w.SenderDomains) != 1 || w.SenderDomains[0] != "github.com" {
+		t.Fatalf("watch.sender_domains: got %v, want [github.com]", w.SenderDomains)
+	}
+	if len(w.SenderAddresses) != 1 || w.SenderAddresses[0] != "noreply@github.com" {
+		t.Fatalf("watch.sender_addresses: got %v", w.SenderAddresses)
+	}
+	if len(w.ListIDs) != 1 || w.ListIDs[0] != "github-notifications" {
+		t.Fatalf("watch.list_ids: got %v", w.ListIDs)
+	}
+	if len(w.RecipientTags) != 1 || w.RecipientTags[0] != "dev" {
+		t.Fatalf("watch.recipient_tags: got %v", w.RecipientTags)
+	}
+	if len(w.SubjectSubstrings) != 1 || w.SubjectSubstrings[0] != "[GitHub]" {
+		t.Fatalf("watch.subject_substrings: got %v", w.SubjectSubstrings)
+	}
+
+	c := cfg.Ignore.Cleanup
+	if len(c.SenderDomains) != 1 || c.SenderDomains[0] != "mailer.example.com" {
+		t.Fatalf("cleanup.sender_domains: got %v", c.SenderDomains)
+	}
+	if len(c.SenderAddresses) != 1 || c.SenderAddresses[0] != "bulk@mailer.example.com" {
+		t.Fatalf("cleanup.sender_addresses: got %v", c.SenderAddresses)
+	}
+	if len(c.ListIDs) != 1 || c.ListIDs[0] != "weekly-digest" {
+		t.Fatalf("cleanup.list_ids: got %v", c.ListIDs)
+	}
+	if len(c.RecipientTags) != 1 || c.RecipientTags[0] != "promo" {
+		t.Fatalf("cleanup.recipient_tags: got %v", c.RecipientTags)
+	}
+	if len(c.SubjectSubstrings) != 1 || c.SubjectSubstrings[0] != "Newsletter" {
+		t.Fatalf("cleanup.subject_substrings: got %v", c.SubjectSubstrings)
+	}
+
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("expected validation to pass, got: %v", err)
+	}
+}
+
+func TestIgnoreEmptyListsAreValid(t *testing.T) {
+	path := writeTempFile(t, `
+rules:
+  - name: "Rule"
+    server:
+      folders:
+        - "INBOX"
+    actions: []
+ignore:
+  watch: {}
+  cleanup: {}
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("expected config to load, got error: %v", err)
+	}
+
+	if cfg.Ignore == nil {
+		t.Fatal("expected Ignore to be non-nil")
+	}
+
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("expected validation to pass with empty lists, got: %v", err)
+	}
+}
+
+func TestIgnoreWhitespaceOnlyEntryInvalid(t *testing.T) {
+	path := writeTempFile(t, `
+rules:
+  - name: "Rule"
+    server:
+      folders:
+        - "INBOX"
+    actions: []
+ignore:
+  watch:
+    sender_domains:
+      - "github.com"
+      - "   "
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("expected config to load, got error: %v", err)
+	}
+
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected validation error for whitespace-only entry")
+	} else if !strings.Contains(err.Error(), "sender_domains") {
+		t.Fatalf("expected error to mention 'sender_domains', got: %v", err)
+	}
+}
+
+func TestIgnoreOnlyWatchPopulatedIsValid(t *testing.T) {
+	path := writeTempFile(t, `
+rules:
+  - name: "Rule"
+    server:
+      folders:
+        - "INBOX"
+    actions: []
+ignore:
+  watch:
+    sender_domains:
+      - "github.com"
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("expected config to load, got error: %v", err)
+	}
+
+	if cfg.Ignore == nil {
+		t.Fatal("expected Ignore to be non-nil")
+	}
+	if len(cfg.Ignore.Watch.SenderDomains) != 1 {
+		t.Fatal("expected watch.sender_domains to have 1 entry")
+	}
+	if len(cfg.Ignore.Cleanup.SenderDomains) != 0 {
+		t.Fatalf("expected cleanup.sender_domains to be empty, got %v", cfg.Ignore.Cleanup.SenderDomains)
+	}
+
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("expected validation to pass, got: %v", err)
+	}
+}
+
+func TestIgnoreOnlyCleanupPopulatedIsValid(t *testing.T) {
+	path := writeTempFile(t, `
+rules:
+  - name: "Rule"
+    server:
+      folders:
+        - "INBOX"
+    actions: []
+ignore:
+  cleanup:
+    list_ids:
+      - "weekly-digest"
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("expected config to load, got error: %v", err)
+	}
+
+	if cfg.Ignore == nil {
+		t.Fatal("expected Ignore to be non-nil")
+	}
+	if len(cfg.Ignore.Cleanup.ListIDs) != 1 {
+		t.Fatal("expected cleanup.list_ids to have 1 entry")
+	}
+
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("expected validation to pass, got: %v", err)
+	}
+}
