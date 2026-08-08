@@ -13,7 +13,7 @@
 - `watchrunner/` — IDLE-watch orchestration; `internal/matchers` holds client-side matchers.
 - `announcer/` — webhook (Discord/Slack) reporting client.
 - `ftest/` — integration tests using an in-memory TLS IMAP server; no external services required.
-- `bin/` — Python helper scripts (require PyYAML) for converting watch configs to cleanup configs and generating rules.
+- `bin/` — Python helper scripts (require PyYAML) for converting watch configs to cleanup configs and generating rules. `postmanpat-generate-rules.py` accepts `--ignore-out` for authoring ignore entries and reads the report's `suppressed` annotation (no config-side matching).
 - `context/` — project brief and operating constraints (`overview.md`, `requirements_stage1.md`, `roles_and_constraints.md`).
 - `docs/superpowers/specs/` — approved design specs (see OTel status below).
 
@@ -27,7 +27,7 @@
 - Config path: `--config` flag or `POSTMANPAT_CONFIG` env. A local `.env` file is auto-loaded (godotenv) when present.
 - `cleanup` (`--dry-run`): processes rules in order, applies all actions. Server-side matchers only — rules with `client` matchers are rejected. Actions supported at runtime: `delete`, `move` only. Non-idempotent (deletes/moves mail), so use `--dry-run` for validation.
 - `watch` (`--verbose`, `--test "Rule"` `--limit` `--mailbox`): long-lived IDLE loop on a single mailbox (INBOX). Client-side matchers only — rules with `server` matchers are rejected. Reloads config every 5 minutes; reconnects after benign IDLE errors and resumes from last UID.
-- `analyze` (`--top` `--examples` `--min-count`): scans via server matchers and writes a JSON report to a temp file, printing its path.
+- `analyze` (`--top` `--examples` `--min-count` `--no-ignore`): scans via server matchers and writes a JSON report to a temp file, printing its path. An optional top-level `ignore:` section (`watch:`/`cleanup:` sub-lists) filters Fully Decided messages (on both lists) out of the report; each surviving cluster carries a `suppressed` annotation (`["watch"]`, `["cleanup"]`, or both) that the rule generator uses to skip prompts. See `CONTEXT.md` and `docs/adr/0002-suppression-via-report-annotation.md`.
 - `age_window` uses IMAP INTERNALDATE, not the `Date:` header.
 
 ## Environment Variables

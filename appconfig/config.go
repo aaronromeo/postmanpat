@@ -26,8 +26,9 @@ const (
 
 // Config holds non-secret configuration loaded from YAML.
 type Config struct {
-	Rules      []Rule     `yaml:"rules"`
-	Checkpoint Checkpoint `yaml:"checkpoint"`
+	Rules      []Rule        `yaml:"rules"`
+	Checkpoint Checkpoint    `yaml:"checkpoint"`
+	Ignore     *IgnoreConfig `yaml:"ignore"`
 }
 
 // IMAPEnv holds the IMAP connection details from environment variables.
@@ -172,6 +173,23 @@ type Checkpoint struct {
 	Path string `yaml:"path"`
 }
 
+// IgnoreMatchers defines the identities ignored for one rule type.
+// SenderDomains match exactly (case-insensitive); all other fields match as
+// case-insensitive substrings.
+type IgnoreMatchers struct {
+	SenderDomains     []string `yaml:"sender_domains"`
+	SenderAddresses   []string `yaml:"sender_addresses"`
+	ListIDs           []string `yaml:"list_ids"`
+	RecipientTags     []string `yaml:"recipient_tags"`
+	SubjectSubstrings []string `yaml:"subject_substrings"`
+}
+
+// IgnoreConfig holds the Watch Ignore List and Cleanup Ignore List.
+type IgnoreConfig struct {
+	Watch   IgnoreMatchers `yaml:"watch"`
+	Cleanup IgnoreMatchers `yaml:"cleanup"`
+}
+
 // Load reads configuration from a YAML file.
 func Load(path string) (Config, error) {
 	data, err := os.ReadFile(path)
@@ -298,6 +316,43 @@ func Validate(cfg Config) error {
 		}
 		if rule.Server != nil && len(rule.Server.Folders) == 0 {
 			return fmt.Errorf("rule %d must define server.folders", i+1)
+		}
+	}
+	if err := validateIgnoreConfig(cfg.Ignore); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateIgnoreConfig(ic *IgnoreConfig) error {
+	if ic == nil {
+		return nil
+	}
+	if err := validateIgnoreMatchers("ignore.watch", ic.Watch); err != nil {
+		return err
+	}
+	if err := validateIgnoreMatchers("ignore.cleanup", ic.Cleanup); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateIgnoreMatchers(prefix string, m IgnoreMatchers) error {
+	fields := []struct {
+		name   string
+		values []string
+	}{
+		{"sender_domains", m.SenderDomains},
+		{"sender_addresses", m.SenderAddresses},
+		{"list_ids", m.ListIDs},
+		{"recipient_tags", m.RecipientTags},
+		{"subject_substrings", m.SubjectSubstrings},
+	}
+	for _, field := range fields {
+		for i, v := range field.values {
+			if strings.TrimSpace(v) == "" {
+				return fmt.Errorf("%s.%s[%d] must not be empty or whitespace", prefix, field.name, i)
+			}
 		}
 	}
 	return nil

@@ -35,16 +35,87 @@ def prompt(message: str, default: Optional[str] = None, required: bool = False) 
         print("Value required.")
 
 
-def prompt_yes_no(message: str, default: bool = False) -> str:
-    default_hint = "y" if default else "n"
-    response = input(f"{message} [y/n/q] (default {default_hint}): ").strip().lower()
+def prompt_yes_no(message: str, default: bool = False, allow_ignore: bool = False) -> str:
+    if allow_ignore:
+        default_hint = "y" if default else "n"
+        response = input(f"{message} [y/n/i/q] (default {default_hint}): ").strip().lower()
+    else:
+        default_hint = "y" if default else "n"
+        response = input(f"{message} [y/n/q] (default {default_hint}): ").strip().lower()
     if response == "":
         return "y" if default else "n"
     if response in ("q", "quit"):
         return "q"
+    if allow_ignore and response == "i":
+        return "i"
     if response not in ("y", "n"):
         return "n"
     return response
+
+
+def _prompt_yes_no_simple(message: str, default: bool = False) -> bool:
+    """y/n prompt without quit/ignore options. Returns True for yes."""
+    hint = "y" if default else "n"
+    response = input(f"{message} [y/n] (default {hint}): ").strip().lower()
+    if response == "":
+        return default
+    return response == "y"
+
+
+def extract_ignore_identity(lens: str, cluster: Dict[str, Any]) -> Dict[str, List[str]]:
+    """Extract the ignore-relevant identity from a cluster for a given lens.
+
+    list_lens -> {"list_ids": [keys.ListID]}
+    sender_unsub_lens -> {"sender_domains": [all of keys.SenderDomains]}
+    recipient_tag_lens -> {"recipient_tags": [keys["recipient_tag"]]}
+    else -> {}.
+    """
+    keys = cluster.get("keys", {}) or {}
+    if lens == "list_lens":
+        list_id = keys.get("ListID")
+        if list_id:
+            return {"list_ids": [str(list_id)]}
+    elif lens == "sender_unsub_lens":
+        domains = keys.get("SenderDomains")
+        if domains:
+            return {"sender_domains": [str(d) for d in domains]}
+    elif lens == "recipient_tag_lens":
+        tag = keys.get("recipient_tag")
+        if tag:
+            return {"recipient_tags": [str(tag)]}
+    return {}
+
+
+def merge_ignore_entries(acc: Dict[str, List[str]], new: Dict[str, List[str]]) -> None:
+    """Append new values into acc lists (in place)."""
+    for key, values in new.items():
+        if key not in acc:
+            acc[key] = []
+        acc[key].extend(values)
+
+
+def dedup_ignore_entries(entries: Dict[str, List[str]]) -> Dict[str, List[str]]:
+    """sorted(set(v)) per field, empty fields dropped."""
+    result = {}
+    for key, values in entries.items():
+        deduped = sorted(set(values))
+        if deduped:
+            result[key] = deduped
+    return result
+
+
+def build_ignore_fragment(ignore_watch: Dict[str, List[str]], ignore_cleanup: Dict[str, List[str]]) -> Dict[str, Any]:
+    """{"ignore": {"watch": deduped, "cleanup": deduped}} omitting empty sides; {} when both empty."""
+    watch = dedup_ignore_entries(ignore_watch)
+    cleanup = dedup_ignore_entries(ignore_cleanup)
+    result = {}
+    if watch:
+        result["watch"] = watch
+    if cleanup:
+        result["cleanup"] = cleanup
+    if result:
+        return {"ignore": result}
+    return {}
 
 
 def yaml_quote(value: str) -> str:
@@ -316,48 +387,71 @@ def process_cluster(
     watch_rules: List[Dict[str, Any]],
     cleanup_rules: List[Dict[str, Any]],
     default_folders: Optional[str],
+    ignore_watch: Optional[Dict[str, List[str]]] = None,
+    ignore_cleanup: Optional[Dict[str, List[str]]] = None,
 ) -> Tuple[bool, Optional[str]]:
     print("\n=== Cluster ===")
     print(cluster_summary(cluster))
     for line in format_examples(cluster):
         print(f"  {line}")
 
+    suppressed = cluster.get("suppressed", []) or []
     rule_name: Optional[str] = None
+    skip_cleanup_prompt = False
 
-    watch_response = prompt_yes_no("Generate watch rule?", default=False)
-    if watch_response == "q":
-        return False, default_folders
-    if watch_response == "y":
-        rule_name = rule_name or rule_name_prompt(lens, cluster)
-        if lens == "list_lens":
-            rule = build_watch_rule_list(cluster, rule_name)
-        elif lens == "sender_unsub_lens":
-            rule = build_watch_rule_sender(cluster, rule_name)
-        elif lens == "recipient_tag_lens":
-            rule = build_watch_rule_recipient_tag(cluster, rule_name)
-        else:
-            print(f"Unsupported lens for watch rules: {lens}")
-            rule = None
-        if rule:
-            watch_rules.append(rule)
+    # Watch section
+    if "watch" in suppressed:
+        print("Watch rule suppressed by ignore list.")
+    else:
+        watch_response = prompt_yes_no("Generate watch rule?", default=False, allow_ignore=True)
+        if watch_response == "q":
+            return False, default_folders
+        if watch_response == "i":
+            if ignore_watch is not None:
+                merge_ignore_entries(ignore_watch, extract_ignore_identity(lens, cluster))
+            if _prompt_yes_no_simple("Also ignore for cleanup?", default=False):
+                if ignore_cleanup is not None:
+                    merge_ignore_entries(ignore_cleanup, extract_ignore_identity(lens, cluster))
+                skip_cleanup_prompt = True
+        elif watch_response == "y":
+            rule_name = rule_name or rule_name_prompt(lens, cluster)
+            if lens == "list_lens":
+                rule = build_watch_rule_list(cluster, rule_name)
+            elif lens == "sender_unsub_lens":
+                rule = build_watch_rule_sender(cluster, rule_name)
+            elif lens == "recipient_tag_lens":
+                rule = build_watch_rule_recipient_tag(cluster, rule_name)
+            else:
+                print(f"Unsupported lens for watch rules: {lens}")
+                rule = None
+            if rule:
+                watch_rules.append(rule)
 
-    cleanup_response = prompt_yes_no("Generate cleanup rule?", default=False)
-    if cleanup_response == "q":
-        return False, default_folders
-    if cleanup_response == "y":
-        rule_name = rule_name or rule_name_prompt(lens, cluster)
-        if lens == "list_lens":
-            rule, default_folders = build_cleanup_rule_list(cluster, rule_name, default_folders)
-        elif lens == "sender_unsub_lens":
-            rule, default_folders = build_cleanup_rule_sender(cluster, rule_name, default_folders)
-        elif lens == "recipient_tag_lens":
-            print("recipient_tag_lens does not support server-side cleanup rules.")
-            rule = None
+    # Cleanup section
+    if not skip_cleanup_prompt:
+        if "cleanup" in suppressed:
+            print("Cleanup rule suppressed by ignore list.")
         else:
-            print(f"Unsupported lens for cleanup rules: {lens}")
-            rule = None
-        if rule:
-            cleanup_rules.append(rule)
+            cleanup_response = prompt_yes_no("Generate cleanup rule?", default=False, allow_ignore=True)
+            if cleanup_response == "q":
+                return False, default_folders
+            if cleanup_response == "i":
+                if ignore_cleanup is not None:
+                    merge_ignore_entries(ignore_cleanup, extract_ignore_identity(lens, cluster))
+            elif cleanup_response == "y":
+                rule_name = rule_name or rule_name_prompt(lens, cluster)
+                if lens == "list_lens":
+                    rule, default_folders = build_cleanup_rule_list(cluster, rule_name, default_folders)
+                elif lens == "sender_unsub_lens":
+                    rule, default_folders = build_cleanup_rule_sender(cluster, rule_name, default_folders)
+                elif lens == "recipient_tag_lens":
+                    print("recipient_tag_lens does not support server-side cleanup rules.")
+                    rule = None
+                else:
+                    print(f"Unsupported lens for cleanup rules: {lens}")
+                    rule = None
+                if rule:
+                    cleanup_rules.append(rule)
 
     return True, default_folders
 
@@ -380,6 +474,11 @@ def main() -> int:
         "--checkpoint",
         default=None,
         help="Path to checkpoint JSON (defaults to <watch-out>.checkpoint.json)",
+    )
+    parser.add_argument(
+        "--ignore-out",
+        default=None,
+        help="Path to write authored ignore entries as a YAML fragment",
     )
     args = parser.parse_args()
 
@@ -408,6 +507,10 @@ def main() -> int:
     cleanup_rules: List[Dict[str, Any]] = []
     default_folders: Optional[str] = "INBOX"
 
+    suppressed_count = 0
+    ignore_watch_acc: Dict[str, List[str]] = {}
+    ignore_cleanup_acc: Dict[str, List[str]] = {}
+
     for lens, cluster in clusters:
         if not enabled_lenses.get(lens, True):
             continue
@@ -415,17 +518,27 @@ def main() -> int:
         if cluster_id in processed_ids:
             continue
 
+        suppressed = cluster.get("suppressed", []) or []
+        if "watch" in suppressed and "cleanup" in suppressed:
+            suppressed_count += 1
+            continue  # not prompted -> not written to the Generation Checkpoint
+
         proceed, default_folders = process_cluster(
             lens,
             cluster,
             watch_rules,
             cleanup_rules,
             default_folders,
+            ignore_watch=ignore_watch_acc,
+            ignore_cleanup=ignore_cleanup_acc,
         )
         if not proceed:
             break
         processed_ids.add(cluster_id)
         save_checkpoint(checkpoint_path, processed_ids)
+
+    if suppressed_count:
+        print(f"Skipped {suppressed_count} clusters suppressed by ignore list")
 
     watch_config = {"rules": watch_rules}
     cleanup_config = {"rules": cleanup_rules}
@@ -436,6 +549,16 @@ def main() -> int:
     print(f"Wrote watch rules to {args.watch_out}")
     print(f"Wrote cleanup rules to {args.cleanup_out}")
     print(f"Checkpoint saved to {checkpoint_path}")
+
+    fragment = build_ignore_fragment(ignore_watch_acc, ignore_cleanup_acc)
+    if fragment:
+        if args.ignore_out:
+            write_yaml(args.ignore_out, fragment)
+            print(f"Wrote ignore fragment to {args.ignore_out}")
+        else:
+            entry_count = sum(len(v) for v in fragment.get("ignore", {}).get("watch", {}).values())
+            entry_count += sum(len(v) for v in fragment.get("ignore", {}).get("cleanup", {}).values())
+            print(f"Warning: {entry_count} ignore entries were authored but not written. Use --ignore-out to save them.")
     return 0
 
 

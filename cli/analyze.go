@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"crypto/sha1"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,8 @@ import (
 	"github.com/aaronromeo/postmanpat/serverrunner"
 	"github.com/spf13/cobra"
 )
+
+var analyzeTLSConfigProvider func() *tls.Config
 
 var analyzeCmd = &cobra.Command{
 	Use:   "analyze",
@@ -58,12 +61,16 @@ var analyzeCmd = &cobra.Command{
 			ctx = context.Background()
 		}
 
-		client := serverrunner.New(
+		clientOpts := []imap.Option{
 			imap.WithAddr(
 				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
 			),
 			imap.WithCreds(imapEnv.User, imapEnv.Pass),
-		)
+		}
+		if analyzeTLSConfigProvider != nil {
+			clientOpts = append(clientOpts, imap.WithTLSConfig(analyzeTLSConfigProvider()))
+		}
+		client := serverrunner.New(clientOpts...)
 		if err := client.Connect(); err != nil {
 			return err
 		}
@@ -80,6 +87,14 @@ var analyzeCmd = &cobra.Command{
 		minCount, err := cmd.Flags().GetInt("min-count")
 		if err != nil {
 			return err
+		}
+		noIgnore, err := cmd.Flags().GetBool("no-ignore")
+		if err != nil {
+			return err
+		}
+		ignore := cfg.Ignore
+		if noIgnore {
+			ignore = nil
 		}
 		options := analyzeOptions{
 			Top:      topN,
@@ -108,12 +123,16 @@ var analyzeCmd = &cobra.Command{
 			}
 
 			data := dataByMailbox[mailbox]
+			if !noIgnore {
+				data = filterFullyDecided(data, cfg.Ignore)
+			}
 			report, err := buildAnalyzeReport(data, analyzeReportParams{
 				Mailbox:   mailbox,
 				Account:   imapEnv.User,
 				Generated: time.Now().UTC(),
 				AgeWindow: rule.Server.AgeWindow,
 				Options:   options,
+				Ignore:    ignore,
 			})
 			if err != nil {
 				return err
@@ -136,6 +155,7 @@ func init() {
 	analyzeCmd.Flags().Int("top", 100, "Maximum clusters per lens")
 	analyzeCmd.Flags().Int("examples", 20, "Maximum examples per field")
 	analyzeCmd.Flags().Int("min-count", 2, "Minimum cluster count to include")
+	analyzeCmd.Flags().Bool("no-ignore", false, "Disable ignore-list filtering")
 }
 
 type analyzeReportParams struct {
@@ -144,6 +164,7 @@ type analyzeReportParams struct {
 	Generated time.Time
 	AgeWindow *appconfig.AgeWindow
 	Options   analyzeOptions
+	Ignore    *appconfig.IgnoreConfig
 }
 
 type analyzeOptions struct {
@@ -203,6 +224,7 @@ type analyzeCluster struct {
 	Keys       map[string]any         `json:"keys"`
 	Signals    analyzeClusterSignals  `json:"signals"`
 	Examples   analyzeClusterExamples `json:"examples"`
+	Suppressed []string               `json:"suppressed,omitempty"`
 }
 
 type analyzeClusterSignals struct {
@@ -233,14 +255,16 @@ type timeWindow struct {
 }
 
 type clusterAccumulator struct {
-	count          int
-	keys           map[string]any
-	hasListID      bool
-	hasUnsubscribe bool
-	precedence     map[string]int
-	latestDate     time.Time
-	examples       analyzeClusterExamples
-	exampleSets    map[string]map[string]struct{}
+	count           int
+	keys            map[string]any
+	hasListID       bool
+	hasUnsubscribe  bool
+	precedence      map[string]int
+	latestDate      time.Time
+	examples        analyzeClusterExamples
+	exampleSets     map[string]map[string]struct{}
+	suppressWatch   bool
+	suppressCleanup bool
 }
 
 const (
@@ -288,10 +312,10 @@ func buildAnalyzeReport(data []imap.MailData, params analyzeReportParams) (analy
 	// }
 
 	options := params.Options
-	listLens := buildListLens(data, options)
-	senderLens := buildSenderUnsubLens(data, options)
-	templateLens := buildTemplateLens(data, options)
-	recipientTagLens := buildRecipientTagLens(data, options)
+	listLens := buildListLens(data, options, params.Ignore)
+	senderLens := buildSenderUnsubLens(data, options, params.Ignore)
+	templateLens := buildTemplateLens(data, options, params.Ignore)
+	recipientTagLens := buildRecipientTagLens(data, options, params.Ignore)
 
 	return analyzeReport{
 		GeneratedAt: params.Generated.Format(time.RFC3339),
@@ -339,7 +363,7 @@ func writeAnalyzeReport(report analyzeReport) (string, error) {
 	return path, nil
 }
 
-func buildListLens(data []imap.MailData, options analyzeOptions) analyzeLens {
+func buildListLens(data []imap.MailData, options analyzeOptions, ignore *appconfig.IgnoreConfig) analyzeLens {
 	clusters := make(map[string]*clusterAccumulator)
 	for _, item := range data {
 		listID := normalizeListID(item.ListID)
@@ -351,7 +375,7 @@ func buildListLens(data []imap.MailData, options analyzeOptions) analyzeLens {
 		acc := ensureClusterAccumulator(clusters, clusterID, map[string]any{
 			"ListID": listID,
 		})
-		accumulateCluster(acc, item, true, options.Examples)
+		accumulateCluster(acc, item, true, options.Examples, ignore)
 	}
 
 	return analyzeLens{
@@ -360,7 +384,7 @@ func buildListLens(data []imap.MailData, options analyzeOptions) analyzeLens {
 	}
 }
 
-func buildSenderUnsubLens(data []imap.MailData, options analyzeOptions) analyzeLens {
+func buildSenderUnsubLens(data []imap.MailData, options analyzeOptions, ignore *appconfig.IgnoreConfig) analyzeLens {
 	clusters := make(map[string]*clusterAccumulator)
 	for _, item := range data {
 		senderDomains := normalizeDomains(item.SenderDomains)
@@ -375,7 +399,7 @@ func buildSenderUnsubLens(data []imap.MailData, options analyzeOptions) analyzeL
 			"HasListUnsubscribe": hasUnsub,
 			"FromList":           item.From,
 		})
-		accumulateCluster(acc, item, item.ListID != "", options.Examples)
+		accumulateCluster(acc, item, item.ListID != "", options.Examples, ignore)
 	}
 
 	return analyzeLens{
@@ -384,7 +408,7 @@ func buildSenderUnsubLens(data []imap.MailData, options analyzeOptions) analyzeL
 	}
 }
 
-func buildTemplateLens(data []imap.MailData, options analyzeOptions) analyzeLens {
+func buildTemplateLens(data []imap.MailData, options analyzeOptions, ignore *appconfig.IgnoreConfig) analyzeLens {
 	clusters := make(map[string]*clusterAccumulator)
 	for _, item := range data {
 		senderDomains := normalizeDomains(item.SenderDomains)
@@ -395,7 +419,7 @@ func buildTemplateLens(data []imap.MailData, options analyzeOptions) analyzeLens
 			"SenderDomains":     senderDomains,
 			"SubjectNormalized": subject,
 		})
-		accumulateCluster(acc, item, item.ListID != "", options.Examples)
+		accumulateCluster(acc, item, item.ListID != "", options.Examples, ignore)
 	}
 
 	return analyzeLens{
@@ -404,7 +428,7 @@ func buildTemplateLens(data []imap.MailData, options analyzeOptions) analyzeLens
 	}
 }
 
-func buildRecipientTagLens(data []imap.MailData, options analyzeOptions) analyzeLens {
+func buildRecipientTagLens(data []imap.MailData, options analyzeOptions, ignore *appconfig.IgnoreConfig) analyzeLens {
 	clusters := make(map[string]*clusterAccumulator)
 	for _, item := range data {
 		tags := normalizeRecipientTags(item.RecipientTags)
@@ -417,7 +441,7 @@ func buildRecipientTagLens(data []imap.MailData, options analyzeOptions) analyze
 		acc := ensureClusterAccumulator(clusters, clusterID, map[string]any{
 			"recipient_tag": joined,
 		})
-		accumulateCluster(acc, item, item.ListID != "", options.Examples)
+		accumulateCluster(acc, item, item.ListID != "", options.Examples, ignore)
 	}
 
 	return analyzeLens{
@@ -505,7 +529,7 @@ func ensureClusterAccumulator(clusters map[string]*clusterAccumulator, clusterID
 	return acc
 }
 
-func accumulateCluster(acc *clusterAccumulator, item imap.MailData, hasListID bool, maxExamples int) {
+func accumulateCluster(acc *clusterAccumulator, item imap.MailData, hasListID bool, maxExamples int, ignore *appconfig.IgnoreConfig) {
 	acc.count++
 	if !hasListID {
 		acc.hasListID = false
@@ -519,6 +543,15 @@ func accumulateCluster(acc *clusterAccumulator, item imap.MailData, hasListID bo
 
 	precedence := normalizePrecedenceCategory(item.PrecedenceCategory)
 	acc.precedence[precedence]++
+
+	if ignore != nil {
+		if matchesIgnoreMatchers(item, ignore.Watch) {
+			acc.suppressWatch = true
+		}
+		if matchesIgnoreMatchers(item, ignore.Cleanup) {
+			acc.suppressCleanup = true
+		}
+	}
 
 	addExample(acc, ExampleKeySubjectRaw, strings.TrimSpace(item.SubjectRaw), maxExamples)
 	for _, recipient := range item.Recipients {
@@ -607,6 +640,13 @@ func finalizeClusters(clusters map[string]*clusterAccumulator, options analyzeOp
 		if acc.count < minCount {
 			continue
 		}
+		suppressed := make([]string, 0, 2)
+		if acc.suppressWatch {
+			suppressed = append(suppressed, "watch")
+		}
+		if acc.suppressCleanup {
+			suppressed = append(suppressed, "cleanup")
+		}
 		all = append(all, analyzeCluster{
 			ClusterID:  clusterID,
 			Count:      acc.count,
@@ -617,7 +657,8 @@ func finalizeClusters(clusters map[string]*clusterAccumulator, options analyzeOp
 				HasListUnsubscribe:   acc.hasUnsubscribe,
 				PrecedenceCategories: acc.precedence,
 			},
-			Examples: acc.examples,
+			Examples:   acc.examples,
+			Suppressed: suppressed,
 		})
 	}
 	sort.Slice(all, func(i, j int) bool {
