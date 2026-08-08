@@ -166,6 +166,15 @@ Use a one-off container to run `postmanpat analyze`, which scans a mailbox using
              min: "3d"
            folders:
              - "INBOX"
+     ignore:
+       watch:
+         sender_domains: ["github.com"]
+         sender_addresses: ["newsletter@"]
+         subject_substrings: ["Your Weekly Digest"]
+       cleanup:
+         sender_domains: ["github.com"]
+         list_ids: ["weekly-digest"]
+         recipient_tags: ["plus-tag-123"]
      ```
 
 2. **Run a one-off analyze container**
@@ -187,16 +196,7 @@ Use a one-off container to run `postmanpat analyze`, which scans a mailbox using
 
     - Flags: `--top` (max clusters per lens, default 100), `--examples` (max examples per field, default 20), `--min-count` (minimum cluster size, default 2).
     - `--no-ignore`: disable ignore-list filtering and suppression annotation for this run (audit what you're ignoring).
-    - Optional top-level `ignore` section filters Fully Decided mail out of the report. Identities on both the `watch` and `cleanup` lists are removed before aggregation; identities on one list stay in the report and the rule generator suppresses only that rule type's prompt. Each cluster in the report carries a `"suppressed"` annotation (e.g. `"suppressed": ["watch"]`) so the generator knows which prompts to skip. `sender_domains` match exactly; all other fields are case-insensitive substrings (`subject_substrings` match raw subjects):
-
-      ```yaml
-      ignore:
-        watch:
-          sender_domains: ["github.com"]
-        cleanup:
-          sender_domains: ["github.com"]
-          list_ids: ["weekly-digest"]
-      ```
+    - Optional top-level `ignore` section filters Fully Decided mail out of the report. Identities on both the `watch` and `cleanup` lists are removed before aggregation; identities on one list stay in the report and the rule generator suppresses only that rule type's prompt. Each cluster in the report carries a `"suppressed"` annotation (e.g. `"suppressed": ["watch"]`) so the generator knows which prompts to skip. `sender_domains` match exactly; all other fields are case-insensitive substrings (`subject_substrings` match raw subjects) — see the `ignore` block in the config example above.
    - Only the IMAP env vars are required; the S3 and webhook vars are unused by `analyze`.
    - Don't skip the `ls` guard: a typo'd filename (e.g. `analyze.yaml` vs `analysis.yml`) silently becomes a root-owned directory mounted at `/config/config_analyze.yaml` instead of an error.
 

@@ -15,6 +15,7 @@
 - `ftest/` — integration tests using an in-memory TLS IMAP server; no external services required.
 - `bin/` — Python helper scripts (require PyYAML) for converting watch configs to cleanup configs and generating rules. `postmanpat-generate-rules.py` accepts `--ignore-out` for authoring ignore entries and reads the report's `suppressed` annotation (no config-side matching).
 - `context/` — project brief and operating constraints (`overview.md`, `requirements_stage1.md`, `roles_and_constraints.md`).
+- `docs/prompts/` — authored prompts requesting design specs; a prompt here is the input to the spec-writing workflow, not a spec itself.
 - `docs/superpowers/specs/` — approved design specs (see OTel status below).
 
 ## Build, Test, and Verify
