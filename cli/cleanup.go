@@ -75,24 +75,6 @@ var cleanupCmd = &cobra.Command{
 			return err
 		}
 
-		tracer := obs.Tracer("github.com/aaronromeo/postmanpat/cli")
-		meter := obs.Meter("github.com/aaronromeo/postmanpat/cleanuprunner")
-		invocations, _ := meter.Int64Counter("postmanpat.cleanup.invocations", metric.WithUnit("{run}"))
-		runDuration, _ := meter.Float64Histogram("postmanpat.cleanup.duration", metric.WithUnit("s"))
-		ruleMatches, _ := meter.Int64Counter("postmanpat.cleanup.rule.matches", metric.WithUnit("{message}"))
-		actionMessages, _ := meter.Int64Counter("postmanpat.cleanup.action.messages", metric.WithUnit("{message}"))
-		actionErrors, _ := meter.Int64Counter("postmanpat.cleanup.action.errors", metric.WithUnit("{error}"))
-
-		invCtx, invSpan := tracer.Start(ctx, "cleanup.invocation",
-			trace.WithAttributes(
-				attribute.String("postmanpat.command", "cleanup"),
-				attribute.Bool("postmanpat.dry_run", dryRun),
-				attribute.String("postmanpat.config_path", cfgPath),
-				attribute.Int("postmanpat.rules.count", len(cfg.Rules)),
-			))
-		runStarted := time.Now()
-		ctx = invCtx
-
 		var client serverrunner.ServerRunner = serverrunner.New(
 			imap.WithAddr(
 				fmt.Sprintf("%s:%d", imapEnv.Host, imapEnv.Port),
@@ -101,7 +83,55 @@ var cleanupCmd = &cobra.Command{
 		)
 		client = obs.WrapCleanupRunner(client)
 
-		if err := client.Connect(); err != nil {
+		return runCleanup(ctx, client, &cfg, logger, dryRun, cfgPath)
+	},
+}
+
+func runCleanup(ctx context.Context, client serverrunner.ServerRunner, cfg *appconfig.Config, logger *slog.Logger, dryRun bool, cfgPath string) error {
+	tracer := obs.Tracer("github.com/aaronromeo/postmanpat/cli")
+	meter := obs.Meter("github.com/aaronromeo/postmanpat/cleanuprunner")
+	invocations, _ := meter.Int64Counter("postmanpat.cleanup.invocations", metric.WithUnit("{run}"))
+	runDuration, _ := meter.Float64Histogram("postmanpat.cleanup.duration", metric.WithUnit("s"))
+	ruleMatches, _ := meter.Int64Counter("postmanpat.cleanup.rule.matches", metric.WithUnit("{message}"))
+	actionMessages, _ := meter.Int64Counter("postmanpat.cleanup.action.messages", metric.WithUnit("{message}"))
+	actionErrors, _ := meter.Int64Counter("postmanpat.cleanup.action.errors", metric.WithUnit("{error}"))
+
+	invCtx, invSpan := tracer.Start(ctx, "cleanup.invocation",
+		trace.WithAttributes(
+			attribute.String("postmanpat.command", "cleanup"),
+			attribute.Bool("postmanpat.dry_run", dryRun),
+			attribute.String("postmanpat.config_path", cfgPath),
+			attribute.Int("postmanpat.rules.count", len(cfg.Rules)),
+		))
+	runStarted := time.Now()
+	ctx = invCtx
+
+	if err := client.Connect(); err != nil {
+		invSpan.RecordError(err)
+		invSpan.SetStatus(codes.Error, err.Error())
+		invSpan.End()
+		invocations.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
+		runDuration.Record(ctx, time.Since(runStarted).Seconds(), metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
+		return err
+	}
+	defer client.Close()
+
+	rulesMatched := 0
+	messagesMatched := 0
+	for _, rule := range cfg.Rules {
+		mailbox := rule.Server.Folders[0]
+		ruleCtx, ruleSpan := tracer.Start(ctx, "cleanup.rule",
+			trace.WithAttributes(
+				attribute.String("rule.name", rule.Name),
+				attribute.String("rule.mailbox", mailbox),
+				attribute.StringSlice("rule.actions", actionNames(rule)),
+			))
+
+		matched, err := client.SearchByServerMatchers(ruleCtx, *rule.Server)
+		if err != nil {
+			ruleSpan.RecordError(err)
+			ruleSpan.SetStatus(codes.Error, err.Error())
+			ruleSpan.End()
 			invSpan.RecordError(err)
 			invSpan.SetStatus(codes.Error, err.Error())
 			invSpan.End()
@@ -109,163 +139,73 @@ var cleanupCmd = &cobra.Command{
 			runDuration.Record(ctx, time.Since(runStarted).Seconds(), metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
 			return err
 		}
-		defer client.Close()
+		uids := matched[mailbox]
+		if len(uids) > 0 {
+			rulesMatched++
+		}
+		messagesMatched += len(uids)
+		ruleSpan.SetAttributes(attribute.Int("rule.matched_count", len(uids)))
+		ruleMatches.Add(ruleCtx, int64(len(uids)), metric.WithAttributes(
+			attribute.String("rule.name", rule.Name),
+			attribute.String("mailbox", mailbox),
+		))
 
-		rulesMatched := 0
-		messagesMatched := 0
-		for _, rule := range cfg.Rules {
-			mailbox := rule.Server.Folders[0]
-			ruleCtx, ruleSpan := tracer.Start(ctx, "cleanup.rule",
+		if len(uids) == 0 {
+			ruleSpan.End()
+			continue
+		}
+
+		dataByMailbox, err := client.FetchSenderDataByMailbox(ruleCtx, matched)
+		if err != nil {
+			ruleSpan.RecordError(err)
+			ruleSpan.SetStatus(codes.Error, err.Error())
+			ruleSpan.End()
+			invSpan.RecordError(err)
+			invSpan.SetStatus(codes.Error, err.Error())
+			invSpan.End()
+			invocations.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
+			runDuration.Record(ctx, time.Since(runStarted).Seconds(), metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
+			return err
+		}
+
+		for _, action := range rule.Actions {
+			actionCtx, actionSpan := tracer.Start(ruleCtx, "cleanup.action",
 				trace.WithAttributes(
-					attribute.String("rule.name", rule.Name),
-					attribute.String("rule.mailbox", mailbox),
-					attribute.StringSlice("rule.actions", actionNames(rule)),
+					attribute.String("action.type", string(action.Type)),
+					attribute.String("action.destination", action.Destination),
 				))
 
-			matched, err := client.SearchByServerMatchers(ruleCtx, *rule.Server)
-			if err != nil {
-				ruleSpan.RecordError(err)
-				ruleSpan.SetStatus(codes.Error, err.Error())
-				ruleSpan.End()
-				invSpan.RecordError(err)
-				invSpan.SetStatus(codes.Error, err.Error())
-				invSpan.End()
-				invocations.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
-				runDuration.Record(ctx, time.Since(runStarted).Seconds(), metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
-				return err
-			}
-			uids := matched[mailbox]
-			if len(uids) > 0 {
-				rulesMatched++
-			}
-			messagesMatched += len(uids)
-			ruleSpan.SetAttributes(attribute.Int("rule.matched_count", len(uids)))
-			ruleMatches.Add(ruleCtx, int64(len(uids)), metric.WithAttributes(
-				attribute.String("rule.name", rule.Name),
-				attribute.String("mailbox", mailbox),
-			))
-
-			if len(uids) == 0 {
-				ruleSpan.End()
-				continue
-			}
-
-			dataByMailbox, err := client.FetchSenderDataByMailbox(ruleCtx, matched)
-			if err != nil {
-				ruleSpan.RecordError(err)
-				ruleSpan.SetStatus(codes.Error, err.Error())
-				ruleSpan.End()
-				invSpan.RecordError(err)
-				invSpan.SetStatus(codes.Error, err.Error())
-				invSpan.End()
-				invocations.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
-				runDuration.Record(ctx, time.Since(runStarted).Seconds(), metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
-				return err
-			}
-
-			for _, action := range rule.Actions {
-				actionCtx, actionSpan := tracer.Start(ruleCtx, "cleanup.action",
+			data := dataByMailbox[mailbox]
+			for i, uid := range uids {
+				msg := data[i]
+				actionSpan.AddEvent("action.message_identified",
 					trace.WithAttributes(
-						attribute.String("action.type", string(action.Type)),
-						attribute.String("action.destination", action.Destination),
+						attribute.Int64("imap.uid", int64(uid)),
+						attribute.String("email.message_id", msg.MessageID),
+						attribute.String("email.from", strings.Join(msg.From, ",")),
+						attribute.String("email.subject", msg.SubjectRaw),
+						attribute.String("email.internal_date", msg.MessageDate.Format(time.RFC3339)),
 					))
+			}
 
-				data := dataByMailbox[mailbox]
-				for i, uid := range uids {
-					msg := data[i]
-					actionSpan.AddEvent("action.message_identified",
-						trace.WithAttributes(
-							attribute.Int64("imap.uid", int64(uid)),
-							attribute.String("email.message_id", msg.MessageID),
-							attribute.String("email.from", strings.Join(msg.From, ",")),
-							attribute.String("email.subject", msg.SubjectRaw),
-							attribute.String("email.internal_date", msg.MessageDate.Format(time.RFC3339)),
-						))
+			actionSpan.AddEvent("action.applied",
+				trace.WithAttributes(
+					attribute.Int("action.uid_count", len(uids)),
+					attribute.Bool("action.dry_run", dryRun),
+				))
+
+			switch action.Type {
+			case appconfig.DELETE:
+				if dryRun {
+					logger.Info("dry run delete", "rule", rule.Name, "messages", len(uids))
+					actionSpan.End()
+					continue
 				}
-
-				actionSpan.AddEvent("action.applied",
-					trace.WithAttributes(
-						attribute.Int("action.uid_count", len(uids)),
-						attribute.Bool("action.dry_run", dryRun),
-					))
-
-				switch action.Type {
-				case appconfig.DELETE:
-					if dryRun {
-						logger.Info("dry run delete", "rule", rule.Name, "messages", len(uids))
-						actionSpan.End()
-						continue
-					}
-					expungeAfterDelete := true
-					if action.ExpungeAfterDelete != nil {
-						expungeAfterDelete = *action.ExpungeAfterDelete
-					}
-					if err := client.DeleteByMailbox(actionCtx, matched, expungeAfterDelete); err != nil {
-						actionSpan.RecordError(err)
-						actionSpan.SetStatus(codes.Error, err.Error())
-						actionSpan.End()
-						actionErrors.Add(actionCtx, 1, metric.WithAttributes(
-							attribute.String("action.type", string(action.Type)),
-							attribute.String("rule.name", rule.Name),
-						))
-						invSpan.RecordError(err)
-						invSpan.SetStatus(codes.Error, err.Error())
-						invSpan.End()
-						invocations.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
-						runDuration.Record(ctx, time.Since(runStarted).Seconds(), metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
-						return err
-					}
-					actionMessages.Add(actionCtx, int64(len(uids)), metric.WithAttributes(
-						attribute.String("action.type", string(action.Type)),
-						attribute.String("rule.name", rule.Name),
-						attribute.String("destination", ""),
-						attribute.Bool("postmanpat.dry_run", dryRun),
-					))
-				case appconfig.MOVE:
-					if strings.TrimSpace(action.Destination) == "" {
-						err := fmt.Errorf("Action move missing destination: %s", rule.Name)
-						actionSpan.RecordError(err)
-						actionSpan.SetStatus(codes.Error, err.Error())
-						actionSpan.End()
-						actionErrors.Add(actionCtx, 1, metric.WithAttributes(
-							attribute.String("action.type", string(action.Type)),
-							attribute.String("rule.name", rule.Name),
-						))
-						invSpan.RecordError(err)
-						invSpan.SetStatus(codes.Error, err.Error())
-						invSpan.End()
-						invocations.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
-						runDuration.Record(ctx, time.Since(runStarted).Seconds(), metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
-						return err
-					}
-					if dryRun {
-						logger.Info("dry run move", "rule", rule.Name, "messages", len(uids))
-						actionSpan.End()
-						continue
-					}
-					if err := client.MoveByMailbox(actionCtx, matched, strings.TrimSpace(action.Destination)); err != nil {
-						actionSpan.RecordError(err)
-						actionSpan.SetStatus(codes.Error, err.Error())
-						actionSpan.End()
-						actionErrors.Add(actionCtx, 1, metric.WithAttributes(
-							attribute.String("action.type", string(action.Type)),
-							attribute.String("rule.name", rule.Name),
-						))
-						invSpan.RecordError(err)
-						invSpan.SetStatus(codes.Error, err.Error())
-						invSpan.End()
-						invocations.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
-						runDuration.Record(ctx, time.Since(runStarted).Seconds(), metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
-						return err
-					}
-					actionMessages.Add(actionCtx, int64(len(uids)), metric.WithAttributes(
-						attribute.String("action.type", string(action.Type)),
-						attribute.String("rule.name", rule.Name),
-						attribute.String("destination", action.Destination),
-						attribute.Bool("postmanpat.dry_run", dryRun),
-					))
-				default:
-					err := fmt.Errorf("unsupported action type %q for rule %q", action.Type, rule.Name)
+				expungeAfterDelete := true
+				if action.ExpungeAfterDelete != nil {
+					expungeAfterDelete = *action.ExpungeAfterDelete
+				}
+				if err := client.DeleteByMailbox(actionCtx, matched, expungeAfterDelete); err != nil {
 					actionSpan.RecordError(err)
 					actionSpan.SetStatus(codes.Error, err.Error())
 					actionSpan.End()
@@ -280,20 +220,89 @@ var cleanupCmd = &cobra.Command{
 					runDuration.Record(ctx, time.Since(runStarted).Seconds(), metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
 					return err
 				}
+				actionMessages.Add(actionCtx, int64(len(uids)), metric.WithAttributes(
+					attribute.String("action.type", string(action.Type)),
+					attribute.String("rule.name", rule.Name),
+					attribute.String("destination", ""),
+					attribute.Bool("postmanpat.dry_run", dryRun),
+				))
+			case appconfig.MOVE:
+				if strings.TrimSpace(action.Destination) == "" {
+					err := fmt.Errorf("Action move missing destination: %s", rule.Name)
+					actionSpan.RecordError(err)
+					actionSpan.SetStatus(codes.Error, err.Error())
+					actionSpan.End()
+					actionErrors.Add(actionCtx, 1, metric.WithAttributes(
+						attribute.String("action.type", string(action.Type)),
+						attribute.String("rule.name", rule.Name),
+					))
+					invSpan.RecordError(err)
+					invSpan.SetStatus(codes.Error, err.Error())
+					invSpan.End()
+					invocations.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
+					runDuration.Record(ctx, time.Since(runStarted).Seconds(), metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
+					return err
+				}
+				if dryRun {
+					logger.Info("dry run move", "rule", rule.Name, "messages", len(uids))
+					actionSpan.End()
+					continue
+				}
+				if err := client.MoveByMailbox(actionCtx, matched, strings.TrimSpace(action.Destination)); err != nil {
+					actionSpan.RecordError(err)
+					actionSpan.SetStatus(codes.Error, err.Error())
+					actionSpan.End()
+					actionErrors.Add(actionCtx, 1, metric.WithAttributes(
+						attribute.String("action.type", string(action.Type)),
+						attribute.String("rule.name", rule.Name),
+					))
+					invSpan.RecordError(err)
+					invSpan.SetStatus(codes.Error, err.Error())
+					invSpan.End()
+					invocations.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
+					runDuration.Record(ctx, time.Since(runStarted).Seconds(), metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
+					return err
+				}
+				actionMessages.Add(actionCtx, int64(len(uids)), metric.WithAttributes(
+					attribute.String("action.type", string(action.Type)),
+					attribute.String("rule.name", rule.Name),
+					attribute.String("destination", action.Destination),
+					attribute.Bool("postmanpat.dry_run", dryRun),
+				))
+			default:
+				err := fmt.Errorf("unsupported action type %q for rule %q", action.Type, rule.Name)
+				actionSpan.RecordError(err)
+				actionSpan.SetStatus(codes.Error, err.Error())
 				actionSpan.End()
+				actionErrors.Add(actionCtx, 1, metric.WithAttributes(
+					attribute.String("action.type", string(action.Type)),
+					attribute.String("rule.name", rule.Name),
+				))
+				invSpan.RecordError(err)
+				invSpan.SetStatus(codes.Error, err.Error())
+				invSpan.End()
+				invocations.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
+				runDuration.Record(ctx, time.Since(runStarted).Seconds(), metric.WithAttributes(attribute.String("outcome", "error"), attribute.Bool("postmanpat.dry_run", dryRun)))
+				return err
 			}
-			ruleSpan.End()
+			actionSpan.End()
 		}
+		ruleSpan.End()
+	}
 
-		invSpan.SetAttributes(
-			attribute.Int("postmanpat.rules.matched", rulesMatched),
-			attribute.Int("postmanpat.messages.matched", messagesMatched),
-		)
-		invSpan.End()
-		invocations.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "success"), attribute.Bool("postmanpat.dry_run", dryRun)))
-		runDuration.Record(ctx, time.Since(runStarted).Seconds(), metric.WithAttributes(attribute.String("outcome", "success"), attribute.Bool("postmanpat.dry_run", dryRun)))
-		return nil
-	},
+	invSpan.SetAttributes(
+		attribute.Int("postmanpat.rules.matched", rulesMatched),
+		attribute.Int("postmanpat.messages.matched", messagesMatched),
+	)
+	invSpan.End()
+	invocations.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", "success"), attribute.Bool("postmanpat.dry_run", dryRun)))
+	runDuration.Record(ctx, time.Since(runStarted).Seconds(), metric.WithAttributes(attribute.String("outcome", "success"), attribute.Bool("postmanpat.dry_run", dryRun)))
+	logger.Info("cleanup complete",
+		"rules_matched", rulesMatched,
+		"messages_matched", messagesMatched,
+		"dry_run", dryRun,
+	)
+	return nil
 }
 
 func init() {

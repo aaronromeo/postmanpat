@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import copy
 import json
 import os
 import re
@@ -331,7 +332,7 @@ def build_watch_rule_sender(cluster: Dict[str, Any], name: str) -> Optional[Dict
     return rule
 
 
-def build_cleanup_rule_sender(cluster: Dict[str, Any], name: str, default_folders: Optional[str]) -> Tuple[Optional[Dict[str, Any]], str]:
+def build_cleanup_rule_sender(cluster: Dict[str, Any], name: str, default_folders: Optional[str]) -> Tuple[List[Dict[str, Any]], str]:
     sender_domains = cluster.get("keys", {}).get("SenderDomains", []) or []
     from_list = cluster.get("keys", {}).get("FromList", []) or []
     has_unsub = cluster.get("keys", {}).get("HasListUnsubscribe")
@@ -362,9 +363,23 @@ def build_cleanup_rule_sender(cluster: Dict[str, Any], name: str, default_folder
             rule["server"]["replyto_substring"] = reply_values
     recipients_defaults = cluster.get("examples", {}).get("recipients", []) or []
     recipients_values = prompt_optional_list("recipients", [str(value) for value in recipients_defaults])
-    if recipients_values is not None:
+    folders_str = ", ".join(folders)
+    if not recipients_values:
+        return [rule], folders_str
+    if len(recipients_values) == 1:
         rule["server"]["recipients"] = recipients_values
-    return rule, ", ".join(folders)
+        return [rule], folders_str
+    # Server-side cleanup matchers AND multiple recipients together, so a single
+    # rule listing several aliases can never match a message. Emit one rule per alias.
+    print("Note: cleanup 'recipients' are ANDed together server-side; one rule with")
+    print("multiple aliases can never match. Generating one rule per recipient alias.")
+    rules = []
+    for recipient in recipients_values:
+        split_rule = copy.deepcopy(rule)
+        split_rule["name"] = f"{name} ({recipient})"
+        split_rule["server"]["recipients"] = [recipient]
+        rules.append(split_rule)
+    return rules, folders_str
 
 
 def build_watch_rule_recipient_tag(cluster: Dict[str, Any], name: str) -> Optional[Dict[str, Any]]:
@@ -440,18 +455,18 @@ def process_cluster(
                     merge_ignore_entries(ignore_cleanup, extract_ignore_identity(lens, cluster))
             elif cleanup_response == "y":
                 rule_name = rule_name or rule_name_prompt(lens, cluster)
+                rules: List[Dict[str, Any]] = []
                 if lens == "list_lens":
                     rule, default_folders = build_cleanup_rule_list(cluster, rule_name, default_folders)
+                    if rule:
+                        rules = [rule]
                 elif lens == "sender_unsub_lens":
-                    rule, default_folders = build_cleanup_rule_sender(cluster, rule_name, default_folders)
+                    rules, default_folders = build_cleanup_rule_sender(cluster, rule_name, default_folders)
                 elif lens == "recipient_tag_lens":
                     print("recipient_tag_lens does not support server-side cleanup rules.")
-                    rule = None
                 else:
                     print(f"Unsupported lens for cleanup rules: {lens}")
-                    rule = None
-                if rule:
-                    cleanup_rules.append(rule)
+                cleanup_rules.extend(rules)
 
     return True, default_folders
 
