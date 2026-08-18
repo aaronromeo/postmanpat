@@ -40,10 +40,12 @@ rules:
     actions: []
 `
 
-// runAnalyzeOut sets up an in-memory IMAP server, writes the given config to a
-// temp file, and runs `analyze` with the provided extra args. It returns the
-// captured stdout so callers can assert on the printed report paths.
-func runAnalyzeOut(t *testing.T, cfg string, extraArgs ...string) *bytes.Buffer {
+// runAnalyzeWithConfig sets up an in-memory IMAP server, writes the given config
+// to a temp file, and runs `analyze` with the provided extra args. It returns
+// the captured stdout so callers can assert on the printed report paths or
+// parse the report at the printed path. Shared by the ignore e2e tests (via
+// runAnalyzeToReport) and the --out tests here.
+func runAnalyzeWithConfig(t *testing.T, cfg string, extraArgs ...string) *bytes.Buffer {
 	t.Helper()
 
 	addr, cleanupServer := ftest.SetupAnalyzeIMAPServer(t, analyzeIgnoreTestMessages())
@@ -90,7 +92,7 @@ func runAnalyzeOut(t *testing.T, cfg string, extraArgs ...string) *bytes.Buffer 
 func TestAnalyzeOutWritesDeterministicPerRuleFiles(t *testing.T) {
 	outDir := t.TempDir()
 
-	output := runAnalyzeOut(t, analyzeOutTestConfig, "--out", outDir, "--min-count", "1")
+	output := runAnalyzeWithConfig(t, analyzeOutTestConfig, "--out", outDir, "--min-count", "1")
 
 	wantFiles := map[string]bool{
 		"postmanpat-analyze-nightly-inbox.json": true,
@@ -180,14 +182,14 @@ func TestAnalyzeOutSlugCollisionFailsBeforeScan(t *testing.T) {
 
 func TestAnalyzeOutOverwritesPreviousRun(t *testing.T) {
 	outDir := t.TempDir()
-	runAnalyzeOut(t, analyzeOutTestConfig, "--out", outDir, "--min-count", "1")
+	runAnalyzeWithConfig(t, analyzeOutTestConfig, "--out", outDir, "--min-count", "1")
 
 	target := filepath.Join(outDir, "postmanpat-analyze-nightly-inbox.json")
 	if err := os.WriteFile(target, []byte("NOT VALID JSON"), 0o600); err != nil {
 		t.Fatalf("corrupt %s: %v", target, err)
 	}
 
-	runAnalyzeOut(t, analyzeOutTestConfig, "--out", outDir, "--min-count", "1")
+	runAnalyzeWithConfig(t, analyzeOutTestConfig, "--out", outDir, "--min-count", "1")
 
 	entries, err := os.ReadDir(outDir)
 	if err != nil {
@@ -206,46 +208,5 @@ func TestAnalyzeOutOverwritesPreviousRun(t *testing.T) {
 	}
 	if report["stats"] == nil {
 		t.Fatal("overwritten report missing stats")
-	}
-}
-
-func TestAnalyzeWithoutOutPreservesTempFile(t *testing.T) {
-	output := runAnalyzeOut(t, analyzeIgnoreTestConfig, "--min-count", "1")
-
-	reportPath := strings.TrimSpace(output.String())
-	if !strings.Contains(reportPath, "postmanpat-analyze-") {
-		t.Fatalf("expected temp-file path containing 'postmanpat-analyze-'; got %q", reportPath)
-	}
-	if _, err := os.Stat(reportPath); err != nil {
-		t.Fatalf("expected printed temp path to exist: %v", err)
-	}
-	payload, err := os.ReadFile(reportPath)
-	if err != nil {
-		t.Fatalf("read %s: %v", reportPath, err)
-	}
-	var report map[string]any
-	if err := json.Unmarshal(payload, &report); err != nil {
-		t.Fatalf("parse %s: %v", reportPath, err)
-	}
-}
-
-func TestAnalyzeOutCreatesMissingDirectory(t *testing.T) {
-	outDir := filepath.Join(t.TempDir(), "does-not-exist", "deeper")
-
-	runAnalyzeOut(t, analyzeIgnoreTestConfig, "--out", outDir, "--min-count", "1")
-
-	entries, err := os.ReadDir(outDir)
-	if err != nil {
-		t.Fatalf("expected MkdirAll to create nested out dir %s: %v", outDir, err)
-	}
-	var found bool
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), "postmanpat-analyze-") && strings.HasSuffix(e.Name(), ".json") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("expected a postmanpat-analyze-*.json report in created dir %s; got %v", outDir, entries)
 	}
 }
