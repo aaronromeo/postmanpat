@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -48,6 +49,24 @@ var analyzeCmd = &cobra.Command{
 			}
 			if rule.Server == nil {
 				return fmt.Errorf("rule %q must define server matchers for analyze", rule.Name)
+			}
+		}
+
+		outDir, err := cmd.Flags().GetString("out")
+		if err != nil {
+			return err
+		}
+		if outDir != "" {
+			seen := make(map[string]string)
+			for _, rule := range cfg.Rules {
+				slug := slugifyRuleName(rule.Name)
+				if prev, ok := seen[slug]; ok {
+					return fmt.Errorf("analyze --out: rules %q and %q produce the same filename slug %q; rename one", prev, rule.Name, slug)
+				}
+				seen[slug] = rule.Name
+			}
+			if err := os.MkdirAll(outDir, 0o755); err != nil {
+				return fmt.Errorf("analyze --out: %w", err)
 			}
 		}
 
@@ -139,6 +158,9 @@ var analyzeCmd = &cobra.Command{
 			}
 
 			path, err := writeAnalyzeReport(report)
+			if outDir != "" {
+				path, err = writeAnalyzeReportToDir(report, outDir, slugifyRuleName(rule.Name))
+			}
 			if err != nil {
 				return err
 			}
@@ -156,6 +178,7 @@ func init() {
 	analyzeCmd.Flags().Int("examples", 20, "Maximum examples per field")
 	analyzeCmd.Flags().Int("min-count", 2, "Minimum cluster count to include")
 	analyzeCmd.Flags().Bool("no-ignore", false, "Disable ignore-list filtering")
+	analyzeCmd.Flags().String("out", "", "Directory to write reports into with deterministic per-rule filenames (overwritten each run). If unset, writes to a temp file and prints its path.")
 }
 
 type analyzeReportParams struct {
@@ -361,6 +384,64 @@ func writeAnalyzeReport(report analyzeReport) (string, error) {
 		return "", err
 	}
 	return path, nil
+}
+
+// slugifyRuleName turns a rule name into a stable, filesystem-safe slug used to
+// build deterministic report filenames. Runs of non-alphanumeric characters
+// collapse to a single dash; leading/trailing dashes are trimmed.
+func slugifyRuleName(name string) string {
+	s := strings.ToLower(name)
+	var b strings.Builder
+	inRun := false
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			inRun = false
+			continue
+		}
+		if !inRun {
+			b.WriteRune('-')
+			inRun = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+// writeAnalyzeReportToDir writes a report to a deterministic path inside dir,
+// named postmanpat-analyze-<slug>.json. The write is atomic: bytes land in a
+// temp file in the same directory, are synced, then renamed over the target so
+// a reader never observes a half-written report. The previous file, if any, is
+// replaced.
+func writeAnalyzeReportToDir(report analyzeReport, dir, slug string) (string, error) {
+	target := filepath.Join(dir, fmt.Sprintf("postmanpat-analyze-%s.json", slug))
+	tmpFile, err := os.CreateTemp(dir, ".postmanpat-analyze-*.json.tmp")
+	if err != nil {
+		return "", err
+	}
+	tmpPath := tmpFile.Name()
+	encoder := json.NewEncoder(tmpFile)
+	encoder.SetIndent("", "  ")
+	encoder.SetEscapeHTML(false)
+	encErr := encoder.Encode(report)
+	syncErr := tmpFile.Sync()
+	closeErr := tmpFile.Close()
+	if encErr != nil {
+		_ = os.Remove(tmpPath)
+		return "", encErr
+	}
+	if syncErr != nil {
+		_ = os.Remove(tmpPath)
+		return "", syncErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(tmpPath)
+		return "", closeErr
+	}
+	if err := os.Rename(tmpPath, target); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", err
+	}
+	return target, nil
 }
 
 func buildListLens(data []imap.MailData, options analyzeOptions, ignore *appconfig.IgnoreConfig) analyzeLens {

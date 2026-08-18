@@ -25,6 +25,7 @@ services:
     environment:
       POSTMANPAT_CONFIG: /config/config_cleanup.yaml
       POSTMANPAT_CLEANUP_CONFIG: ${POSTMANPAT_CLEANUP_CONFIG}
+      POSTMANPAT_ANALYZE_CONFIG: ${POSTMANPAT_ANALYZE_CONFIG:-}
       POSTMANPAT_IMAP_HOST: ${POSTMANPAT_IMAP_HOST}
       POSTMANPAT_IMAP_PORT: ${POSTMANPAT_IMAP_PORT}
       POSTMANPAT_IMAP_USER: ${POSTMANPAT_IMAP_USER}
@@ -41,6 +42,7 @@ services:
       OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-postmanpat}
     volumes:
       - ${POSTMANPAT_CLEANUP_CONFIG:-./config/config_cleanup.yaml}:/config/config_cleanup.yaml:ro
+      - ${POSTMANPAT_ANALYZE_OUT:-./analyze-out}:/analyze-out
     restart: unless-stopped
     networks:
       - pi-services

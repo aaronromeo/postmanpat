@@ -64,6 +64,7 @@ func runAnalyzeToReport(t *testing.T, extraArgs ...string) map[string]any {
 	}
 
 	// Reset analyze flags to defaults to avoid cross-test pollution.
+	_ = analyzeCmd.Flags().Set("out", "")
 	_ = analyzeCmd.Flags().Set("no-ignore", "false")
 	_ = analyzeCmd.Flags().Set("min-count", "2")
 	_ = analyzeCmd.Flags().Set("top", "100")
