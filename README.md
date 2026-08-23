@@ -235,6 +235,21 @@ Use a one-off container to run `postmanpat analyze`, which scans a mailbox using
    - Watch rules → `postmanpat-config/watch.yml`
    - Cleanup rules → `postmanpat-config/cleanup-onetime.yml`
 
+### Scheduled analyze (nightly)
+
+The container's cron runs `cleanup` hourly and, when `POSTMANPAT_ANALYZE_CONFIG` is set in `.env`, also runs `analyze` once a day at 03:30 (offset from the top-of-hour cleanup tick). The scheduled invocation writes reports into the mounted `/analyze-out` directory with deterministic per-rule filenames (`postmanpat-analyze-<slug>.json`, overwritten each run) and passes `--min-count 1`:
+
+```bash
+# .env
+POSTMANPAT_ANALYZE_CONFIG=/config/config_analyze.yaml
+# Host directory mounted at /analyze-out (compose default: ./analyze-out):
+POSTMANPAT_ANALYZE_OUT=/opt/docker/rocketman/postmanpat-config/analyze-out
+```
+
+The scan window is a config concern, not code: set `age_window.max: 36h` on the analyze rules so each nightly report describes only the last 36 hours of mail. A once-a-day sender has count 1 inside that window, which is why the cron passes `--min-count 1` (the default of 2 would hide it). Reports are overwritten nightly — the forthcoming rulesgen decision store is the memory, not report history.
+
+Without `POSTMANPAT_ANALYZE_CONFIG`, the crontab is unchanged (cleanup only) and the one-off `TMPDIR` workflow above still works for ad-hoc deep scans and `--no-ignore` audits. `--out` is also available on one-off runs if you prefer deterministic filenames there.
+
 ## Observability (OpenTelemetry + SigNoz)
 
 postmanpat sends OpenTelemetry traces and metrics to any OTLP/gRPC backend.

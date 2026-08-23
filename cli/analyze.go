@@ -7,7 +7,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -19,6 +22,10 @@ import (
 )
 
 var analyzeTLSConfigProvider func() *tls.Config
+
+// nonAlnum matches runs of characters that are not lowercase ASCII alphanumeric,
+// used to build deterministic, filesystem-safe report filename slugs.
+var nonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
 
 var analyzeCmd = &cobra.Command{
 	Use:   "analyze",
@@ -48,6 +55,24 @@ var analyzeCmd = &cobra.Command{
 			}
 			if rule.Server == nil {
 				return fmt.Errorf("rule %q must define server matchers for analyze", rule.Name)
+			}
+		}
+
+		outDir, err := cmd.Flags().GetString("out")
+		if err != nil {
+			return err
+		}
+		if outDir != "" {
+			seen := make(map[string]string)
+			for _, rule := range cfg.Rules {
+				slug := slugifyRuleName(rule.Name)
+				if prev, ok := seen[slug]; ok {
+					return fmt.Errorf("analyze --out: rules %q and %q produce the same filename slug %q; rename one", prev, rule.Name, slug)
+				}
+				seen[slug] = rule.Name
+			}
+			if err := os.MkdirAll(outDir, 0o755); err != nil {
+				return fmt.Errorf("analyze --out: %w", err)
 			}
 		}
 
@@ -138,7 +163,12 @@ var analyzeCmd = &cobra.Command{
 				return err
 			}
 
-			path, err := writeAnalyzeReport(report)
+			var path string
+			if outDir != "" {
+				path, err = writeAnalyzeReportToDir(report, outDir, slugifyRuleName(rule.Name))
+			} else {
+				path, err = writeAnalyzeReport(report)
+			}
 			if err != nil {
 				return err
 			}
@@ -156,6 +186,7 @@ func init() {
 	analyzeCmd.Flags().Int("examples", 20, "Maximum examples per field")
 	analyzeCmd.Flags().Int("min-count", 2, "Minimum cluster count to include")
 	analyzeCmd.Flags().Bool("no-ignore", false, "Disable ignore-list filtering")
+	analyzeCmd.Flags().String("out", "", "Directory to write reports into with deterministic per-rule filenames (overwritten each run). If unset, writes to a temp file and prints its path.")
 }
 
 type analyzeReportParams struct {
@@ -340,27 +371,72 @@ func buildAnalyzeReport(data []imap.MailData, params analyzeReportParams) (analy
 	}, nil
 }
 
+// encodeReport writes a report as indented JSON (HTML escaping off) to w.
+func encodeReport(w io.Writer, report analyzeReport) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
+	return enc.Encode(report)
+}
+
+// writeAnalyzeReport writes a report to a fresh temp file and returns its path.
 func writeAnalyzeReport(report analyzeReport) (string, error) {
-	tmpFile, err := os.CreateTemp("", "postmanpat-analyze-*.json")
+	f, err := os.CreateTemp("", "postmanpat-analyze-*.json")
 	if err != nil {
 		return "", err
 	}
-	path := tmpFile.Name()
-	encoder := json.NewEncoder(tmpFile)
-	encoder.SetIndent("", "  ")
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(report); err != nil {
-		_ = tmpFile.Close()
+	path := f.Name()
+	if err := encodeReport(f, report); err != nil {
+		_ = f.Close()
 		return "", err
 	}
-	if err := tmpFile.Sync(); err != nil {
-		_ = tmpFile.Close()
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
 		return "", err
 	}
-	if err := tmpFile.Close(); err != nil {
+	if err := f.Close(); err != nil {
 		return "", err
 	}
 	return path, nil
+}
+
+// slugifyRuleName turns a rule name into a stable, filesystem-safe slug used to
+// build deterministic report filenames. Runs of non-alphanumeric characters
+// collapse to a single dash; leading/trailing dashes are trimmed.
+func slugifyRuleName(name string) string {
+	return strings.Trim(nonAlnum.ReplaceAllString(strings.ToLower(name), "-"), "-")
+}
+
+// writeAnalyzeReportToDir writes a report to a deterministic path inside dir,
+// named postmanpat-analyze-<slug>.json. The write is atomic: bytes land in a
+// temp file in the same directory, are synced, then renamed over the target so
+// a reader never observes a half-written report. The previous file, if any, is
+// replaced.
+func writeAnalyzeReportToDir(report analyzeReport, dir, slug string) (string, error) {
+	target := filepath.Join(dir, fmt.Sprintf("postmanpat-analyze-%s.json", slug))
+	f, err := os.CreateTemp(dir, ".postmanpat-analyze-*.json.tmp")
+	if err != nil {
+		return "", err
+	}
+	tmp := f.Name()
+	cleanup := func() { _ = f.Close(); _ = os.Remove(tmp) }
+	if err := encodeReport(f, report); err != nil {
+		cleanup()
+		return "", err
+	}
+	if err := f.Sync(); err != nil {
+		cleanup()
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return "", err
+	}
+	if err := os.Rename(tmp, target); err != nil {
+		_ = os.Remove(tmp)
+		return "", err
+	}
+	return target, nil
 }
 
 func buildListLens(data []imap.MailData, options analyzeOptions, ignore *appconfig.IgnoreConfig) analyzeLens {

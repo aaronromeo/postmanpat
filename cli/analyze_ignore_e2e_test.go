@@ -1,11 +1,8 @@
 package cli
 
 import (
-	"bytes"
-	"crypto/tls"
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -46,43 +43,7 @@ func analyzeIgnoreTestMessages() []ftest.AnalyzeMessage {
 func runAnalyzeToReport(t *testing.T, extraArgs ...string) map[string]any {
 	t.Helper()
 
-	addr, cleanupServer := ftest.SetupAnalyzeIMAPServer(t, analyzeIgnoreTestMessages())
-	t.Cleanup(cleanupServer)
-
-	host, port, err := splitHostPort(addr)
-	if err != nil {
-		t.Fatalf("split addr: %v", err)
-	}
-	t.Setenv("POSTMANPAT_IMAP_HOST", host)
-	t.Setenv("POSTMANPAT_IMAP_PORT", port)
-	t.Setenv("POSTMANPAT_IMAP_USER", ftest.DefaultUser)
-	t.Setenv("POSTMANPAT_IMAP_PASS", ftest.DefaultPass)
-
-	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(cfgPath, []byte(analyzeIgnoreTestConfig), 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	// Reset analyze flags to defaults to avoid cross-test pollution.
-	_ = analyzeCmd.Flags().Set("no-ignore", "false")
-	_ = analyzeCmd.Flags().Set("min-count", "2")
-	_ = analyzeCmd.Flags().Set("top", "100")
-	_ = analyzeCmd.Flags().Set("examples", "20")
-
-	var output bytes.Buffer
-	args := append([]string{"analyze", "--config", cfgPath}, extraArgs...)
-	rootCmd.SetArgs(args)
-	rootCmd.SetOut(&output)
-	rootCmd.SetErr(&output)
-
-	analyzeTLSConfigProvider = func() *tls.Config {
-		return &tls.Config{InsecureSkipVerify: true}
-	}
-	t.Cleanup(func() { analyzeTLSConfigProvider = nil })
-
-	if err := rootCmd.Execute(); err != nil {
-		t.Fatalf("analyze failed: %v\noutput: %s", err, output.String())
-	}
+	output := runAnalyzeWithConfig(t, analyzeIgnoreTestConfig, extraArgs...)
 
 	reportPath := strings.TrimSpace(output.String())
 	payload, err := os.ReadFile(reportPath)

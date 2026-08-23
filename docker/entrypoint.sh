@@ -25,8 +25,12 @@ fi
   [ -n "${OTEL_SERVICE_NAME:-}" ] && printf 'OTEL_SERVICE_NAME=%s\n' "$OTEL_SERVICE_NAME"
   [ -n "${OTEL_SDK_DISABLED:-}" ] && printf 'OTEL_SDK_DISABLED=%s\n' "$OTEL_SDK_DISABLED"
   printf 'POSTMANPAT_WEBHOOK_URL=%s\n' "$POSTMANPAT_WEBHOOK_URL"
+  [ -n "${POSTMANPAT_ANALYZE_CONFIG:-}" ] && printf 'POSTMANPAT_ANALYZE_CONFIG=%s\n' "$POSTMANPAT_ANALYZE_CONFIG"
   printf '\n'
   printf '0 * * * * /usr/local/bin/postmanpat cleanup --config "$POSTMANPAT_CONFIG" >>/proc/1/fd/1 2>>/proc/1/fd/2\n'
+  if [ -n "${POSTMANPAT_ANALYZE_CONFIG:-}" ]; then
+    printf '30 3 * * * /usr/local/bin/postmanpat analyze --config "$POSTMANPAT_ANALYZE_CONFIG" --out /analyze-out --min-count 1 >>/proc/1/fd/1 2>>/proc/1/fd/2\n'
+  fi
 } >/etc/cron.d/postmanpat
 
 chmod 0644 /etc/cron.d/postmanpat
