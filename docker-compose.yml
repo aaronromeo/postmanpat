@@ -42,6 +42,7 @@ services:
       OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-postmanpat}
     volumes:
       - ${POSTMANPAT_CLEANUP_CONFIG:-./config/config_cleanup.yaml}:/config/config_cleanup.yaml:ro
+      - ${POSTMANPAT_ANALYZE_CONFIG:-./config/config_analyze.yaml}:/config/config_analyze.yaml:ro
       - ${POSTMANPAT_ANALYZE_OUT:-./analyze-out}:/analyze-out
     restart: unless-stopped
     networks:
