@@ -241,9 +241,13 @@ The container's cron runs `cleanup` hourly and, when `POSTMANPAT_ANALYZE_CONFIG`
 
 ```bash
 # .env
-POSTMANPAT_ANALYZE_CONFIG=/config/config_analyze.yaml
-# Host directory mounted at /analyze-out (compose default: ./analyze-out):
-POSTMANPAT_ANALYZE_OUT=/opt/docker/rocketman/postmanpat-config/analyze-out
+# Host path of the analyze config (mirrors POSTMANPAT_CLEANUP_CONFIG); the file
+# is mounted read-only at /config/config_analyze.yaml inside the container.
+# MUST exist before `docker compose up` — a missing bind-mount source is
+# auto-created as a root-owned directory.
+POSTMANPAT_ANALYZE_CONFIG=/opt/docker/rocketman/postmanpat-config/analysis.yml
+# Optional: relocate the report dir (default: ./analyze-out next to docker-compose.yml):
+# POSTMANPAT_ANALYZE_OUT=/some/other/dir
 ```
 
 The scan window is a config concern, not code: set `age_window.max: 36h` on the analyze rules so each nightly report describes only the last 36 hours of mail. A once-a-day sender has count 1 inside that window, which is why the cron passes `--min-count 1` (the default of 2 would hide it). Reports are overwritten nightly — the forthcoming rulesgen decision store is the memory, not report history.
