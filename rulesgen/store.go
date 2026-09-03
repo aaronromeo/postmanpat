@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 
 	_ "modernc.org/sqlite"
@@ -16,9 +14,6 @@ type Store struct {
 }
 
 func Open(path string) (*Store, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, fmt.Errorf("rulesgen store: create db dir: %w", err)
-	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, fmt.Errorf("rulesgen store: open: %w", err)
@@ -173,7 +168,7 @@ func (s *Store) decidedLanes() (map[string]map[Lane]bool, error) {
 }
 
 func hasUndecidedLane(c Cluster, decided map[Lane]bool) bool {
-	for _, lane := range offerableLanes(c.Lens) {
+	for _, lane := range lensLanes[c.Lens] {
 		if !decided[lane] {
 			return true
 		}

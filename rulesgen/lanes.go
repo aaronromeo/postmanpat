@@ -13,7 +13,3 @@ var lensLanes = map[string][]Lane{
 	"sender_unsub_lens":  {LaneWatch, LaneOneTimeCleanup, LaneOngoingCleanup},
 	"recipient_tag_lens": {LaneWatch},
 }
-
-func offerableLanes(lens string) []Lane {
-	return lensLanes[lens]
-}

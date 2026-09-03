@@ -16,16 +16,16 @@ type Signals struct {
 }
 
 type Cluster struct {
-	ClusterID  string         `json:"cluster_id"`
-	Lens       string         `json:"lens"`
-	Keys       map[string]any `json:"keys"`
-	Count      int            `json:"count"`
-	LatestDate string         `json:"latest_date"`
-	Examples   Examples       `json:"examples"`
-	Signals    Signals        `json:"signals"`
-	Suppressed []string       `json:"suppressed"`
-	FirstSeen  string         `json:"first_seen"`
-	LastSeen   string         `json:"last_seen"`
+	ClusterID  string
+	Lens       string
+	Keys       map[string]any
+	Count      int
+	LatestDate string
+	Examples   Examples
+	Signals    Signals
+	Suppressed []string
+	FirstSeen  string
+	LastSeen   string
 }
 
 func (c Cluster) suppressedForBoth() bool {
