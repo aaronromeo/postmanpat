@@ -47,4 +47,5 @@ func init() {
 	rootCmd.AddCommand(cleanupCmd)
 	rootCmd.AddCommand(analyzeCmd)
 	rootCmd.AddCommand(watchCmd)
+	rootCmd.AddCommand(rulesgenCmd)
 }
