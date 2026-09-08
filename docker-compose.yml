@@ -76,6 +76,18 @@ services:
       - pi-services
       - signoz-net
 
+  postmanpat-rulesgen:
+    build: .
+    command: ["postmanpat", "rulesgen", "serve", "--reports", "/analyze-out", "--db", "/data/rulesgen.db"]
+    volumes:
+      - ${POSTMANPAT_ANALYZE_OUT:-./analyze-out}:/analyze-out:ro
+      - ${POSTMANPAT_RULESGEN_DATA:-./rulesgen-data}:/data
+    restart: unless-stopped
+    expose:
+      - "8092"
+    networks:
+      - pi-services
+
 networks:
   pi-services:
     driver: bridge
