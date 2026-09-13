@@ -13,6 +13,7 @@
 - `ftest/` — integration tests against an in-memory TLS IMAP server; no external services required.
 - `bin/` — Python helper scripts (rule generator, config converter) with their own unittest suite; doubles as the Go build output dir (`bin/postmanpat` is gitignored). `postmanpat-generate-rules.py` splits cleanup rules with multiple recipient aliases one-rule-per-alias, because server matchers AND multiple `recipients` values together (a multi-alias rule can never match).
 - `context/` — project brief and operating constraints; `docs/adr/` — architecture decisions; `docs/prompts/` — prompts requesting specs (input to the spec workflow, not specs); `docs/superpowers/specs/` — approved design specs.
+- `docs/research/` — date-prefixed research reports written by background agents (e.g. OTel/SigNoz investigations); the report file is the deliverable of each research task.
 
 ## Build, Test, and Verify
 - Build: `go build -o bin ./...` → binary at `bin/postmanpat`.
