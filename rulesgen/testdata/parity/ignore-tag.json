@@ -1,0 +1,13 @@
+{
+  "kind": "ignore",
+  "lens": "recipient_tag_lens",
+  "side": "cleanup",
+  "cluster": {
+    "cluster_id": "tag-news",
+    "count": 1,
+    "keys": {"recipient_tag": "news"},
+    "signals": {},
+    "examples": {},
+    "suppressed": []
+  }
+}

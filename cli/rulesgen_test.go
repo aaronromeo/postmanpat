@@ -32,7 +32,7 @@ func TestRulesgenServeFlagDefaults(t *testing.T) {
 	assert.Equal(t, "1m0s", poll.DefValue)
 }
 
-func TestRulesgenServeRequiresReportsAndDB(t *testing.T) {
+func TestRulesgenServeRequiresReportsDBAndFragments(t *testing.T) {
 	t.Cleanup(func() { rootCmd.SetArgs(nil) })
 	rootCmd.SetArgs([]string{"rulesgen", "serve"})
 	err := rootCmd.Execute()
@@ -40,4 +40,5 @@ func TestRulesgenServeRequiresReportsAndDB(t *testing.T) {
 	assert.Contains(t, err.Error(), "required flag(s)")
 	assert.Contains(t, err.Error(), "db")
 	assert.Contains(t, err.Error(), "reports")
+	assert.Contains(t, err.Error(), "fragments")
 }

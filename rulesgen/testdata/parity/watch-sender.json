@@ -1,0 +1,31 @@
+{
+  "kind": "rule",
+  "lens": "sender_unsub_lens",
+  "lane": "watch",
+  "cluster": {
+    "cluster_id": "sender-news",
+    "count": 3,
+    "latest_date": "2026-09-01T09:00:00Z",
+    "keys": {
+      "SenderDomains": ["news.example.com"],
+      "FromList": ["editor@news.example.com", "noreply@news.example.com"],
+      "HasListUnsubscribe": true
+    },
+    "signals": {"has_list_unsubscribe": true, "precedence_categories": {"bulk": 3}},
+    "examples": {
+      "subject_raw": ["Hello", "Weekly"],
+      "recipients": ["aaron@example.com"],
+      "sender_domains": ["news.example.com"],
+      "reply_to_domains": ["mail.news.example.com"]
+    },
+    "suppressed": []
+  },
+  "inputs": {
+    "name": "News",
+    "sender_regex": "news\\.example\\.com",
+    "action": "move",
+    "destination": "@News",
+    "replyto_regex": "mail\\.news\\.example\\.com",
+    "recipients_regex": "aaron@example\\.com"
+  }
+}

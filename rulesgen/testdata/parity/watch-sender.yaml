@@ -1,0 +1,13 @@
+rules:
+  - name: "News"
+    client:
+      sender_regex:
+        - 'news\.example\.com'
+      list_unsubscribe: true
+      replyto_regex:
+        - 'mail\.news\.example\.com'
+      recipients_regex:
+        - 'aaron@example\.com'
+    actions:
+      - type: "move"
+        destination: "@News"

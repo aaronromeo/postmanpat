@@ -1,0 +1,34 @@
+rules:
+  - name: "Notify (a@example.com)"
+    server:
+      folders:
+        - "INBOX"
+      sender_substring:
+        - "notify.example.net"
+      list_unsubscribe: false
+      recipients:
+        - "a@example.com"
+    actions:
+      - type: "delete"
+  - name: "Notify (b@example.com)"
+    server:
+      folders:
+        - "INBOX"
+      sender_substring:
+        - "notify.example.net"
+      list_unsubscribe: false
+      recipients:
+        - "b@example.com"
+    actions:
+      - type: "delete"
+  - name: "Notify (c@example.com)"
+    server:
+      folders:
+        - "INBOX"
+      sender_substring:
+        - "notify.example.net"
+      list_unsubscribe: false
+      recipients:
+        - "c@example.com"
+    actions:
+      - type: "delete"

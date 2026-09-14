@@ -1,0 +1,14 @@
+rules:
+  - name: "Shop"
+    server:
+      folders:
+        - "INBOX"
+      sender_substring:
+        - "shop.example.org"
+      list_unsubscribe: true
+      replyto_substring:
+        - "reply.shop.example.org"
+      recipients:
+        - "aaron@example.com"
+    actions:
+      - type: "delete"

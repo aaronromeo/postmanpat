@@ -1,0 +1,5 @@
+ignore:
+  watch:
+    sender_domains:
+      - "news.example.com"
+      - "other.example.org"

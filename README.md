@@ -256,17 +256,17 @@ Without `POSTMANPAT_ANALYZE_CONFIG`, the crontab is unchanged (cleanup only) and
 
 ### rulesgen (Review Queue)
 
-`postmanpat rulesgen serve` runs a read-only Review Queue web service fed by the scheduled reports: it ingests every `postmanpat-analyze-*.json` in the mounted report directory into a SQLite decision store and serves the pending clusters over HTTP. It never opens an IMAP connection — the compose service carries no mailbox credentials at all (ADR 0004).
+`postmanpat rulesgen serve` runs a Review Queue web service fed by the scheduled reports: it ingests every `postmanpat-analyze-*.json` in the mounted report directory into a SQLite decision store and serves the pending clusters over HTTP. It never opens an IMAP connection — the compose service carries no mailbox credentials at all (ADR 0004).
 
 ```bash
-postmanpat rulesgen serve --reports /analyze-out --db /data/rulesgen.db [--addr :8092] [--poll 1m]
+postmanpat rulesgen serve --reports /analyze-out --db /data/rulesgen.db --fragments /config [--addr :8092] [--poll 1m]
 ```
 
 - Clusters dedupe by cluster ID across reports; `template_lens` clusters are never ingested (parity with the Python generator, which never presents them).
 - Pending clusters persist across reports with `last_seen` — the 36h sliding window hides nothing that lacks a decision. A newer report re-containing a cluster refreshes its count/examples.
 - Clusters suppressed for both watch and cleanup stay out of the queue; half-suppressed clusters appear with a `suppressed` badge naming the blocked rule type.
-- Re-ingesting an unchanged report changes nothing (idempotent); a corrupt report file is skipped with a log line while the rest ingest.
-- The page is read-only in this stage — decision capture arrives with the later rulesgen stages. `GET /healthz` returns `ok` for liveness checks.
+- Re-ingesting an unchanged report changes nothing (idempotent, decisions included); a corrupt report file is skipped with a log line while the rest ingest.
+- Each rule-type lane (watch / one-time cleanup / ongoing cleanup) offers Generate / Decline / Ignore / Snooze controls. Generated rules and ignored identities are re-rendered from the decisions into `watch.yaml`, `cleanup-onetime.yaml`, `cleanup-ongoing.yaml` and `ignore.yaml` in `--fragments`, byte-identical to what the Python generator would emit (ADR 0003); `ignore.yaml` is dropped when nothing is ignored. `GET /healthz` returns `ok` for liveness checks.
 
 The `postmanpat-rulesgen` compose service joins only the private `pi-services` network (port 8092 exposed, not published — no auth in v1) with the report directory mounted read-only and the SQLite store under `./rulesgen-data` (override the host path with `POSTMANPAT_RULESGEN_DATA`). Like the other postmanpat data directories, the store file is root-owned on the host; it is read and written by the container, not by the host user.
 

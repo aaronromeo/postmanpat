@@ -1,0 +1,13 @@
+{
+  "kind": "ignore",
+  "lens": "list_lens",
+  "side": "watch",
+  "cluster": {
+    "cluster_id": "list-some",
+    "count": 1,
+    "keys": {"ListID": "some.list"},
+    "signals": {},
+    "examples": {},
+    "suppressed": []
+  }
+}

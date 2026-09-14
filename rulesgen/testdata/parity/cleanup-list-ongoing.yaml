@@ -1,0 +1,11 @@
+rules:
+  - name: "Updates"
+    server:
+      folders:
+        - "INBOX"
+      list_id_substring:
+        - "updates.example.com"
+      age_window:
+        min: "30d"
+    actions:
+      - type: "delete"

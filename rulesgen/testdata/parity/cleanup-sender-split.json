@@ -1,0 +1,28 @@
+{
+  "kind": "rule",
+  "lens": "sender_unsub_lens",
+  "lane": "one_time_cleanup",
+  "cluster": {
+    "cluster_id": "sender-notify",
+    "count": 4,
+    "latest_date": "2026-09-01T07:00:00Z",
+    "keys": {
+      "SenderDomains": ["notify.example.net"],
+      "HasListUnsubscribe": false
+    },
+    "signals": {"has_list_unsubscribe": false},
+    "examples": {
+      "subject_raw": ["Notification"],
+      "recipients": ["a@example.com", "b@example.com", "c@example.com"]
+    },
+    "suppressed": []
+  },
+  "inputs": {
+    "name": "Notify",
+    "sender_substring": "notify.example.net",
+    "folders": "INBOX",
+    "action": "delete",
+    "recipients": "a@example.com, b@example.com, c@example.com",
+    "age_window_min": ""
+  }
+}

@@ -1,0 +1,4 @@
+ignore:
+  cleanup:
+    recipient_tags:
+      - "news"
