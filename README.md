@@ -259,7 +259,7 @@ Without `POSTMANPAT_ANALYZE_CONFIG`, the crontab is unchanged (cleanup only) and
 `postmanpat rulesgen serve` runs a Review Queue web service fed by the scheduled reports: it ingests every `postmanpat-analyze-*.json` in the mounted report directory into a SQLite decision store and serves the pending clusters over HTTP. It never opens an IMAP connection — the compose service carries no mailbox credentials at all (ADR 0004).
 
 ```bash
-postmanpat rulesgen serve --reports /analyze-out --db /data/rulesgen.db --fragments /config [--addr :8092] [--poll 1m]
+postmanpat rulesgen serve --reports /analyze-out --db /data/rulesgen.db --fragments /fragments [--addr :8092] [--poll 1m]
 ```
 
 - Clusters dedupe by cluster ID across reports; `template_lens` clusters are never ingested (parity with the Python generator, which never presents them).
@@ -268,7 +268,7 @@ postmanpat rulesgen serve --reports /analyze-out --db /data/rulesgen.db --fragme
 - Re-ingesting an unchanged report changes nothing (idempotent, decisions included); a corrupt report file is skipped with a log line while the rest ingest.
 - Each rule-type lane (watch / one-time cleanup / ongoing cleanup) offers Generate / Decline / Ignore / Snooze controls. Generated rules and ignored identities are re-rendered from the decisions into `watch.yaml`, `cleanup-onetime.yaml`, `cleanup-ongoing.yaml` and `ignore.yaml` in `--fragments`, byte-identical to what the Python generator would emit (ADR 0003); `ignore.yaml` is dropped when nothing is ignored. `GET /healthz` returns `ok` for liveness checks.
 
-The `postmanpat-rulesgen` compose service joins only the private `pi-services` network (port 8092 exposed, not published — no auth in v1) with the report directory mounted read-only and the SQLite store under `./rulesgen-data` (override the host path with `POSTMANPAT_RULESGEN_DATA`). Like the other postmanpat data directories, the store file is root-owned on the host; it is read and written by the container, not by the host user.
+The `postmanpat-rulesgen` compose service joins only the private `pi-services` network (port 8092 exposed, not published — no auth in v1) with the report directory mounted read-only, the SQLite store under `./rulesgen-data` (override the host path with `POSTMANPAT_RULESGEN_DATA`), and a writable fragment directory (override the host path with `POSTMANPAT_RULESGEN_FRAGMENTS`, default `./config`) mounted at `/fragments`. Like the other postmanpat data directories, the store file and fragment files are root-owned on the host; they are read and written by the container, not by the host user.
 
 ## Observability (OpenTelemetry + SigNoz)
 
