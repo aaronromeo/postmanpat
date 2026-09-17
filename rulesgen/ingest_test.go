@@ -237,3 +237,41 @@ func TestIngestDirToleratesMissingDirectory(t *testing.T) {
 
 	assert.Empty(t, pendingIDs(t, st))
 }
+
+func TestIngestDirClearsSnoozeOnNewerRecontainedReport(t *testing.T) {
+	var tsReport = func(generatedAt string) string {
+		return `{
+  "generated_at": "` + generatedAt + `",
+  "indexes": {
+    "recipient_tag_lens": {
+      "clusters": [
+        {
+          "cluster_id": "tag-news",
+          "count": 1,
+          "latest_date": "` + generatedAt + `",
+          "keys": {"recipient_tag": "news"},
+          "signals": {},
+          "examples": {},
+          "suppressed": []
+        }
+      ]
+    }
+  }
+}`
+	}
+	st := openTestStore(t)
+	dir := t.TempDir()
+
+	writeReport(t, dir, "postmanpat-analyze-analyze-inbox.json", tsReport("2000-01-01T00:00:00Z"))
+	require.NoError(t, IngestDir(dir, st))
+	require.NoError(t, st.Decide("tag-news", LaneWatch, DecisionSnoozed, nil))
+	assert.NotContains(t, pendingIDs(t, st), "tag-news")
+
+	writeReport(t, dir, "postmanpat-analyze-analyze-inbox.json", tsReport("2000-01-01T00:00:00Z"))
+	require.NoError(t, IngestDir(dir, st))
+	assert.NotContains(t, pendingIDs(t, st), "tag-news")
+
+	writeReport(t, dir, "postmanpat-analyze-analyze-inbox.json", tsReport("2999-01-01T00:00:00Z"))
+	require.NoError(t, IngestDir(dir, st))
+	assert.Contains(t, pendingIDs(t, st), "tag-news")
+}

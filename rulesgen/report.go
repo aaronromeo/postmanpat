@@ -24,6 +24,16 @@ type reportCluster struct {
 	Suppressed []string       `json:"suppressed"`
 }
 
+func (r report) allClusterIDs() []string {
+	var out []string
+	for _, lens := range []reportLens{r.Indexes.ListLens, r.Indexes.SenderUnsubLens, r.Indexes.RecipientTagLens} {
+		for _, rc := range lens.Clusters {
+			out = append(out, rc.ClusterID)
+		}
+	}
+	return out
+}
+
 func (r report) clusters() []Cluster {
 	var out []Cluster
 	for _, lens := range []struct {

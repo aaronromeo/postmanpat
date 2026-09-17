@@ -1,0 +1,21 @@
+{
+  "kind": "rule",
+  "lens": "list_lens",
+  "lane": "one_time_cleanup",
+  "cluster": {
+    "cluster_id": "list-updates",
+    "count": 5,
+    "latest_date": "2026-09-01T10:00:00Z",
+    "keys": {"ListID": "updates.example.com", "HasListUnsubscribe": true},
+    "signals": {"has_list_id": true, "has_list_unsubscribe": true, "precedence_categories": {"list": 5}},
+    "examples": {"subject_raw": ["Weekly update"]},
+    "suppressed": []
+  },
+  "inputs": {
+    "name": "Updates",
+    "list_id_substring": "updates.example.com",
+    "folders": "INBOX",
+    "action": "delete",
+    "age_window_min": ""
+  }
+}

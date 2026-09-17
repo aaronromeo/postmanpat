@@ -1,0 +1,13 @@
+{
+  "kind": "ignore",
+  "lens": "sender_unsub_lens",
+  "side": "watch",
+  "cluster": {
+    "cluster_id": "sender-news",
+    "count": 1,
+    "keys": {"SenderDomains": ["news.example.com", "other.example.org"]},
+    "signals": {},
+    "examples": {},
+    "suppressed": []
+  }
+}

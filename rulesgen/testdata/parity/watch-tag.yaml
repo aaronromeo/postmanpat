@@ -1,0 +1,7 @@
+rules:
+  - name: "News tag"
+    client:
+      recipient_tag_regex:
+        - "news"
+    actions:
+      - type: "delete"

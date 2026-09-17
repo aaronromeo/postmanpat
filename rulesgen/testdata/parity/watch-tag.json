@@ -1,0 +1,19 @@
+{
+  "kind": "rule",
+  "lens": "recipient_tag_lens",
+  "lane": "watch",
+  "cluster": {
+    "cluster_id": "tag-news",
+    "count": 6,
+    "latest_date": "2026-09-01T06:00:00Z",
+    "keys": {"recipient_tag": "news"},
+    "signals": {},
+    "examples": {"subject_raw": ["Newsletter 1", "Newsletter 2"]},
+    "suppressed": []
+  },
+  "inputs": {
+    "name": "News tag",
+    "recipient_tag_regex": "news",
+    "action": "delete"
+  }
+}

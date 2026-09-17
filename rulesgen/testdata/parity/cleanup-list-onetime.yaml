@@ -1,0 +1,9 @@
+rules:
+  - name: "Updates"
+    server:
+      folders:
+        - "INBOX"
+      list_id_substring:
+        - "updates.example.com"
+    actions:
+      - type: "delete"

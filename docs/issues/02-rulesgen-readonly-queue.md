@@ -7,9 +7,9 @@
 
 **Blocked by:** None — can start immediately, in parallel with 01 (develop against reports from the existing one-off analyze workflow).
 
-**Status:** code complete (spec: `docs/superpowers/specs/2026-09-03-rulesgen-readonly-queue-design.md`). Package `rulesgen/` + `cli/rulesgen.go` + `postmanpat-rulesgen` compose service; `go test ./...` green; dogfooded against the live nightly report (61 pending clusters rendered; restart with same store shows identical, idempotent queue). Pending: live deploy on rocketman, then the first box.
+**Status:** complete — merged as PR #35 (`d616166`) and deployed on rocketman. Package `rulesgen/` + `cli/rulesgen.go` + `postmanpat-rulesgen` compose service; `go test ./...` green; dogfooded against the live nightly report (61 pending clusters rendered; restart with same store shows identical, idempotent queue). Deploy verified 2026-09-14: service up, `/healthz` ok on the pi-services network, queue serving nightly-ingested clusters (82 pending at check).
 
-- [ ] Compose service starts on the private network and serves the queue page (pending live deploy)
+- [x] Compose service starts on the private network and serves the queue page
 - [x] Ingestion is idempotent: re-ingesting the same report file creates no duplicates
 - [x] Queue shows exactly the undecided, unsuppressed-for-both clusters from ingested reports, with `last_seen`
 - [x] A cluster absent from the latest report but never decided remains Pending with its stale data

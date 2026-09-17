@@ -5,11 +5,13 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -63,6 +65,7 @@ func waitForBodyContains(t *testing.T, addr, want string) {
 
 func TestServeIngestsAtStartupAndPollsForNewReports(t *testing.T) {
 	dir := t.TempDir()
+	fragDir := t.TempDir()
 	writeReport(t, dir, "postmanpat-analyze-analyze-inbox.json", reportA)
 	addr := freePort(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -71,15 +74,20 @@ func TestServeIngestsAtStartupAndPollsForNewReports(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- Serve(ctx, ServeOptions{
-			Addr:       addr,
-			ReportsDir: dir,
-			DBPath:     filepath.Join(t.TempDir(), "queue.db"),
-			PollEvery:  50 * time.Millisecond,
+			Addr:         addr,
+			ReportsDir:   dir,
+			DBPath:       filepath.Join(t.TempDir(), "queue.db"),
+			FragmentsDir: fragDir,
+			PollEvery:    50 * time.Millisecond,
 		})
 	}()
 
 	waitHealthy(t, addr)
 	waitForBodyContains(t, addr, "sender-news")
+
+	data, err := os.ReadFile(filepath.Join(fragDir, "watch.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, "rules: []\n", string(data))
 
 	writeReport(t, dir, "postmanpat-analyze-analyze-inbox.json", reportB)
 	waitForBodyContains(t, addr, "sender-newcomer")

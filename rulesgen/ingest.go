@@ -27,6 +27,12 @@ func IngestDir(dir string, st *Store) error {
 		if err := st.UpsertClusters(rep.clusters()); err != nil {
 			return err
 		}
+		if rep.GeneratedAt != "" {
+			clusterIDs := rep.allClusterIDs()
+			if err := st.clearSnoozed(clusterIDs, rep.GeneratedAt); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

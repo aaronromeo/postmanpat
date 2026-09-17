@@ -1,0 +1,7 @@
+rules:
+  - name: "Updates"
+    client:
+      list_id_regex:
+        - 'updates\.example\.com'
+    actions:
+      - type: "delete"

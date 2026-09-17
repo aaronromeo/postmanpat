@@ -9,10 +9,11 @@ import (
 )
 
 type ServeOptions struct {
-	Addr       string
-	ReportsDir string
-	DBPath     string
-	PollEvery  time.Duration
+	Addr         string
+	ReportsDir   string
+	DBPath       string
+	FragmentsDir string
+	PollEvery    time.Duration
 }
 
 func Serve(ctx context.Context, opts ServeOptions) error {
@@ -28,6 +29,9 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	if err := IngestDir(opts.ReportsDir, st); err != nil {
 		return err
 	}
+	if err := RenderFragments(opts.FragmentsDir, st); err != nil {
+		return err
+	}
 
 	ticker := time.NewTicker(opts.PollEvery)
 	defer ticker.Stop()
@@ -39,12 +43,16 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 			case <-ticker.C:
 				if err := IngestDir(opts.ReportsDir, st); err != nil {
 					log.Printf("rulesgen serve: re-ingest: %v", err)
+					continue
+				}
+				if err := RenderFragments(opts.FragmentsDir, st); err != nil {
+					log.Printf("rulesgen serve: re-render: %v", err)
 				}
 			}
 		}
 	}()
 
-	srv := &http.Server{Addr: opts.Addr, Handler: NewServer(st)}
+	srv := &http.Server{Addr: opts.Addr, Handler: NewServer(st, opts.FragmentsDir)}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

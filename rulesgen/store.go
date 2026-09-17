@@ -167,11 +167,62 @@ func (s *Store) decidedLanes() (map[string]map[Lane]bool, error) {
 	return decided, rows.Err()
 }
 
+// offeredLane returns true when the cluster can be shown with the given lane on
+// the queue page (i.e. the lane belongs to the lens and is not suppressed).
+func offeredLane(c Cluster, lane Lane) bool {
+	for _, l := range lensLanes[c.Lens] {
+		if l != lane {
+			continue
+		}
+		side := "watch"
+		if lane == LaneOneTimeCleanup || lane == LaneOngoingCleanup {
+			side = "cleanup"
+		}
+		for _, s := range c.Suppressed {
+			if s == side {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
 func hasUndecidedLane(c Cluster, decided map[Lane]bool) bool {
 	for _, lane := range lensLanes[c.Lens] {
-		if !decided[lane] {
+		if offeredLane(c, lane) && !decided[lane] {
 			return true
 		}
 	}
 	return false
+}
+
+func (s *Store) ClusterByID(clusterID string) (Cluster, error) {
+	var c Cluster
+	var keys, examples, signals, suppressed string
+	err := s.db.QueryRow(`SELECT cluster_id, lens, keys_json, count, latest_date, examples_json, signals_json, suppressed_json, first_seen, last_seen
+		FROM clusters WHERE cluster_id = ?`, clusterID).
+		Scan(&c.ClusterID, &c.Lens, &keys, &c.Count, &c.LatestDate, &examples, &signals, &suppressed, &c.FirstSeen, &c.LastSeen)
+	if err != nil {
+		return Cluster{}, err
+	}
+	if err := json.Unmarshal([]byte(keys), &c.Keys); err != nil {
+		return Cluster{}, fmt.Errorf("rulesgen store: unmarshal keys for %s: %w", clusterID, err)
+	}
+	if err := json.Unmarshal([]byte(examples), &c.Examples); err != nil {
+		return Cluster{}, fmt.Errorf("rulesgen store: unmarshal examples for %s: %w", clusterID, err)
+	}
+	if err := json.Unmarshal([]byte(signals), &c.Signals); err != nil {
+		return Cluster{}, fmt.Errorf("rulesgen store: unmarshal signals for %s: %w", clusterID, err)
+	}
+	if err := json.Unmarshal([]byte(suppressed), &c.Suppressed); err != nil {
+		return Cluster{}, fmt.Errorf("rulesgen store: unmarshal suppressed for %s: %w", clusterID, err)
+	}
+	return c, nil
+}
+
+func sortDecidedClusters(clusters []DecidedCluster) {
+	sort.Slice(clusters, func(i, j int) bool {
+		return clusters[i].Cluster.ClusterID < clusters[j].Cluster.ClusterID
+	})
 }

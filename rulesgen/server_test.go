@@ -13,7 +13,7 @@ import (
 func newTestServer(t *testing.T) (*Store, http.Handler) {
 	t.Helper()
 	st := openTestStore(t)
-	return st, NewServer(st)
+	return st, NewServer(st, t.TempDir())
 }
 
 func get(t *testing.T, h http.Handler, path string) (int, string) {

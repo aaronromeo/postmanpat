@@ -1,0 +1,32 @@
+{
+  "kind": "rule",
+  "lens": "sender_unsub_lens",
+  "lane": "ongoing_cleanup",
+  "cluster": {
+    "cluster_id": "sender-shop",
+    "count": 2,
+    "latest_date": "2026-09-01T08:00:00Z",
+    "keys": {
+      "SenderDomains": ["shop.example.org"],
+      "FromList": ["sales@shop.example.org"],
+      "HasListUnsubscribe": true
+    },
+    "signals": {"has_list_unsubscribe": true},
+    "examples": {
+      "subject_raw": ["Sale"],
+      "recipients": ["aaron@example.com"],
+      "reply_to_domains": ["reply.shop.example.org"],
+      "sender_domains": ["shop.example.org"]
+    },
+    "suppressed": []
+  },
+  "inputs": {
+    "name": "Shop",
+    "sender_substring": "shop.example.org",
+    "folders": "INBOX",
+    "action": "delete",
+    "replyto_substring": "reply.shop.example.org",
+    "recipients": "aaron@example.com",
+    "age_window_min": "30d"
+  }
+}
